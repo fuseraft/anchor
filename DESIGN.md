@@ -1,0 +1,131 @@
+# anchor
+
+A minimal coding harness for the terminal: one model working in one workspace with a few
+tools, plus sub-agents, skills, and MCP. It is built on C# / .NET 10 and `Microsoft.Extensions.AI`.
+
+**Budget:** under 5k lines of source. A new feature has to justify every line it adds.
+
+## Shape
+
+```
+src/Anchor/        one project
+  Agent.cs         the turn loop
+  Gate.cs          the only path to disk and processes: policy, approval, effect
+  Policy.cs        pure allow / ask / deny rules
+  ShellCommand.cs  conservative bash reader: hard denials, read-only commands
+  Tools/           read, list, grep, write, edit, shell, agent, skill
+  Skills.cs        discovery + catalog
+  Mcp.cs           server connections, tool adapter
+  Providers.cs     anthropic (native, cached), openai-compatible
+  Session.cs       append-only JSONL
+  Repl.cs          input, rendering, slash commands
+tests/Anchor.Tests/
+```
+
+## Rules
+
+1. **Own the loop.** anchor drives `IChatClient` directly instead of using
+   `UseFunctionInvocation()`. The turn ends on the model's final text. There is no round cap:
+   anchor stops when the model repeats the same call 5 times or fails 3 calls in a row.
+2. **One gate.** Tools reach the disk and processes only through `Gate`: `ReadPathAsync`,
+   `WriteAsync` (the user sees a diff first), and `RunAsync`. Each one runs the same sequence:
+   policy, then approval, then the effect. A test fails if a tool touches files or processes
+   directly. Paths are checked where they really point, with symlinks resolved.
+3. **Safe by default.** Writes and non-read-only shell commands ask first, and the sandbox is
+   the launch directory. `--yolo` turns both off.
+4. **Hard denials that `--yolo` doesn't lift:**
+   - `.env*` and credential files are denied.
+   - Catastrophic shell commands are denied, including `sudo` and piping curl to a shell.
+   - Secret values are masked in process output: secret-named environment variables and values
+     from secret files, including gitignored `.env` files and `~/.aws/credentials`.
+   - Known limitation: masking matches exact values, so a deliberately re-encoded value
+     (`base64 .env`) is not caught. The approval prompt is the guard for that case.
+5. **The core never prints.** It emits events, and a renderer draws them. `--json` is just a
+   second renderer.
+6. **Messages are typed.** Every message carries its kind (user, assistant, tool, summary), so
+   anchor never parses string prefixes to tell them apart.
+
+## Sub-agents
+
+- The `agent(task, agent?)` tool runs a fresh `Agent` with its own history and returns only its
+  final text to the parent.
+- A sub-agent goes through the same gate, policy and approver as the main agent. Its tools are
+  filtered at call time, so `--yolo` and safe defaults apply to it the same way.
+- The default sub-agent is read-only. Named sub-agents live in `.agents/agents/*.md`
+  (frontmatter: `name`, `description`, `tools`, `model`; the body is the prompt).
+- Sub-agents can't spawn other sub-agents: depth is limited to 1.
+- Events are tagged with the agent's id, so the renderer can nest them. Sub-agent token usage
+  counts toward the session total.
+
+## Skills
+
+- Skills follow the Agent Skills format: a `SKILL.md` file with `name` and `description` in its
+  frontmatter.
+- anchor looks for them in `.agents/skills/` and `~/.anchor/skills/`. When the same skill exists
+  in both, the project copy wins.
+- Only the catalog (name + description) goes into the system prompt. The `skill(name)` tool
+  loads the full body.
+- Skill resources are read with `read` and scripts run with `shell`, so the gate covers them.
+  There is no separate script runner that skips the checks.
+
+## MCP
+
+- anchor uses the official `ModelContextProtocol` SDK and supports stdio and HTTP servers.
+- Servers are configured under `mcpServers` in `~/.anchor/config.json` or in the project's
+  `.mcp.json`. The shape matches Claude Code's: `command`/`args`/`env` for stdio,
+  `url`/`headers` for HTTP. Headers expand `${ENV_VAR}`.
+- A project `.mcp.json` can launch arbitrary commands, so anchor asks once per server before it
+  first starts one, and remembers the answer.
+- MCP tools appear as `mcp__<server>__<tool>`. They run through the gate like every other tool:
+  - A tool marked `readOnlyHint` runs without asking.
+  - Every other MCP tool asks first, unless `--yolo` is on.
+  - Output is masked for secrets.
+- For HTTP servers, anchor follows redirects itself, so headers are never sent to another
+  origin.
+- OAuth 2.1 works out of the box, using the SDK's built-in support:
+  - Dynamic client registration and PKCE, so a server needs no client setup.
+  - Sign-in opens the browser, and a loopback listener catches the redirect.
+  - A server that returns 401 starts the sign-in automatically.
+  - `clientId`, `clientSecret`, and `scopes` are optional overrides.
+- Tokens live in the OS keychain (Keychain, `secret-tool`, Credential Manager), never in a
+  plaintext file. Without a keychain, tokens are kept in memory only.
+- `/mcp login <server>` and `/mcp logout <server>` manage sign-ins.
+- The connect timeout stretches to 5 minutes while sign-in is pending.
+- The browser launcher can be swapped out in tests.
+- Servers connect in the background. A server that fails to start shows a warning instead of
+  blocking the REPL.
+
+## Context
+
+- Context size comes from the provider's real reported usage.
+- At 80% of the window, anchor summarizes older turns and keeps the most recent 20% verbatim.
+  The summary is rejected unless it is smaller than what it replaces.
+- `AGENTS.md` is loaded into the system prompt.
+
+## Surface
+
+```
+anchor [--yolo] [--resume] [--model m] [-p "prompt"] [--json]
+/help /model /compact /clear /agents /skills /mcp /exit      !cmd runs in your shell, outside the model's history
+```
+
+Config lives in `~/.anchor/config.json`. Sessions are stored in `~/.anchor/sessions/`.
+
+## Not in anchor
+
+Multi-agent orchestration (graphs, routing, validators), plans, memory, telemetry, and a
+plugin registry. Any of these can be added later as a tool behind the gate.
+
+## Tests
+
+- A scripted fake `IChatClient`; tests never call a live LLM.
+- Security tests use an approver that always says yes.
+- Each milestone is live-checked against a real model.
+
+## Milestones
+
+1. Loop, read tools, providers, and REPL.
+2. Gate, write/edit/shell tools, and approvals.
+3. Sessions, resume, and compaction.
+4. Sub-agents, skills, and MCP.
+5. `-p` and `--json` modes, then the v0.1.0 release.
