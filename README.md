@@ -3,6 +3,8 @@
 A small coding agent for the terminal. One model works in one directory through a handful of
 tools, and a deterministic harness decides what it may touch.
 
+**Documentation: [fuseraft.github.io/anchor](https://fuseraft.github.io/anchor/)**
+
 - **Safe by default.** Writes, most shell commands and reads outside the directory ask first,
   and a write shows you the diff. Secret files (`.env`, keys, credentials) and dangerous
   commands (`sudo`, `rm -rf /`, `curl | sh`) are always denied, even with `--yolo`. Secret
@@ -136,6 +138,10 @@ check never passed, 130 cancelled.
 
 `DESIGN.md` explains how anchor is put together and why. `./build.sh` runs the tests and
 publishes a binary. `dotnet test` runs just the tests.
+
+The documentation site lives in `docs/` and is built with [Starlight](https://starlight.astro.build).
+Preview it with `npm install && npm run dev` in that folder. Pushing changes under `docs/` to
+`main` deploys it to GitHub Pages.
 
 ## License
 

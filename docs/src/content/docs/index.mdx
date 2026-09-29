@@ -1,0 +1,46 @@
+---
+title: anchor
+description: A small coding agent for the terminal, with a deterministic harness that decides what it may touch.
+template: splash
+hero:
+  tagline: A small coding agent for the terminal. One model works in one directory through a handful of tools, and a deterministic harness decides what it may touch.
+  image:
+    file: ../../assets/anchor.svg
+  actions:
+    - text: Install anchor
+      link: /anchor/start/install/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/fuseraft/anchor
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+	<Card title="Safe by default" icon="approve-check">
+		Writes, most shell commands and reads outside the directory ask first, and a write shows you
+		the diff. Secret files and dangerous commands are always denied, even with `--yolo`.
+	</Card>
+	<Card title="Done means done" icon="rocket">
+		`/until dotnet test` keeps the agent working until your own check command passes. A command
+		decides when the work is finished, never a model.
+	</Card>
+	<Card title="Long sessions" icon="document">
+		Context stays under the model's window by summarizing, trimming and, as a last resort,
+		dropping old steps. Sessions resume, and `/undo` reverts the last turn's file changes.
+	</Card>
+	<Card title="Extensible" icon="puzzle">
+		Sub-agents (including parallel read-only ones), Agent Skills and MCP servers with OAuth all go
+		through the same approval checkpoint.
+	</Card>
+	<Card title="Scriptable" icon="seti:shell">
+		`-p` runs one prompt and prints the answer. `--json` streams events for scripts, CI and
+		editors.
+	</Card>
+	<Card title="Your model" icon="setting">
+		Claude through the native API with prompt caching, or any OpenAI-compatible API: OpenAI, xAI,
+		or a server on your own machine.
+	</Card>
+</CardGrid>
