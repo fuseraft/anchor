@@ -21,6 +21,12 @@ public sealed class Policy(Workspace workspace, bool yolo = false, IEnumerable<s
 
     public bool Yolo { get; } = yolo;
 
+    /// <summary>
+    /// Whether shell commands run as the bash that <see cref="ShellCommand"/> reads. On Windows they run
+    /// under cmd.exe, which splits and quotes differently, so nothing is judged read-only there.
+    /// </summary>
+    public bool ParsesShell { get; init; } = !OperatingSystem.IsWindows();
+
     public Verdict Read(string literal, string real)
     {
         if (Secrets.IsSecretPath(literal) || Secrets.IsSecretPath(real))
@@ -48,7 +54,7 @@ public sealed class Policy(Workspace workspace, bool yolo = false, IEnumerable<s
             return Verdict.Deny(danger);
         if (ReachesSecretFile(command))
             return Verdict.Deny("it names a path that resolves to a secret or credential file");
-        if (Yolo || ShellCommand.IsReadOnly(command, p => workspace.IsInside(workspace.Resolve(p))))
+        if (Yolo || ParsesShell && ShellCommand.IsReadOnly(command, p => workspace.IsInside(workspace.Resolve(p))))
             return Verdict.Allow;
         return Verdict.Ask("command");
     }

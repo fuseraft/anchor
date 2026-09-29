@@ -14,10 +14,10 @@ public sealed class GateTests : IDisposable
         Directory.Delete(_outside, recursive: true);
     }
 
-    Gate NewGate(FakeApprover approver, bool yolo = false)
+    Gate NewGate(FakeApprover approver, bool yolo = false, bool parsesShell = true)
     {
         var workspace = new Workspace(_root);
-        return new Gate(workspace, new Policy(workspace, yolo), approver, _events.Add);
+        return new Gate(workspace, new Policy(workspace, yolo) { ParsesShell = parsesShell }, approver, _events.Add);
     }
 
     string At(string rel) => Path.Combine(_root, rel);
@@ -92,6 +92,30 @@ public sealed class GateTests : IDisposable
         await gate.RunAsync("touch made.txt", TimeSpan.FromSeconds(10), default);
         Assert.Equal("Run: touch made.txt", Assert.Single(approver.Requests).Title);
         Assert.True(File.Exists(At("made.txt")));
+    }
+
+    [Fact]
+    public async Task Run_WithoutBashRules_AsksForEverythingAndOffersNoAlways()
+    {
+        var approver = new FakeApprover(Answer.Always);
+        var gate = NewGate(approver, parsesShell: false);
+
+        await gate.RunAsync("echo hello", TimeSpan.FromSeconds(10), default);
+        await gate.RunAsync("echo hello", TimeSpan.FromSeconds(10), default);
+
+        Assert.Equal(2, approver.Requests.Count);
+        Assert.All(approver.Requests, r => Assert.Null(r.AlwaysLabel));
+    }
+
+    [Fact]
+    public async Task Run_WithoutBashRules_StillDenies()
+    {
+        var approver = new FakeApprover(Answer.Yes);
+
+        var e = await Assert.ThrowsAsync<ToolException>(() => NewGate(approver, parsesShell: false).RunAsync("sudo true", TimeSpan.FromSeconds(5), default));
+
+        Assert.StartsWith("Denied:", e.Message);
+        Assert.Empty(approver.Requests);
     }
 
     [Fact]

@@ -15,12 +15,25 @@ tools, and a deterministic harness decides what it may touch.
 - **Scriptable.** `-p` runs one prompt and prints the answer; `--json` streams events for
   editors and tools.
 
-Status: 0.1.0. Linux and macOS. Models: Claude (native API, prompt caching), and any
+Status: 0.1.0. Linux and macOS; Windows builds ask before every shell command, since the
+safety rules read bash, not cmd. Models: Claude (native API, prompt caching), and any
 OpenAI-compatible API (OpenAI, xAI, local servers).
 
 ## Install
 
-Download a release from the Releases page and put `anchor` on your `PATH`, or build it:
+Linux and macOS (installs to `~/.local/bin`; pass `--system` for `/usr/local/bin`):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/fuseraft/anchor/main/install.sh | bash
+```
+
+Windows (installs to `%LOCALAPPDATA%\anchor\bin` and adds it to your user `PATH`):
+
+```powershell
+irm https://raw.githubusercontent.com/fuseraft/anchor/main/install.ps1 | iex
+```
+
+Or download a release from the Releases page and put `anchor` on your `PATH`, or build it:
 
 ```sh
 ./build.sh            # runs the tests, then publishes bin/anchor for this machine

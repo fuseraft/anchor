@@ -104,7 +104,8 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     /// <summary>Runs a shell command in the workspace root and returns its masked output.</summary>
     public async Task<string> RunAsync(string command, TimeSpan timeout, CancellationToken ct)
     {
-        var programs = ShellCommand.Programs(command);
+        // "Always" is keyed on programs from the bash parse, which is only trustworthy when bash runs the command.
+        var programs = policy.ParsesShell ? ShellCommand.Programs(command) : new HashSet<string>();
         var known = programs.Count > 0 && programs.All(_alwaysPrograms.Contains);
         var always = programs.Count > 0 ? $"commands using {string.Join(", ", programs.Order())}" : null;
         await EnforceAsync(policy.Run(command), new ApprovalRequest($"Run: {command}", null, always),

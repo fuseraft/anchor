@@ -184,4 +184,5 @@ plugin registry. Any of these can be added later as a tool behind the gate.
 3. Sessions, resume, and compaction.
 4. Sub-agents, skills, and MCP.
 5. `-p` and `--json` modes, then the v0.1.0 release (Linux and macOS; Windows waits for
-   shell safety rules that understand cmd and PowerShell).
+   shell safety rules that understand cmd and PowerShell; until then, Windows builds ask before
+   every shell command and offer no "always" for them).
