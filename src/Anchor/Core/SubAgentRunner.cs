@@ -8,6 +8,8 @@ public sealed class SubAgentRunner(Toolbox toolbox, string systemPrompt, Action<
 {
     public static readonly string[] ReadOnlyTools = ["read_file", "list_dir", "glob", "grep", "skill"];
 
+    public const int MaxParallel = 4;
+
     const string Instructions = """
 
 
@@ -17,10 +19,21 @@ public sealed class SubAgentRunner(Toolbox toolbox, string systemPrompt, Action<
         You cannot ask questions; if something is ambiguous, make a reasonable choice and say so in the report.
         """;
 
-    public async Task<string> RunAsync(string task, AgentDefinition? definition, CancellationToken ct)
+    /// <summary>Runs default read-only sub-agents at the same time, one per task, and returns every report in order.</summary>
+    public async Task<string> RunParallelAsync(IReadOnlyList<string> tasks, CancellationToken ct)
     {
-        var name = definition?.Name ?? "agent";
-        var tools = toolbox.Subset((definition?.Tools ?? ReadOnlyTools).Where(t => t != "agent"));
+        var reports = await Task.WhenAll(tasks.Select((task, i) => Task.Run(async () =>
+        {
+            Gate.RefuseAsking("sub-agents running in parallel can't ask the user");
+            return await RunAsync(task, null, ct, $"agent {i + 1}");
+        }, ct)));
+        return string.Join("\n\n", reports.Select((report, i) => $"## Task {i + 1}\n{report}"));
+    }
+
+    public async Task<string> RunAsync(string task, AgentDefinition? definition, CancellationToken ct, string? label = null)
+    {
+        var name = label ?? definition?.Name ?? "agent";
+        var tools = toolbox.Subset((definition?.Tools ?? ReadOnlyTools).Where(t => t is not ("agent" or "agents")));
         var (client, options) = clientFor(definition?.Model);
         var prompt = systemPrompt + Instructions + (definition is null ? "" : $"\n\n{definition.Prompt}");
 

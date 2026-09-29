@@ -10,18 +10,26 @@ public sealed class SubAgentTests : IDisposable
     readonly List<AgentEvent> _events = [];
     readonly FakeApprover _approver = new(Answer.No);
     readonly Toolbox _toolbox;
+    readonly Gate _gate;
 
     public SubAgentTests()
     {
         File.WriteAllText(Path.Combine(_root, "a.txt"), "alpha");
         var workspace = new Workspace(_root);
-        var gate = new Gate(workspace, new Policy(workspace), _approver, _events.Add);
-        _toolbox = new Toolbox([.. new FileTools(gate).All(), .. new EditTools(gate).All(), .. new ShellTool(gate).All()]);
+        _gate = new Gate(workspace, new Policy(workspace), _approver, Record);
+        _toolbox = new Toolbox([.. new FileTools(_gate).All(), .. new EditTools(_gate).All(), .. new ShellTool(_gate).All()]);
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
-    SubAgentRunner Runner(FakeChatClient client) => new(_toolbox, "base prompt", _events.Add, _ => (client, new ChatOptions()));
+    // Parallel sub-agents report from several threads.
+    void Record(AgentEvent e)
+    {
+        lock (_events)
+            _events.Add(e);
+    }
+
+    SubAgentRunner Runner(IChatClient client) => new(_toolbox, "base prompt", Record, _ => (client, new ChatOptions()));
 
     [Fact]
     public async Task RunsInAFreshContextAndReturnsOnlyTheReport()
@@ -115,7 +123,84 @@ public sealed class SubAgentTests : IDisposable
     {
         var tools = new AgentTools(Runner(new FakeChatClient()), [new AgentDefinition("reviewer", "Reviews diffs", null, null, "")], []).All().ToList();
 
-        Assert.Equal(["agent"], tools.Select(t => t.Name));
+        Assert.Equal(["agent", "agents"], tools.Select(t => t.Name));
         Assert.Contains("- reviewer: Reviews diffs", tools[0].Description);
+    }
+
+    [Fact]
+    public async Task Parallel_RunsTheTasksAtTheSameTime_AndReturnsEveryReportInOrder()
+    {
+        var report = await Runner(new RendezvousClient(3)).RunParallelAsync(["a", "b", "c"], default);
+
+        Assert.Equal("## Task 1\nreport on a\n\n## Task 2\nreport on b\n\n## Task 3\nreport on c", report);
+        Assert.Equal(["agent 1", "agent 2", "agent 3"], _events.OfType<SubAgentEvent>().Select(e => e.Agent).Distinct().Order());
+    }
+
+    [Fact]
+    public async Task Parallel_RefusesWhatWouldAsk_ButTheCallerStillAsks()
+    {
+        var outside = Directory.CreateTempSubdirectory("anchor-sub-outside-").FullName;
+        try
+        {
+            var file = Path.Combine(outside, "o.txt");
+            File.WriteAllText(file, "outside");
+            var client = new FakeChatClient().Call("read_file", new { path = file }).Text("could not read it");
+
+            var report = await Runner(client).RunParallelAsync(["read o.txt"], default);
+
+            Assert.Contains("could not read it", report);
+            Assert.Empty(_approver.Requests);
+            Assert.Contains(_events, e => e is SubAgentEvent { Inner: ToolFinished { Ok: false, Result: var r } } && r.Contains("Not allowed without approval"));
+
+            await Assert.ThrowsAsync<ToolException>(() => _gate.ReadPathAsync(file, default));
+            Assert.Single(_approver.Requests);
+        }
+        finally
+        {
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AgentsTool_TakesOneToFourTasks()
+    {
+        var tools = new AgentTools(Runner(new FakeChatClient()), [], []);
+
+        await Assert.ThrowsAsync<ToolException>(() => tools.RunAgents([]));
+        await Assert.ThrowsAsync<ToolException>(() => tools.RunAgents(["1", "2", "3", "4", "5"]));
+    }
+
+    [Fact]
+    public void AgentsCall_IsSummarizedByItsTaskCount()
+    {
+        static string Summary(string json) => Toolbox.Summarize(new FunctionCallContent("c", "agents",
+            new Dictionary<string, object?> { ["tasks"] = System.Text.Json.JsonDocument.Parse(json).RootElement }));
+
+        Assert.Equal("3 tasks", Summary("""["a", "b", "c"]"""));
+        Assert.Equal("only one", Summary("""["only one"]"""));
+    }
+
+    /// <summary>Answers each request with its task, but only once every expected request is in flight at the same time.</summary>
+    sealed class RendezvousClient(int expected) : IChatClient
+    {
+        readonly TaskCompletionSource _all = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        int _arrived;
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            var task = messages.Last().Text;
+            if (Interlocked.Increment(ref _arrived) == expected)
+                _all.SetResult();
+            await _all.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+            yield return new ChatResponseUpdate(ChatRole.Assistant, $"report on {task}") { MessageId = "m" };
+        }
+
+        public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken ct = default) =>
+            throw new NotSupportedException();
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose() { }
     }
 }

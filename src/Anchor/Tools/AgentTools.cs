@@ -21,6 +21,13 @@ public sealed class AgentTools(SubAgentRunner runner, IReadOnlyList<AgentDefinit
                           "Without a name, the sub-agent can only read." +
                           (agentList.Length > 0 ? $"\nNamed agents:{agentList}" : ""),
         });
+        yield return AIFunctionFactory.Create(RunAgents, new AIFunctionFactoryOptions
+        {
+            Name = "agents",
+            Description = $"Run up to {SubAgentRunner.MaxParallel} independent investigations at the same time, each in its own read-only sub-agent, " +
+                          "and get every report back. Use it when a question splits into separate parts, such as one module each. " +
+                          "Use agent instead for a single task or a named agent.",
+        });
         if (skills.Count > 0)
             yield return AIFunctionFactory.Create(LoadSkill, "skill");
     }
@@ -34,6 +41,15 @@ public sealed class AgentTools(SubAgentRunner runner, IReadOnlyList<AgentDefinit
             : agents.FirstOrDefault(a => a.Name == agent)
               ?? throw new ToolException($"Unknown agent '{agent}'. Available: {(agents.Count == 0 ? "none" : string.Join(", ", agents.Select(a => a.Name)))}.");
         return await runner.RunAsync(task, definition, ct);
+    }
+
+    public Task<string> RunAgents(
+        [Description("One complete, self-contained task per sub-agent, with all the context it needs.")] string[] tasks,
+        CancellationToken ct = default)
+    {
+        if (tasks.Length is 0 or > SubAgentRunner.MaxParallel)
+            throw new ToolException($"Give between 1 and {SubAgentRunner.MaxParallel} tasks; got {tasks.Length}.");
+        return runner.RunParallelAsync(tasks, ct);
     }
 
     [Description("Load a skill's full instructions by name. Load a skill whenever the task matches its description, before starting the work.")]

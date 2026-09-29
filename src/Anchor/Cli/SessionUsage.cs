@@ -2,9 +2,11 @@ using Anchor.Core;
 
 namespace Anchor.Cli;
 
-/// <summary>Token totals for the session, sub-agents included.</summary>
+/// <summary>Token totals for the session, sub-agents included. Parallel sub-agents report from several threads.</summary>
 public sealed class SessionUsage
 {
+    readonly Lock _lock = new();
+
     public long Input { get; private set; }
 
     public long Output { get; private set; }
@@ -16,9 +18,12 @@ public sealed class SessionUsage
         switch (e)
         {
             case UsageReport u:
-                Input += u.Input;
-                Output += u.Output;
-                Cached += u.CachedInput;
+                lock (_lock)
+                {
+                    Input += u.Input;
+                    Output += u.Output;
+                    Cached += u.CachedInput;
+                }
                 break;
             case SubAgentEvent s:
                 Observe(s.Inner);

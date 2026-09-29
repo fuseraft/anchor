@@ -115,7 +115,8 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
                 renderer.Line(renderer.Dim($"Session so far, including sub-agents: in {u.Input:N0} · out {u.Output:N0} · cached {u.Cached:N0}"));
                 break;
             case "/agents":
-                renderer.Line($"agent (default)  {renderer.Dim("read-only: " + string.Join(", ", SubAgentRunner.ReadOnlyTools))}");
+                renderer.Line($"agent (default)  {renderer.Dim("read-only: " + string.Join(", ", SubAgentRunner.ReadOnlyTools))}" +
+                              renderer.Dim($"; up to {SubAgentRunner.MaxParallel} can run at once"));
                 foreach (var a in options.Agents)
                     renderer.Line($"{a.Name}  {renderer.Dim(a.Description)}" +
                                   renderer.Dim($" [tools: {(a.Tools is null ? "read-only" : string.Join(", ", a.Tools))}{(a.Model is null ? "" : $"; model: {a.Model}")}]"));

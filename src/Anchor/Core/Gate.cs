@@ -20,6 +20,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
 
     const int UndoDepth = 20;
     static readonly TimeSpan CheckTimeout = TimeSpan.FromMinutes(10);
+    static readonly AsyncLocal<string?> Unaskable = new();
 
     bool _alwaysWrite;
     readonly HashSet<string> _alwaysPrograms = [];
@@ -27,6 +28,12 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     readonly LinkedList<Dictionary<string, (string? Before, string After)>> _turns = [];
 
     public Workspace Workspace => workspace;
+
+    /// <summary>
+    /// For the rest of the calling async flow, anything that would ask the user is refused instead. Parallel sub-agents
+    /// run this way, so two approval prompts never appear at once. The caller's own flow is unaffected.
+    /// </summary>
+    public static void RefuseAsking(string reason) => Unaskable.Value = reason;
 
     /// <summary>Files written so far; a check loop compares it across a turn to see whether the turn changed anything.</summary>
     public int Writes { get; private set; }
@@ -199,6 +206,8 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
 
         if (preapproved)
             return;
+        if (Unaskable.Value is { } reason)
+            throw new ToolException($"Not allowed without approval, and {reason}. Report what you couldn't do instead.");
 
         var answer = await approver.ApproveAsync(request, ct);
         if (answer == Answer.No)

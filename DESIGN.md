@@ -58,8 +58,10 @@ tests/Anchor.Tests/
 - Sub-agents can't spawn other sub-agents: depth is limited to 1.
 - Events are tagged with the agent's id, so the renderer can nest them. Sub-agent token usage
   counts toward the session total shown by `/context`.
-- Sub-agents run one at a time, so two approval prompts never appear at once. `/agents` lists
-  them.
+- `agent` runs one sub-agent at a time. `agents(tasks)` runs up to 4 default read-only sub-agents
+  at the same time, tagged `agent 1`, `agent 2`, and so on. Inside them, anything that would ask
+  the user is refused (`Gate.RefuseAsking`, scoped to their async flow), so two approval prompts
+  never appear at once. Named sub-agents never run in parallel. `/agents` lists them.
 
 ## Skills
 

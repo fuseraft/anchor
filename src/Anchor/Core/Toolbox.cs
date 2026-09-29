@@ -67,10 +67,13 @@ public sealed class Toolbox(IEnumerable<AIFunction> tools)
 
     public static string Summarize(FunctionCallContent call)
     {
-        var first = call.Arguments?.Values.FirstOrDefault(v => v is not null);
+        var (name, first) = call.Arguments?.FirstOrDefault(a => a.Value is not null) ?? default;
         var text = first switch
         {
             JsonElement { ValueKind: JsonValueKind.String } e => e.GetString(),
+            // A list reads as its size ("3 tasks"); a single item as the item itself.
+            JsonElement { ValueKind: JsonValueKind.Array } e when e.GetArrayLength() == 1 => Summarize(new(call.CallId, call.Name, new Dictionary<string, object?> { [name] = e[0] })),
+            JsonElement { ValueKind: JsonValueKind.Array } e => $"{e.GetArrayLength()} {name}",
             null => "",
             _ => first.ToString(),
         } ?? "";
