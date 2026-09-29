@@ -21,6 +21,9 @@ public sealed record RoundsDropped(int Rounds, long Before, long After) : AgentE
 
 public sealed record Notice(string Message) : AgentEvent;
 
+/// <summary>The user's check command (--until, /until) ran after a turn.</summary>
+public sealed record CheckRan(string Command, int Round, bool Passed, string Output) : AgentEvent;
+
 /// <summary>An event from a sub-agent, tagged with its name.</summary>
 public sealed record SubAgentEvent(string Agent, AgentEvent Inner) : AgentEvent;
 

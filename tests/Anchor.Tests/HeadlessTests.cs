@@ -115,6 +115,18 @@ public sealed class HeadlessTests : IDisposable
     }
 
     [Fact]
+    public async Task PrintUntil_ExitsFourWhenTheCheckNeverPasses()
+    {
+        var output = new JsonLines();
+        var json = new JsonEvents(output);
+        var h = Build(new FakeChatClient().Text("nothing to do"), new RefusingApprover(_ => { }), json.Emit);
+
+        Assert.Equal(4, await PrintMode.RunAsync(h, "x", json, new StringWriter(), until: "false"));
+        Assert.Equal("check", (string)output.Events[^2]["type"]!);
+        Assert.Equal("no_changes", (string)output.Events[^1]["check"]!);
+    }
+
+    [Fact]
     public async Task PrintJson_StreamsEventsAndEndsWithAResult()
     {
         var output = new JsonLines();
@@ -244,6 +256,8 @@ public class OptionsTests
         Assert.Equal((null, 2), Options.Parse(["-p", "one", "two"], TextWriter.Null, TextWriter.Null));
         Assert.Equal((null, 2), Options.Parse(["no -p"], TextWriter.Null, error));
         Assert.Contains("needs -p", error.ToString());
+        Assert.Equal((null, 2), Options.Parse(["--until", "make test"], TextWriter.Null, TextWriter.Null));
+        Assert.Equal("make test", Parse("-p", "hi", "--until", "make test")?.Until);
 
         var output = new StringWriter();
         Assert.Equal((null, 0), Options.Parse(["--help"], output, TextWriter.Null));

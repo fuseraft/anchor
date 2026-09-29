@@ -1,10 +1,10 @@
 namespace Anchor.Cli;
 
 /// <summary>Command-line options. <see cref="Parse"/> returns an exit code instead when it handled the request itself.</summary>
-public sealed record Options(string? Model, bool Yolo, bool Resume, string? ResumeId, bool Print, string? Prompt, bool Json)
+public sealed record Options(string? Model, bool Yolo, bool Resume, string? ResumeId, bool Print, string? Prompt, bool Json, string? Until = null)
 {
     public const string Usage = """
-        usage: anchor [--model <name>] [--yolo] [--resume [id]] [-p [prompt]] [--json]
+        usage: anchor [--model <name>] [--yolo] [--resume [id]] [-p [prompt]] [--until <check>] [--json]
 
         Starts an interactive coding agent in the current directory.
 
@@ -14,6 +14,8 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
           -r, --resume [id]    continue the latest session in this directory, or the given one
           -p, --print [prompt] run one prompt and print the answer; piped stdin is appended to it
                                (without --yolo, anything that would ask is refused)
+          --until <check>      with -p: after each turn run <check>, and keep working until it exits 0
+                               (at most 5 rounds; exit code 4 if it never passes)
           --json               write events as JSON lines; without -p, read requests from stdin
           --version, --help
 
@@ -22,7 +24,7 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
 
     public static (Options? Options, int ExitCode) Parse(string[] args, TextWriter output, TextWriter error)
     {
-        string? model = null, resumeId = null, prompt = null;
+        string? model = null, resumeId = null, prompt = null, until = null;
         bool yolo = false, resume = false, print = false, json = false;
         for (var i = 0; i < args.Length; i++)
         {
@@ -44,6 +46,9 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
                     print = true;
                     if (HasValue())
                         prompt = args[++i];
+                    break;
+                case "--until" when i + 1 < args.Length:
+                    until = args[++i];
                     break;
                 case "--json":
                     json = true;
@@ -67,7 +72,12 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
             error.WriteLine("anchor: a prompt argument needs -p (to run it and exit).");
             return (null, 2);
         }
-        return (new Options(model, yolo, resume, resumeId, print, prompt, json), 0);
+        if (until is not null && !print)
+        {
+            error.WriteLine("anchor: --until needs -p; in the REPL, use /until <check>.");
+            return (null, 2);
+        }
+        return (new Options(model, yolo, resume, resumeId, print, prompt, json, until), 0);
     }
 
     public static string Version

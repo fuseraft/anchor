@@ -24,7 +24,7 @@ try
         var output = new Output(json is null ? renderer.Render : json.Emit, new RefusingApprover(warn), warn, Interactive: false);
         var h = await Startup.BuildAsync(options, output);
         await using var _ = h.Mcp;
-        return await PrintMode.RunAsync(h, prompt, json, Console.Out);
+        return await PrintMode.RunAsync(h, prompt, json, Console.Out, options.Until);
     }
 
     if (options.Json)

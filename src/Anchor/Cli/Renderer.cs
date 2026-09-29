@@ -41,6 +41,12 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
             case Notice n:
                 Line(Yellow($"  {n.Message}"));
                 break;
+            case CheckRan { Passed: true } c:
+                Line(Green($"  ✓ check passed: {c.Command}"));
+                break;
+            case CheckRan c:
+                Line(Yellow($"  ✗ check failed (round {c.Round} of {Until.MaxRounds}): {c.Command}"));
+                break;
             case LoopWarning w:
                 Line(Yellow($"  ! {w.Message}"));
                 break;

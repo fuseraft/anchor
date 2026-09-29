@@ -69,11 +69,25 @@ git diff | anchor -p "review this change"
 anchor -p --yolo "fix the failing test"      # -p can't ask, so it refuses unless --yolo
 ```
 
-In the REPL: `/help`, `/model`, `/context`, `/compact`, `/undo`, `/sessions`, `/agents`,
+In the REPL: `/help`, `/model`, `/context`, `/until`, `/compact`, `/undo`, `/sessions`, `/agents`,
 `/skills`, `/mcp` (`/mcp login|logout <server>`), `/clear`, `/exit`. `!cmd` runs a command in
 your own shell; the model never sees it. Ctrl+C cancels the running turn.
 
 `AGENTS.md` in the directory is added to the system prompt.
+
+### Work until a check passes
+
+`/until <command>` makes every turn keep going until the command exits 0. After each turn anchor
+runs the command; if it fails, the model gets the output and another round. The loop ends when
+the check passes, when a round changes no files, or after 5 rounds. `/until` shows the check,
+`/until off` clears it, and `/undo` reverts the whole loop.
+
+```sh
+anchor -p --yolo "fix the failing tests" --until "dotnet test"
+```
+
+The check is yours, like `!cmd`, so it runs without asking. Its output is masked before the
+model sees it. A command decides when the work is done, never a model.
 
 ### Sub-agents and skills
 
@@ -111,7 +125,8 @@ Code's format. `${VAR}` in values is replaced from the environment.
 - It reads `{"type":"user_input","text":"..."}`,
   `{"type":"approval_response","id":"a1","answer":"yes|no|always"}` and `{"type":"cancel"}`.
 
-Exit codes for `-p`: 0 completed, 1 error, 2 usage, 3 stopped by the loop guard, 130 cancelled.
+Exit codes for `-p`: 0 completed, 1 error, 2 usage, 3 stopped by the loop guard, 4 the `--until`
+check never passed, 130 cancelled.
 
 ## Develop
 

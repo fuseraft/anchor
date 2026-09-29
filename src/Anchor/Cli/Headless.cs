@@ -10,7 +10,7 @@ namespace Anchor.Cli;
 /// <summary>-p: one turn, then exit. The answer goes to stdout; progress goes to stderr (or everything to stdout as JSON lines).</summary>
 public static class PrintMode
 {
-    public static async Task<int> RunAsync(Harness h, string prompt, JsonEvents? json, TextWriter stdout)
+    public static async Task<int> RunAsync(Harness h, string prompt, JsonEvents? json, TextWriter stdout, string? until = null)
     {
         using var cts = new CancellationTokenSource();
         ConsoleCancelEventHandler cancel = (_, e) =>
@@ -23,7 +23,9 @@ public static class PrintMode
         {
             await h.McpReady;
             h.Gate.BeginTurn();
-            var end = await h.Agent.RunTurnAsync(prompt, cts.Token);
+            var (end, check) = until is null
+                ? (await h.Agent.RunTurnAsync(prompt, cts.Token), (CheckEnd?)null)
+                : await Until.RunAsync(h.Agent, h.Gate, until, prompt, cts.Token);
             h.Session.Sync(h.Agent.History);
 
             var answer = end == TurnEnd.Completed ? FinalText(h.Agent.History) : "";
@@ -33,6 +35,7 @@ public static class PrintMode
                     ["type"] = "result",
                     ["status"] = JsonEvents.Snake(end.ToString()),
                     ["text"] = answer,
+                    ["check"] = check is null ? null : JsonEvents.Snake(check.Value.ToString()),
                     ["session"] = h.Session.Id,
                     ["usage"] = new JsonObject { ["input"] = h.Usage.Input, ["output"] = h.Usage.Output, ["cached"] = h.Usage.Cached },
                 });
@@ -41,6 +44,7 @@ public static class PrintMode
 
             return end switch
             {
+                TurnEnd.Completed when check is not (null or CheckEnd.Passed) => 4,
                 TurnEnd.Completed => 0,
                 TurnEnd.LoopStopped => 3,
                 TurnEnd.Cancelled => 130,
@@ -157,6 +161,7 @@ public sealed class JsonEvents(TextWriter output)
         Trimmed t => Reduced("trimmed", t.Before, t.After, t.Items),
         RoundsDropped d => Reduced("rounds_dropped", d.Before, d.After, d.Rounds),
         Notice n => new() { ["type"] = "notice", ["message"] = n.Message },
+        CheckRan c => new() { ["type"] = "check", ["command"] = c.Command, ["round"] = c.Round, ["passed"] = c.Passed, ["output"] = c.Output },
         SubAgentEvent s => new() { ["type"] = "sub_agent", ["agent"] = s.Agent, ["event"] = Map(s.Inner) },
         UsageReport u => new() { ["type"] = "usage", ["input"] = u.Input, ["output"] = u.Output, ["cached"] = u.CachedInput },
         TurnEnded t => new() { ["type"] = "turn_end", ["reason"] = Snake(t.Reason.ToString()), ["detail"] = t.Detail },

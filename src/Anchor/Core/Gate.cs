@@ -19,6 +19,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     public const string Declined = "The user declined this action. Do not retry it; ask the user how to proceed if you are blocked.";
 
     const int UndoDepth = 20;
+    static readonly TimeSpan CheckTimeout = TimeSpan.FromMinutes(10);
 
     bool _alwaysWrite;
     readonly HashSet<string> _alwaysPrograms = [];
@@ -26,6 +27,9 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     readonly LinkedList<Dictionary<string, (string? Before, string After)>> _turns = [];
 
     public Workspace Workspace => workspace;
+
+    /// <summary>Files written so far; a check loop compares it across a turn to see whether the turn changed anything.</summary>
+    public int Writes { get; private set; }
 
     /// <summary>Resolves a path the tool is about to read.</summary>
     public async Task<string> ReadPathAsync(string? path, CancellationToken ct)
@@ -57,6 +61,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
 
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         await File.WriteAllTextAsync(full, after, ct);
+        Writes++;
         if (_turns.Last?.Value is { } changes)
             changes[full] = (changes.TryGetValue(full, out var first) ? first.Before : before, after);
         emit(new FileChanged(rel, diff.Added, diff.Removed));
@@ -111,46 +116,60 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
         await EnforceAsync(policy.Run(command), new ApprovalRequest($"Run: {command}", null, always),
             known, always is null ? null : () => _alwaysPrograms.UnionWith(programs), ct);
 
-        var result = await ExecuteAsync(command, timeout, ct);
-        return Secrets.Mask(result, workspace);
+        var (_, output) = await ExecuteAsync(command, timeout, ct);
+        return Secrets.Mask(output, workspace);
+    }
 
-        async Task<string> ExecuteAsync(string cmd, TimeSpan limit, CancellationToken token)
+    /// <summary>
+    /// Runs the user's own check command (--until, /until) and reports whether it exited 0. The user wrote it, as with
+    /// <c>!cmd</c>, so there is no policy or approval; the output still reaches the model, so it is masked.
+    /// </summary>
+    public async Task<(bool Passed, string Output)> CheckAsync(string command, int round, CancellationToken ct)
+    {
+        var (exitCode, output) = await ExecuteAsync(command, CheckTimeout, ct);
+        output = Secrets.Mask(output, workspace);
+        emit(new CheckRan(command, round, exitCode == 0, output));
+        return (exitCode == 0, output);
+    }
+
+    async Task<(int? ExitCode, string Output)> ExecuteAsync(string cmd, TimeSpan limit, CancellationToken token)
+    {
+        var psi = OperatingSystem.IsWindows()
+            ? new ProcessStartInfo("cmd.exe", ["/c", cmd])
+            : new ProcessStartInfo(File.Exists("/bin/bash") ? "/bin/bash" : "/bin/sh", ["-c", cmd]);
+        psi.WorkingDirectory = workspace.Root;
+        psi.RedirectStandardInput = psi.RedirectStandardOutput = psi.RedirectStandardError = true;
+        foreach (var (k, v) in new[] { ("TERM", "dumb"), ("NO_COLOR", "1"), ("PAGER", "cat"), ("GIT_PAGER", "cat"), ("GIT_TERMINAL_PROMPT", "0") })
+            psi.Environment[k] = v;
+
+        var output = new StringBuilder();
+        using var process = new Process { StartInfo = psi };
+        process.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (output) output.Append(e.Data).Append('\n'); };
+        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (output) output.Append(e.Data).Append('\n'); };
+        process.Start();
+        process.StandardInput.Close();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        using var limitCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        limitCts.CancelAfter(limit);
+        int? exitCode = null;
+        string status;
+        try
         {
-            var psi = OperatingSystem.IsWindows()
-                ? new ProcessStartInfo("cmd.exe", ["/c", cmd])
-                : new ProcessStartInfo(File.Exists("/bin/bash") ? "/bin/bash" : "/bin/sh", ["-c", cmd]);
-            psi.WorkingDirectory = workspace.Root;
-            psi.RedirectStandardInput = psi.RedirectStandardOutput = psi.RedirectStandardError = true;
-            foreach (var (k, v) in new[] { ("TERM", "dumb"), ("NO_COLOR", "1"), ("PAGER", "cat"), ("GIT_PAGER", "cat"), ("GIT_TERMINAL_PROMPT", "0") })
-                psi.Environment[k] = v;
-
-            var output = new StringBuilder();
-            using var process = new Process { StartInfo = psi };
-            process.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (output) output.Append(e.Data).Append('\n'); };
-            process.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (output) output.Append(e.Data).Append('\n'); };
-            process.Start();
-            process.StandardInput.Close();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-
-            using var limitCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-            limitCts.CancelAfter(limit);
-            string status;
-            try
-            {
-                await process.WaitForExitAsync(limitCts.Token);
-                status = $"[exit code {process.ExitCode}]";
-            }
-            catch (OperationCanceledException)
-            {
-                process.Kill(entireProcessTree: true);
-                token.ThrowIfCancellationRequested();
-                status = $"[timed out after {limit.TotalSeconds:0}s; process killed]";
-            }
-
-            lock (output)
-                return output.Length == 0 ? $"(no output)\n{status}" : $"{output}{status}";
+            await process.WaitForExitAsync(limitCts.Token);
+            exitCode = process.ExitCode;
+            status = $"[exit code {exitCode}]";
         }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            token.ThrowIfCancellationRequested();
+            status = $"[timed out after {limit.TotalSeconds:0}s; process killed]";
+        }
+
+        lock (output)
+            return (exitCode, output.Length == 0 ? $"(no output)\n{status}" : $"{output}{status}");
     }
 
     /// <summary>Calls a tool that lives outside anchor (an MCP server) and returns its masked output.</summary>

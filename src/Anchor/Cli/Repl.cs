@@ -15,6 +15,7 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
     CancellationTokenSource? _turn;
     DateTime _lastIdleInterrupt;
     ProviderSettings _provider = options.Provider;
+    string? _until;
 
     Workspace Workspace => gate.Workspace;
 
@@ -54,7 +55,14 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
             {
                 Console.WriteLine();
                 gate.BeginTurn();
-                await CancellableAsync(ct => agent.RunTurnAsync(line, ct));
+                if (_until is null)
+                    await CancellableAsync(ct => agent.RunTurnAsync(line, ct));
+                else
+                    await CancellableAsync(async ct =>
+                    {
+                        if ((await Until.RunAsync(agent, gate, _until, line, ct)).Check is { } check and not CheckEnd.Passed)
+                            renderer.Line(renderer.Yellow($"  {Until.Describe(check, _until)}"));
+                    });
             }
             session.Sync(agent.History);
         }
@@ -161,6 +169,19 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
                     renderer.Line(renderer.Red(e.Message));
                 }
                 break;
+            case "/until" when parts.Length == 1:
+                renderer.Line(_until is null
+                    ? renderer.Dim("No check. /until <command> keeps each turn going until the command exits 0.")
+                    : $"Check: {_until} {renderer.Dim("(/until off to clear)")}");
+                break;
+            case "/until" when parts[1] == "off":
+                _until = null;
+                renderer.Line(renderer.Dim("Check cleared."));
+                break;
+            case "/until":
+                _until = parts[1];
+                renderer.Line(renderer.Dim($"After each turn anchor runs `{_until}` and keeps working until it exits 0 (at most {Until.MaxRounds} rounds, or until a round changes no files)."));
+                break;
             case "/model" when parts.Length == 1:
                 renderer.Line($"{_provider.Model} {renderer.Dim($"({_provider.Provider})")}");
                 break;
@@ -184,6 +205,7 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
                     /agents         list sub-agents
                     /skills         list skills
                     /mcp            list MCP servers; /mcp login|logout <server> to sign in or out
+                    /until [check]  keep each turn going until the check command exits 0; /until off to stop
                     /compact        summarize older turns now
                     /undo           revert the files changed in the last turn that changed any
                     /sessions       list sessions in this directory

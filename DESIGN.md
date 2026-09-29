@@ -144,8 +144,8 @@ tests/Anchor.Tests/
 ## Surface
 
 ```
-anchor [--yolo] [--resume [id]] [--model m] [-p "prompt"] [--json]
-/help /model /context /compact /undo /sessions /clear /agents /skills /mcp /exit
+anchor [--yolo] [--resume [id]] [--model m] [-p "prompt"] [--until check] [--json]
+/help /model /context /until /compact /undo /sessions /clear /agents /skills /mcp /exit
 !cmd runs in your shell, outside the model's history
 ```
 
@@ -158,13 +158,24 @@ Config lives in `~/.anchor/config.json`. Sessions are stored in `~/.anchor/sessi
   is a socket or a device is ignored when a prompt argument is given, because it may never close.
 - Nobody can answer approvals in `-p`, so anything that would ask is refused and reported, unless
   `--yolo` is on. Project MCP servers that were never approved interactively are skipped.
-- Exit codes: 0 completed, 1 error, 2 usage, 3 stopped by the loop guard, 130 cancelled.
+- Exit codes: 0 completed, 1 error, 2 usage, 3 stopped by the loop guard, 4 the `--until` check never
+  passed, 130 cancelled.
 - `--json` writes every event as one JSON object per line. With `-p` it ends with a `result`
   line. Without `-p` it is a protocol for editors:
   - Requests on stdin: `user_input`, `approval_response`, `cancel`.
   - It announces `ready` whenever it can take input.
   - Approvals arrive as `approval_request` events with an id.
 - Sessions from both modes can be resumed.
+
+## Checks
+
+- `--until <check>` (with `-p`) and `/until <check>` (REPL) run the user's command after each
+  turn. A failing check sends its output back, masked and cut to the tail, as the next message.
+- Done is decided by the exit code, never by a model. The loop ends when the check passes, when
+  a round writes no files (the check would fail the same way; this also covers the model asking
+  the user something), or after 5 rounds.
+- The user wrote the check, as with `!cmd`, so it runs through `Gate.CheckAsync` with no policy
+  or approval. A REPL message and all its rounds are one turn for `/undo`.
 
 ## Not in anchor
 
