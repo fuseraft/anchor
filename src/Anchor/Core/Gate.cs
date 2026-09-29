@@ -22,6 +22,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
 
     bool _alwaysWrite;
     readonly HashSet<string> _alwaysPrograms = [];
+    readonly HashSet<string> _alwaysExternal = [];
     readonly LinkedList<Dictionary<string, (string? Before, string After)>> _turns = [];
 
     public Workspace Workspace => workspace;
@@ -149,6 +150,15 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
             lock (output)
                 return output.Length == 0 ? $"(no output)\n{status}" : $"{output}{status}";
         }
+    }
+
+    /// <summary>Calls a tool that lives outside anchor (an MCP server) and returns its masked output.</summary>
+    public async Task<string> CallExternalAsync(string tool, bool readOnly, string arguments, Func<CancellationToken, Task<string>> call, CancellationToken ct)
+    {
+        var detail = arguments.Length > 2_000 ? arguments[..2_000] + " ..." : arguments;
+        await EnforceAsync(policy.External(readOnly), new ApprovalRequest($"Call {tool}", detail, $"all calls to {tool}"),
+            _alwaysExternal.Contains(tool), () => _alwaysExternal.Add(tool), ct);
+        return Secrets.Mask(await call(ct), workspace);
     }
 
     (string Literal, string Real) Paths(string? path)

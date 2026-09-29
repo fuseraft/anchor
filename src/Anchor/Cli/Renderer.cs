@@ -45,6 +45,9 @@ public sealed class Renderer(TextWriter output, bool color)
             case UsageReport u when u.Input + u.Output > 0:
                 Line(Dim($"  in {u.Input:N0} · out {u.Output:N0}" + (u.CachedInput > 0 ? $" · cached {u.CachedInput:N0}" : "")));
                 break;
+            case SubAgentEvent s:
+                Nested(s.Agent, s.Inner);
+                break;
             case TurnEnded { Reason: TurnEnd.Cancelled }:
                 Line(Yellow("  (cancelled)"));
                 break;
@@ -58,12 +61,47 @@ public sealed class Renderer(TextWriter output, bool color)
         output.Flush();
     }
 
+    // A sub-agent's activity, indented under the agent call; its streamed text stays out of the way.
+    void Nested(string agent, AgentEvent e)
+    {
+        var tag = $"    [{agent}]";
+        switch (e)
+        {
+            case ToolStarted t:
+                Line(Dim($"{tag} ↳ {t.Name} {t.Summary}".TrimEnd()));
+                break;
+            case ToolFinished { Ok: false } t:
+                Line(Red($"{tag}   {FirstLine(t.Result)}"));
+                break;
+            case FileChanged f:
+                Line(Dim($"{tag} ✎ {f.Path} ") + Green($"+{f.Added}") + " " + Red($"-{f.Removed}"));
+                break;
+            case UsageReport u when u.Input + u.Output > 0:
+                Line(Dim($"{tag} in {u.Input:N0} · out {u.Output:N0}"));
+                break;
+            case TurnEnded { Reason: not TurnEnd.Completed } t:
+                Line(Yellow($"{tag} stopped: {t.Detail ?? t.Reason.ToString()}"));
+                break;
+            case LoopWarning or Notice or Compacted or Trimmed or RoundsDropped:
+                Line(Dim($"{tag} {e switch { LoopWarning w => w.Message, Notice n => n.Message, _ => "reduced its context" }}"));
+                break;
+        }
+    }
+
+    /// <summary>Set while the REPL waits for input, so background messages (MCP sign-in, failures) don't land on the prompt line.</summary>
+    public bool AtPrompt { get; set; }
+
     public void Line(string text)
     {
-        if (_midLine)
-            output.WriteLine();
-        output.WriteLine(text);
-        _midLine = false;
+        lock (output)
+        {
+            if (_midLine || AtPrompt)
+                output.WriteLine();
+            output.WriteLine(text);
+            _midLine = false;
+            if (AtPrompt)
+                output.Write("› ");
+        }
     }
 
     /// <summary>Re-shows the last <paramref name="turns"/> turns after a resume: the request, tool count, and final answer.</summary>

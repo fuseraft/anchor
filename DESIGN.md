@@ -8,17 +8,19 @@ tools, plus sub-agents, skills, and MCP. It is built on C# / .NET 10 and `Micros
 ## Shape
 
 ```
-src/Anchor/        one project
-  Agent.cs         the turn loop
-  Gate.cs          the only path to disk and processes: policy, approval, effect
-  Policy.cs        pure allow / ask / deny rules
-  ShellCommand.cs  conservative bash reader: hard denials, read-only commands
-  Tools/           read, list, grep, write, edit, shell, agent, skill
-  Skills.cs        discovery + catalog
-  Mcp.cs           server connections, tool adapter
-  Providers.cs     anthropic (native, cached), openai-compatible
-  Session.cs       append-only JSONL
-  Repl.cs          input, rendering, slash commands
+src/Anchor/              one project
+  Core/Agent.cs          the turn loop
+  Core/Gate.cs           the only path to disk, processes and MCP tools: policy, approval, effect
+  Core/Policy.cs         pure allow / ask / deny rules
+  Core/ShellCommand.cs   conservative bash reader: hard denials, read-only commands
+  Core/Compactor.cs      summarize, trim, drop rounds
+  Core/SessionLog.cs     append-only JSONL
+  Core/Definitions.cs    skills and sub-agent definitions (YAML frontmatter)
+  Core/SubAgentRunner.cs fresh agent per task, same gate
+  Tools/                 read, list, glob, grep, write, edit, shell, agent, skill
+  Mcp/                   config and trust, background connections, OAuth, keychain
+  Providers/             anthropic (native, cached), openai-compatible
+  Cli/                   REPL, rendering, approvals, config
 tests/Anchor.Tests/
 ```
 
@@ -55,7 +57,9 @@ tests/Anchor.Tests/
   (frontmatter: `name`, `description`, `tools`, `model`; the body is the prompt).
 - Sub-agents can't spawn other sub-agents: depth is limited to 1.
 - Events are tagged with the agent's id, so the renderer can nest them. Sub-agent token usage
-  counts toward the session total.
+  counts toward the session total shown by `/context`.
+- Sub-agents run one at a time, so two approval prompts never appear at once. `/agents` lists
+  them.
 
 ## Skills
 
@@ -66,7 +70,9 @@ tests/Anchor.Tests/
 - Only the catalog (name + description) goes into the system prompt. The `skill(name)` tool
   loads the full body.
 - Skill resources are read with `read` and scripts run with `shell`, so the gate covers them.
-  There is no separate script runner that skips the checks.
+  There is no separate script runner that skips the checks. Files in installed skill
+  directories can be read without asking; secret files in them are still denied.
+- A skill or agent file that is a symlink to a secret file is skipped. `/skills` lists them.
 
 ## MCP
 
@@ -75,7 +81,8 @@ tests/Anchor.Tests/
   `.mcp.json`. The shape matches Claude Code's: `command`/`args`/`env` for stdio,
   `url`/`headers` for HTTP. Headers expand `${ENV_VAR}`.
 - A project `.mcp.json` can launch arbitrary commands, so anchor asks once per server before it
-  first starts one, and remembers the answer.
+  first starts one. It remembers the answer for that exact config, and asks again if the config
+  changes. On a name clash, the user's own config wins.
 - MCP tools appear as `mcp__<server>__<tool>`. They run through the gate like every other tool:
   - A tool marked `readOnlyHint` runs without asking.
   - Every other MCP tool asks first, unless `--yolo` is on.
@@ -92,8 +99,9 @@ tests/Anchor.Tests/
 - `/mcp login <server>` and `/mcp logout <server>` manage sign-ins.
 - The connect timeout stretches to 5 minutes while sign-in is pending.
 - The browser launcher can be swapped out in tests.
-- Servers connect in the background. A server that fails to start shows a warning instead of
-  blocking the REPL.
+- Servers connect in the background, one at a time, so two sign-ins never compete for the
+  callback port. A server that fails to start shows a warning instead of blocking the REPL.
+  `/mcp` shows each server's state.
 
 ## Context
 

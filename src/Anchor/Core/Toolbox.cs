@@ -3,18 +3,51 @@ using Microsoft.Extensions.AI;
 
 namespace Anchor.Core;
 
-/// <summary>The tools offered to the model, and dispatch of their calls.</summary>
+/// <summary>The tools offered to the model, and dispatch of their calls. Tools can be added later (MCP servers connect in the background).</summary>
 public sealed class Toolbox(IEnumerable<AIFunction> tools)
 {
     public const int MaxResultChars = 30_000;
 
     readonly Dictionary<string, AIFunction> _tools = tools.ToDictionary(t => t.Name);
+    readonly Lock _lock = new();
 
-    public IList<AITool> Declarations => [.. _tools.Values];
+    public IList<AITool> Declarations
+    {
+        get { lock (_lock) return [.. _tools.Values]; }
+    }
+
+    public IReadOnlyList<string> Names
+    {
+        get { lock (_lock) return [.. _tools.Keys.Order(StringComparer.Ordinal)]; }
+    }
+
+    public void Add(IEnumerable<AIFunction> more)
+    {
+        lock (_lock)
+            foreach (var tool in more)
+                _tools[tool.Name] = tool;
+    }
+
+    public void Remove(Func<string, bool> match)
+    {
+        lock (_lock)
+            foreach (var name in _tools.Keys.Where(match).ToList())
+                _tools.Remove(name);
+    }
+
+    /// <summary>A new toolbox with only the named tools that exist right now.</summary>
+    public Toolbox Subset(IEnumerable<string> names)
+    {
+        lock (_lock)
+            return new Toolbox(names.Select(n => _tools.GetValueOrDefault(n)).OfType<AIFunction>().Distinct());
+    }
 
     public async Task<(string Text, bool Ok)> InvokeAsync(FunctionCallContent call, CancellationToken ct)
     {
-        if (!_tools.TryGetValue(call.Name, out var tool))
+        AIFunction? tool;
+        lock (_lock)
+            _tools.TryGetValue(call.Name, out tool);
+        if (tool is null)
             return ($"Error: unknown tool '{call.Name}'.", false);
 
         try

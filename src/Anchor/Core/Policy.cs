@@ -12,8 +12,11 @@ public readonly record struct Verdict(Decision Decision, string Reason = "")
 }
 
 /// <summary>Pure rules: what may be read, written, or run. <c>--yolo</c> turns every Ask into Allow; it never lifts a Deny.</summary>
-public sealed class Policy(Workspace workspace, bool yolo = false)
+/// <param name="readRoots">Extra directories that may be read without asking, such as installed skills.</param>
+public sealed class Policy(Workspace workspace, bool yolo = false, IEnumerable<string>? readRoots = null)
 {
+    readonly List<string> _readRoots = [.. (readRoots ?? []).Where(Directory.Exists).Select(r => Workspace.RealPath(Path.GetFullPath(r)))];
+
     public const string InsideWrite = "write inside the workspace";
 
     public bool Yolo { get; } = yolo;
@@ -22,7 +25,7 @@ public sealed class Policy(Workspace workspace, bool yolo = false)
     {
         if (Secrets.IsSecretPath(literal) || Secrets.IsSecretPath(real))
             return Verdict.Deny("secret and credential files are always denied");
-        if (!workspace.IsInside(real))
+        if (!workspace.IsInside(real) && !_readRoots.Any(r => real == r || real.StartsWith(r + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
             return Yolo ? Verdict.Allow : Verdict.Ask("outside the workspace");
         return Verdict.Allow;
     }
@@ -35,6 +38,9 @@ public sealed class Policy(Workspace workspace, bool yolo = false)
             return Verdict.Allow;
         return Verdict.Ask(workspace.IsInside(real) ? InsideWrite : "outside the workspace");
     }
+
+    /// <summary>A tool on an MCP server: runs freely when the server marks it read-only, otherwise asks.</summary>
+    public Verdict External(bool readOnly) => readOnly || Yolo ? Verdict.Allow : Verdict.Ask("external tool");
 
     public Verdict Run(string command)
     {

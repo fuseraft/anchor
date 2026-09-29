@@ -14,6 +14,10 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
 
     public List<ChatMessage> History { get; } = [];
 
+    public IChatClient Client => _client;
+
+    public ChatOptions Options => _options;
+
     public string SystemPrompt { get; set; } = systemPrompt;
 
     /// <summary>Size of the last request plus its reply, as reported by the provider; null when unknown.</summary>
@@ -61,6 +65,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
                 streamed = [];
                 try
                 {
+                    _options.Tools = toolbox.Declarations;
                     await foreach (var update in _client.GetStreamingResponseAsync(Context(), _options, ct))
                     {
                         streamed.Add(update);

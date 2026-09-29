@@ -4,7 +4,7 @@ namespace Anchor.Core;
 
 public static class SystemPrompt
 {
-    public static string Build(Workspace workspace, DateOnly today)
+    public static string Build(Workspace workspace, DateOnly today, IReadOnlyList<Skill>? skills = null)
     {
         var prompt = $"""
             You are anchor, a coding agent working in a terminal.
@@ -25,6 +25,9 @@ public static class SystemPrompt
         var agentsMd = Path.Combine(workspace.Root, "AGENTS.md");
         if (File.Exists(agentsMd))
             prompt += $"\n\n# Project instructions (AGENTS.md)\n\n{File.ReadAllText(agentsMd).Trim()}";
+        if (skills is { Count: > 0 })
+            prompt += "\n\n# Skills\nSkills hold instructions for specific kinds of work. When a task matches one, load it with the skill tool first.\n"
+                      + string.Join('\n', skills.Select(s => $"- {s.Name}: {s.Description}"));
         return prompt;
     }
 }

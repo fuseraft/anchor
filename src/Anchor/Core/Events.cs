@@ -21,6 +21,9 @@ public sealed record RoundsDropped(int Rounds, long Before, long After) : AgentE
 
 public sealed record Notice(string Message) : AgentEvent;
 
+/// <summary>An event from a sub-agent, tagged with its name.</summary>
+public sealed record SubAgentEvent(string Agent, AgentEvent Inner) : AgentEvent;
+
 public sealed record UsageReport(long Input, long Output, long CachedInput) : AgentEvent;
 
 public sealed record TurnEnded(TurnEnd Reason, string? Detail = null) : AgentEvent;

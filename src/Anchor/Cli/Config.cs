@@ -9,6 +9,8 @@ public sealed class Config
 
     public ProviderConfig Provider { get; set; } = new();
 
+    public Dictionary<string, Anchor.Mcp.McpServerConfig>? McpServers { get; set; }
+
     public static string Home =>
         Environment.GetEnvironmentVariable("ANCHOR_HOME") is { Length: > 0 } home
             ? home

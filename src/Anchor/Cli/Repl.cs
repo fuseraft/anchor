@@ -4,7 +4,8 @@ using Anchor.Providers;
 
 namespace Anchor.Cli;
 
-public sealed record ReplOptions(ProviderSettings Provider, string SessionsDir, bool Yolo, bool Resumed, long ContextWindow);
+public sealed record ReplOptions(ProviderSettings Provider, string SessionsDir, bool Yolo, bool Resumed, long ContextWindow,
+    IReadOnlyList<Skill> Skills, IReadOnlyList<AgentDefinition> Agents, SessionUsage Usage, Anchor.Mcp.McpHub Mcp);
 
 /// <summary>The interactive loop: read a line, run it as a slash command, a shell escape, or an agent turn.</summary>
 public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer renderer, ReplOptions options)
@@ -33,7 +34,9 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
         while (true)
         {
             Console.Write("\n› ");
+            renderer.AtPrompt = true;
             var line = Console.ReadLine();
+            renderer.AtPrompt = false;
             if (line is null)
                 return 0;
             line = line.Trim();
@@ -100,6 +103,21 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
                 var tokens = agent.ContextTokens;
                 renderer.Line($"~{tokens:N0} of {options.ContextWindow:N0} tokens ({100.0 * tokens / options.ContextWindow:0}%), {agent.History.Count} messages" +
                               (agent.LastContextTokens is null ? renderer.Dim(" (estimated)") : ""));
+                var u = options.Usage;
+                renderer.Line(renderer.Dim($"Session so far, including sub-agents: in {u.Input:N0} · out {u.Output:N0} · cached {u.Cached:N0}"));
+                break;
+            case "/agents":
+                renderer.Line($"agent (default)  {renderer.Dim("read-only: " + string.Join(", ", SubAgentRunner.ReadOnlyTools))}");
+                foreach (var a in options.Agents)
+                    renderer.Line($"{a.Name}  {renderer.Dim(a.Description)}" +
+                                  renderer.Dim($" [tools: {(a.Tools is null ? "read-only" : string.Join(", ", a.Tools))}{(a.Model is null ? "" : $"; model: {a.Model}")}]"));
+                renderer.Line(renderer.Dim("Define more in .agents/agents/<name>.md or ~/.anchor/agents/<name>.md."));
+                break;
+            case "/skills":
+                if (options.Skills.Count == 0)
+                    renderer.Line(renderer.Dim("No skills. Add one as .agents/skills/<name>/SKILL.md or ~/.anchor/skills/<name>/SKILL.md."));
+                foreach (var s in options.Skills)
+                    renderer.Line($"{s.Name}  {renderer.Dim(s.Description)}");
                 break;
             case "/undo":
                 var (restored, skipped) = gate.Undo();
@@ -117,6 +135,31 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
                 foreach (var s in SessionLog.List(options.SessionsDir, Workspace.Root).Take(10))
                     renderer.Line($"{(s.Id == session.Id ? "*" : " ")} {s.Id}  {renderer.Dim(s.Updated.ToString("g"))}  {Truncate(s.Title, 60)}");
                 renderer.Line(renderer.Dim("Resume one with: anchor --resume <id>"));
+                break;
+            case "/mcp" when parts.Length == 1:
+                if (options.Mcp.Status.Count == 0)
+                    renderer.Line(renderer.Dim("No MCP servers. Add them under mcpServers in ~/.anchor/config.json or in the project's .mcp.json."));
+                foreach (var s in options.Mcp.Status)
+                    renderer.Line($"{s.Name}  {s.State}{(s.Tools > 0 ? $", {s.Tools} tools" : "")}" + (s.Detail is null ? "" : renderer.Dim($"  {s.Detail}")));
+                break;
+            case "/mcp":
+                var mcp = parts[1].Split(' ', 2, StringSplitOptions.TrimEntries);
+                try
+                {
+                    if (mcp is ["login", var name])
+                        await CancellableAsync(ct => options.Mcp.ConnectAsync(name, ct));
+                    else if (mcp is ["logout", var name2])
+                    {
+                        await options.Mcp.LogoutAsync(name2);
+                        renderer.Line(renderer.Dim($"Signed out of {name2}."));
+                    }
+                    else
+                        renderer.Line(renderer.Red("Usage: /mcp, /mcp login <server>, /mcp logout <server>"));
+                }
+                catch (InvalidOperationException e)
+                {
+                    renderer.Line(renderer.Red(e.Message));
+                }
                 break;
             case "/model" when parts.Length == 1:
                 renderer.Line($"{_provider.Model} {renderer.Dim($"({_provider.Provider})")}");
@@ -137,7 +180,10 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
             case "/help":
                 renderer.Line("""
                     /model [name]   show or switch the model
-                    /context        how full the context window is
+                    /context        how full the context window is, and session token usage
+                    /agents         list sub-agents
+                    /skills         list skills
+                    /mcp            list MCP servers; /mcp login|logout <server> to sign in or out
                     /compact        summarize older turns now
                     /undo           revert the files changed in the last turn that changed any
                     /sessions       list sessions in this directory
