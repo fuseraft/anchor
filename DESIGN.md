@@ -151,6 +151,21 @@ anchor [--yolo] [--resume [id]] [--model m] [-p "prompt"] [--json]
 
 Config lives in `~/.anchor/config.json`. Sessions are stored in `~/.anchor/sessions/`.
 
+## Headless
+
+- `-p` runs one turn and exits. Only the final answer goes to stdout; progress goes to stderr.
+- Piped stdin is appended to the prompt, or is the prompt when there's no argument. A stdin that
+  is a socket or a device is ignored when a prompt argument is given, because it may never close.
+- Nobody can answer approvals in `-p`, so anything that would ask is refused and reported, unless
+  `--yolo` is on. Project MCP servers that were never approved interactively are skipped.
+- Exit codes: 0 completed, 1 error, 2 usage, 3 stopped by the loop guard, 130 cancelled.
+- `--json` writes every event as one JSON object per line. With `-p` it ends with a `result`
+  line. Without `-p` it is a protocol for editors:
+  - Requests on stdin: `user_input`, `approval_response`, `cancel`.
+  - It announces `ready` whenever it can take input.
+  - Approvals arrive as `approval_request` events with an id.
+- Sessions from both modes can be resumed.
+
 ## Not in anchor
 
 Multi-agent orchestration (graphs, routing, validators), plans, memory, telemetry, and a
@@ -168,4 +183,5 @@ plugin registry. Any of these can be added later as a tool behind the gate.
 2. Gate, write/edit/shell tools, and approvals.
 3. Sessions, resume, and compaction.
 4. Sub-agents, skills, and MCP.
-5. `-p` and `--json` modes, then the v0.1.0 release.
+5. `-p` and `--json` modes, then the v0.1.0 release (Linux and macOS; Windows waits for
+   shell safety rules that understand cmd and PowerShell).

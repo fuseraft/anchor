@@ -3,7 +3,7 @@ using Anchor.Core;
 namespace Anchor.Cli;
 
 /// <summary>Draws agent events on a terminal.</summary>
-public sealed class Renderer(TextWriter output, bool color)
+public sealed class Renderer(TextWriter output, bool color, bool streamText = true)
 {
     bool _midLine;
 
@@ -14,6 +14,8 @@ public sealed class Renderer(TextWriter output, bool color)
     {
         switch (e)
         {
+            case TextDelta when !streamText:
+                break;
             case TextDelta t:
                 output.Write(t.Text);
                 _midLine = !t.Text.EndsWith('\n');

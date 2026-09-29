@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # MinVer derives the version from git tags
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test
+        run: dotnet test --logger "console;verbosity=normal"
+        env:
+          GIT_CONFIG_GLOBAL: /dev/null
+
+  # Windows is not published yet: the shell safety rules assume bash.
+  publish:
+    name: Publish (${{ matrix.rid }})
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [linux-x64, linux-arm64, osx-x64, osx-arm64]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish
+        run: dotnet publish src/Anchor -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -o out
+
+      - name: Archive
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF" == refs/tags/v* ]] || VERSION="dev-$(git rev-parse --short HEAD)"
+          tar -czf "anchor-$VERSION-${{ matrix.rid }}.tar.gz" -C out anchor
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: anchor-${{ matrix.rid }}
+          path: anchor-*.tar.gz
+          retention-days: 30
+
+  release:
+    name: GitHub Release
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: artifacts/*
+          generate_release_notes: true
