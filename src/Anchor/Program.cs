@@ -5,6 +5,8 @@ using Anchor.Tools;
 
 string? model = null;
 var yolo = false;
+var resume = false;
+string? resumeId = null;
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -15,13 +17,19 @@ for (var i = 0; i < args.Length; i++)
         case "--yolo":
             yolo = true;
             break;
+        case "--resume" or "-r":
+            resume = true;
+            if (i + 1 < args.Length && !args[i + 1].StartsWith('-'))
+                resumeId = args[++i];
+            break;
         case "--help" or "-h":
             Console.WriteLine("""
-                usage: anchor [--model <name>] [--yolo]
+                usage: anchor [--model <name>] [--yolo] [--resume [id]]
 
                 Starts an interactive coding agent in the current directory.
                 Writes, commands and reads outside the directory ask first; --yolo allows them
                 without asking. Secret files and dangerous commands are always denied.
+                --resume continues the latest session in this directory, or the given one.
                 Config: ~/.anchor/config.json (ANCHOR_HOME overrides the directory).
                 """);
             return 0;
@@ -44,9 +52,19 @@ try
     var renderer = Renderer.ForConsole();
     var gate = new Gate(workspace, new Policy(workspace, yolo), new ConsoleApprover(renderer), renderer.Render);
     var toolbox = new Toolbox([.. new FileTools(gate).All(), .. new EditTools(gate).All(), .. new ShellTool(gate).All()]);
-    var agent = new Agent(client, toolbox, SystemPrompt.Build(workspace, DateOnly.FromDateTime(DateTime.Now)), renderer.Render, Providers.Options(provider));
+    var window = Providers.ContextWindow(provider, config.Provider.ContextWindow);
+    var agent = new Agent(client, toolbox, SystemPrompt.Build(workspace, DateOnly.FromDateTime(DateTime.Now)), renderer.Render,
+        Providers.Options(provider), compactor: new Compactor(window));
 
-    return await new Repl(agent, renderer, workspace, provider, yolo).RunAsync();
+    var sessionsDir = Path.Combine(Config.Home, "sessions");
+    var session = SessionLog.Create(sessionsDir, workspace.Root, provider.Model);
+    if (resume)
+    {
+        (session, var history) = SessionLog.Open(sessionsDir, resumeId, workspace.Root, provider.Model);
+        agent.History.AddRange(history);
+    }
+
+    return await new Repl(agent, gate, session, renderer, new ReplOptions(provider, sessionsDir, yolo, resume, window)).RunAsync();
 }
 catch (InvalidOperationException e)
 {

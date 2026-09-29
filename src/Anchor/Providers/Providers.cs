@@ -72,6 +72,15 @@ public static class Providers
         }
     }
 
+    /// <summary>Context window in tokens, from config or a conservative per-family default.</summary>
+    public static long ContextWindow(ProviderSettings settings, long? configured) =>
+        configured ?? settings.Model switch
+        {
+            var m when m.StartsWith("claude-", StringComparison.OrdinalIgnoreCase) => 200_000,
+            var m when m.StartsWith("grok-4", StringComparison.OrdinalIgnoreCase) => 256_000,
+            _ => 128_000,
+        };
+
     /// <summary>Options every request carries; Anthropic requires an explicit output cap.</summary>
     public static ChatOptions Options(ProviderSettings settings) => new()
     {

@@ -13,6 +13,14 @@ public sealed record FileChanged(string Path, int Added, int Removed) : AgentEve
 
 public sealed record LoopWarning(string Message) : AgentEvent;
 
+public sealed record Compacted(long Before, long After) : AgentEvent;
+
+public sealed record Trimmed(int Items, long Before, long After) : AgentEvent;
+
+public sealed record RoundsDropped(int Rounds, long Before, long After) : AgentEvent;
+
+public sealed record Notice(string Message) : AgentEvent;
+
 public sealed record UsageReport(long Input, long Output, long CachedInput) : AgentEvent;
 
 public sealed record TurnEnded(TurnEnd Reason, string? Detail = null) : AgentEvent;

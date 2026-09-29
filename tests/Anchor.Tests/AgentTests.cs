@@ -201,6 +201,201 @@ public class AgentTests
         Assert.DoesNotContain(_events, e => e is LoopWarning);
     }
 
+    static readonly string Long = new('a', 2_000);
+
+    Agent CompactingAgent(FakeChatClient client, long window = 1_000) =>
+        new(client, new Toolbox([Echo(), Fail()]), "system", _events.Add, compactor: new Compactor(window, preserveRatio: 0));
+
+    [Fact]
+    public async Task ContextNearlyFull_CompactsAfterTheTurn()
+    {
+        var client = new FakeChatClient().Text(Long, input: 100).Text("two", input: 850).Text("summary of one");
+        var agent = CompactingAgent(client);
+
+        await agent.RunTurnAsync("first", CancellationToken.None);
+        Assert.DoesNotContain(_events, e => e is Compacted);
+
+        await agent.RunTurnAsync("second", CancellationToken.None);
+
+        Assert.Contains(_events, e => e is Compacted);
+        Assert.Equal(["[Earlier conversation, summarized]\n\nsummary of one", "second", "two"], agent.History.Select(m => m.Text));
+        Assert.Null(agent.LastContextTokens);
+    }
+
+    [Fact]
+    public async Task ContextNearlyFull_MidTurn_KeepsTheCurrentTurn()
+    {
+        var client = new FakeChatClient().Text(Long, input: 100)
+            .Enqueue(_ => new[]
+            {
+                new ChatResponseUpdate(ChatRole.Assistant, [new FunctionCallContent("e1", "echo", FakeChatClient.Args(new { text = "x" }))]) { MessageId = "m" },
+                new ChatResponseUpdate(ChatRole.Assistant, [new UsageContent(new() { InputTokenCount = 900, OutputTokenCount = 5 })]) { MessageId = "m" },
+            }.ToAsyncEnumerable())
+            .Text("summary of one")
+            .Text("finished", input: 200);
+        var agent = CompactingAgent(client);
+
+        await agent.RunTurnAsync("first", CancellationToken.None);
+        var end = await agent.RunTurnAsync("second", CancellationToken.None);
+
+        Assert.Equal(TurnEnd.Completed, end);
+        Assert.Equal(MessageKind.Summary, Messages.Kind(agent.History[0]));
+        Assert.Equal("second", agent.History[1].Text);
+        Assert.Equal("finished", agent.History[^1].Text);
+        AssertEveryCallAnswered(agent);
+    }
+
+    [Fact]
+    public async Task ContextOverflow_CompactsAndRetriesOnce()
+    {
+        var client = new FakeChatClient().Text(Long)
+            .Throws(new HttpRequestException("prompt is too long: 300000 tokens > 200000 maximum"))
+            .Text("summary of one")
+            .Text("recovered");
+        var agent = CompactingAgent(client, window: 100_000);
+
+        await agent.RunTurnAsync("first", CancellationToken.None);
+        var end = await agent.RunTurnAsync("second", CancellationToken.None);
+
+        Assert.Equal(TurnEnd.Completed, end);
+        Assert.Contains(_events, e => e is Notice);
+        Assert.Equal("recovered", agent.History[^1].Text);
+    }
+
+    static readonly AIFunction Big = AIFunctionFactory.Create((int n) => $"result{n}:" + new string('r', 4_000), "big");
+
+    static IAsyncEnumerable<ChatResponseUpdate> BigCall(int n, long input) => new[]
+    {
+        new ChatResponseUpdate(ChatRole.Assistant, [new FunctionCallContent($"b{n}", "big", FakeChatClient.Args(new { n }))]) { MessageId = "m" },
+        new ChatResponseUpdate(ChatRole.Assistant, [new UsageContent(new() { InputTokenCount = input, OutputTokenCount = 5 })]) { MessageId = "m" },
+    }.ToAsyncEnumerable();
+
+    [Fact]
+    public async Task OneLongTurn_TrimsItsOwnOldToolResults()
+    {
+        var client = new FakeChatClient().Enqueue(_ => BigCall(1, 300)).Enqueue(_ => BigCall(2, 1_700)).Text("done", input: 400);
+        var agent = new Agent(client, new Toolbox([Big]), "system", _events.Add, compactor: new Compactor(2_000));
+
+        var end = await agent.RunTurnAsync("go", CancellationToken.None);
+
+        Assert.Equal(TurnEnd.Completed, end);
+        Assert.Contains(_events, e => e is Trimmed { Items: 1 });
+        Assert.DoesNotContain(_events, e => e is Compacted);
+        var results = agent.History.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(Messages.ResultText).ToList();
+        Assert.StartsWith("[anchor: this result was removed", results[0]);
+        Assert.StartsWith("result2:", results[1]);
+        Assert.Contains("[anchor: this result was removed", client.Requests[2].SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(Messages.ResultText).First());
+        AssertEveryCallAnswered(agent);
+    }
+
+    [Fact]
+    public async Task Trimming_UsesTheRealTokenCount_NotJustTheEstimate()
+    {
+        var client = new FakeChatClient().Enqueue(_ => BigCall(1, 300)).Enqueue(_ => BigCall(2, 8_500)).Text("done", input: 400);
+        var agent = new Agent(client, new Toolbox([Big]), "system", _events.Add, compactor: new Compactor(10_000));
+
+        await agent.RunTurnAsync("go", CancellationToken.None);
+
+        Assert.Contains(_events, e => e is Trimmed { Items: 1 });
+        Assert.DoesNotContain(_events, e => e is Notice);
+    }
+
+    static readonly AIFunction Small = AIFunctionFactory.Create((int n) => $"small{n}:" + new string('s', 300), "small");
+
+    static IAsyncEnumerable<ChatResponseUpdate> SmallCall(int n, long input) => new[]
+    {
+        new ChatResponseUpdate(ChatRole.Assistant, [new FunctionCallContent($"s{n}", "small", FakeChatClient.Args(new { n }))]) { MessageId = "m" },
+        new ChatResponseUpdate(ChatRole.Assistant, [new UsageContent(new() { InputTokenCount = input, OutputTokenCount = 5 })]) { MessageId = "m" },
+    }.ToAsyncEnumerable();
+
+    [Fact]
+    public async Task ManySmallRounds_DropsTheOldestAndFinishes()
+    {
+        var client = new FakeChatClient();
+        for (var i = 0; i < 40; i++)
+        {
+            var n = i;
+            client.Enqueue(_ => SmallCall(n, 150 + 40L * n));
+        }
+        client.Text("done", input: 500);
+        var agent = new Agent(client, new Toolbox([Small]), "system", _events.Add, compactor: new Compactor(2_000));
+
+        var end = await agent.RunTurnAsync("go", CancellationToken.None);
+
+        Assert.Equal(TurnEnd.Completed, end);
+        Assert.Contains(_events, e => e is RoundsDropped);
+        Assert.DoesNotContain(_events, e => e is Notice);
+        Assert.Equal(MessageKind.Note, Messages.Kind(agent.History[1]));
+        Assert.Contains("small: 0;", agent.History[1].Text);
+        Assert.Contains(client.Requests[^1], m => Messages.Kind(m) == MessageKind.Note);
+        AssertEveryCallAnswered(agent);
+    }
+
+    [Fact]
+    public async Task TrimmingThatClearsTheTrigger_DoesNotAlsoDropRounds()
+    {
+        var client = new FakeChatClient().Enqueue(_ => BigCall(0, 100));
+        for (var i = 1; i <= 10; i++)
+        {
+            var n = i;
+            client.Enqueue(_ => SmallCall(n, 100));
+        }
+        client.Enqueue(_ => SmallCall(11, 8_300)).Text("done", input: 500);
+        var agent = new Agent(client, new Toolbox([Big, Small]), "system", _events.Add, compactor: new Compactor(10_000));
+
+        await agent.RunTurnAsync("go", CancellationToken.None);
+
+        Assert.Contains(_events, e => e is Trimmed);
+        Assert.DoesNotContain(_events, e => e is RoundsDropped);
+    }
+
+    [Fact]
+    public async Task ContextOverflow_WithManySmallRounds_DropsAndRetries()
+    {
+        var client = new FakeChatClient();
+        for (var i = 0; i < 6; i++)
+        {
+            var n = i;
+            client.Enqueue(_ => SmallCall(n, 100));
+        }
+        client.Throws(new HttpRequestException("maximum context length exceeded")).Text("recovered");
+        var agent = new Agent(client, new Toolbox([Small]), "system", _events.Add, compactor: new Compactor(100_000));
+
+        var end = await agent.RunTurnAsync("go", CancellationToken.None);
+
+        Assert.Equal(TurnEnd.Completed, end);
+        Assert.Contains(_events, e => e is RoundsDropped);
+        AssertEveryCallAnswered(agent);
+    }
+
+    [Fact]
+    public async Task ContextOverflow_InOneLongTurn_TrimsAndRetries()
+    {
+        var client = new FakeChatClient()
+            .Enqueue(_ => BigCall(1, 100)).Enqueue(_ => BigCall(2, 100))
+            .Throws(new HttpRequestException("maximum context length exceeded"))
+            .Text("recovered");
+        var agent = new Agent(client, new Toolbox([Big]), "system", _events.Add, compactor: new Compactor(100_000));
+
+        var end = await agent.RunTurnAsync("go", CancellationToken.None);
+
+        Assert.Equal(TurnEnd.Completed, end);
+        Assert.Contains(_events, e => e is Trimmed);
+        Assert.Equal("recovered", agent.History[^1].Text);
+    }
+
+    [Fact]
+    public async Task ContextOverflow_WithNothingToCompact_SurfacesTheError()
+    {
+        var client = new FakeChatClient().Throws(new HttpRequestException("maximum context length exceeded"));
+        var agent = CompactingAgent(client, window: 100_000);
+
+        var end = await agent.RunTurnAsync("huge", CancellationToken.None);
+
+        Assert.Equal(TurnEnd.Error, end);
+        Assert.Empty(agent.History);
+    }
+
     static void AssertEveryCallAnswered(Agent agent)
     {
         var calls = agent.History.SelectMany(m => m.Contents).OfType<FunctionCallContent>().Select(c => c.CallId);

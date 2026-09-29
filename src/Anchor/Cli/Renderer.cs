@@ -27,6 +27,18 @@ public sealed class Renderer(TextWriter output, bool color)
             case FileChanged f:
                 Line(Dim($"  ✎ {f.Path} ") + Green($"+{f.Added}") + " " + Red($"-{f.Removed}"));
                 break;
+            case Compacted c:
+                Line(Dim($"  ⟳ compacted older turns: ~{c.Before:N0} → ~{c.After:N0} tokens"));
+                break;
+            case Trimmed t:
+                Line(Dim($"  ⟳ trimmed {t.Items} large old tool input{(t.Items == 1 ? "" : "s")}/output{(t.Items == 1 ? "" : "s")}: ~{t.Before:N0} → ~{t.After:N0} tokens"));
+                break;
+            case RoundsDropped d:
+                Line(Dim($"  ⟳ dropped the {d.Rounds} oldest step{(d.Rounds == 1 ? "" : "s")} of this turn: ~{d.Before:N0} → ~{d.After:N0} tokens"));
+                break;
+            case Notice n:
+                Line(Yellow($"  {n.Message}"));
+                break;
             case LoopWarning w:
                 Line(Yellow($"  ! {w.Message}"));
                 break;
@@ -52,6 +64,27 @@ public sealed class Renderer(TextWriter output, bool color)
             output.WriteLine();
         output.WriteLine(text);
         _midLine = false;
+    }
+
+    /// <summary>Re-shows the last <paramref name="turns"/> turns after a resume: the request, tool count, and final answer.</summary>
+    public void Replay(IReadOnlyList<Microsoft.Extensions.AI.ChatMessage> history, int turns)
+    {
+        var starts = Enumerable.Range(0, history.Count).Where(i => Messages.IsUserInput(history[i])).ToList();
+        if (history.Count > 0 && Messages.Kind(history[0]) == MessageKind.Summary && (starts.Count <= turns))
+            Line(Dim("  (earlier conversation summarized)"));
+        foreach (var (start, n) in starts.Select((s, n) => (s, n)).TakeLast(turns))
+        {
+            var end = n + 1 < starts.Count ? starts[n + 1] : history.Count;
+            var turn = history.Skip(start).Take(end - start).ToList();
+            var calls = turn.SelectMany(m => m.Contents).OfType<Microsoft.Extensions.AI.FunctionCallContent>().Count();
+            var answer = turn.LastOrDefault(m => m.Role == Microsoft.Extensions.AI.ChatRole.Assistant && m.Text.Length > 0)?.Text ?? "";
+            Line("");
+            Line(Bold("› ") + FirstLine(turn[0].Text));
+            if (calls > 0)
+                Line(Dim($"  ↳ {calls} tool call{(calls == 1 ? "" : "s")}"));
+            if (answer.Length > 0)
+                Line(answer.Trim());
+        }
     }
 
     public void Diff(string diff, int maxLines = 80)

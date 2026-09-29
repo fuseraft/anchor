@@ -46,4 +46,6 @@ public sealed class ProviderConfig
     public string? Endpoint { get; set; }
 
     public string? ApiKeyEnv { get; set; }
+
+    public long? ContextWindow { get; set; }
 }

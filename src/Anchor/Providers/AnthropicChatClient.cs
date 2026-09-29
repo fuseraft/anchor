@@ -22,6 +22,7 @@ internal sealed class AnthropicChatClient(AnthropicClient client) : IChatClient
         IEnumerable<ChatMessage> messages, ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        Usage? start = null;
         await foreach (var response in client.Messages.StreamClaudeMessageAsync(Parameters(messages, options), cancellationToken))
         {
             var update = new ChatResponseUpdate
@@ -32,8 +33,7 @@ internal sealed class AnthropicChatClient(AnthropicClient client) : IChatClient
                 Role = ChatRole.Assistant,
             };
 
-            if (response.StreamStartMessage?.Usage is { } startUsage)
-                update.Contents.Add(new UsageContent(ChatClientHelper.CreateUsageDetails(startUsage)));
+            start ??= response.StreamStartMessage?.Usage;
 
             if (response.Delta is { } delta)
             {
@@ -42,7 +42,7 @@ internal sealed class AnthropicChatClient(AnthropicClient client) : IChatClient
                 if (delta.StopReason is { } stop)
                     update.FinishReason = stop == "max_tokens" ? ChatFinishReason.Length : ChatFinishReason.Stop;
                 if (response.Usage is { } usage)
-                    update.Contents.Add(new UsageContent(ChatClientHelper.CreateUsageDetails(usage)));
+                    update.Contents.Add(new UsageContent(Normalize(start ?? usage, usage)));
             }
 
             foreach (var call in response.ToolCalls ?? [])
@@ -54,6 +54,19 @@ internal sealed class AnthropicChatClient(AnthropicClient client) : IChatClient
 
             yield return update;
         }
+    }
+
+    // Reported once per response, with OpenAI's meaning: input includes cached tokens.
+    // Anthropic's input_tokens excludes cache reads and writes, and its start and delta events split the counts.
+    internal static UsageDetails Normalize(Usage start, Usage end)
+    {
+        var read = start.CacheReadInputTokens;
+        return new UsageDetails
+        {
+            InputTokenCount = start.InputTokens + read + start.CacheCreationInputTokens,
+            OutputTokenCount = end.OutputTokens,
+            CachedInputTokenCount = read,
+        };
     }
 
     MessageParameters Parameters(IEnumerable<ChatMessage> messages, ChatOptions? options)

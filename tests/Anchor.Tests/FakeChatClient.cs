@@ -41,7 +41,7 @@ sealed class FakeChatClient : IChatClient
 
     public Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
-        throw new NotSupportedException();
+        GetStreamingResponseAsync(messages, options, cancellationToken).ToChatResponseAsync(cancellationToken);
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
 

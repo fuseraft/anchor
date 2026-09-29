@@ -97,16 +97,48 @@ tests/Anchor.Tests/
 
 ## Context
 
-- Context size comes from the provider's real reported usage.
-- At 80% of the window, anchor summarizes older turns and keeps the most recent 20% verbatim.
-  The summary is rejected unless it is smaller than what it replaces.
+- Context size comes from the provider's real reported usage. Anthropic's counts are normalized
+  so that input includes cached tokens, the same as OpenAI's. When a provider reports nothing,
+  anchor estimates at chars / 4.
+- At 80% of the window, anchor summarizes older turns. It checks after each turn and between
+  tool rounds.
+- Whole recent turns are kept verbatim, up to 20% of the window. The last turn is always kept,
+  so a call is never separated from its result.
+- The summary is rejected unless it is non-empty and smaller than what it replaces.
+- If summarizing isn't enough, as in one long turn, anchor trims old large tool content, oldest
+  first, down to 60% of the window, measured by the provider's real token count:
+  - A large result becomes a placeholder that names the tool and its argument, keeps a
+    300-character preview, and says to re-run the tool with a narrower range.
+  - A large call argument, such as `write_file` content, becomes a character count. The file on
+    disk already has the content.
+- If trimming still leaves the context over the 80% trigger, as with hundreds of small rounds,
+  anchor drops the oldest rounds of the current turn. It cuts only where a call and its result
+  stay together, and puts a note right after the user's request listing what those rounds did
+  (tools and arguments, plus the model's last message). A later drop merges into the same note.
+- The latest round is never trimmed or dropped, because the model hasn't seen its results yet.
+- If the summary request itself is too big, it retries with shorter tool excerpts.
+- A "context too long" error from the provider triggers one round of summarizing and trimming,
+  then a retry.
+- The window comes from `provider.contextWindow`, or a per-family default.
 - `AGENTS.md` is loaded into the system prompt.
+
+## Sessions
+
+- Each session is an append-only JSONL file in `~/.anchor/sessions/`, readable only by the user.
+- New messages are appended. A compaction or `/clear` writes a `reset` record, and replaying the
+  file rebuilds the current history.
+- `--resume` continues the latest session for this directory, or a given id or id prefix. It
+  re-shows the last three turns.
+- `/undo` reverts the file-tool changes of the most recent turn that made any, and tells the
+  model it did. It leaves alone any file that changed after anchor wrote it. Shell-made changes
+  are not tracked.
 
 ## Surface
 
 ```
-anchor [--yolo] [--resume] [--model m] [-p "prompt"] [--json]
-/help /model /compact /clear /agents /skills /mcp /exit      !cmd runs in your shell, outside the model's history
+anchor [--yolo] [--resume [id]] [--model m] [-p "prompt"] [--json]
+/help /model /context /compact /undo /sessions /clear /agents /skills /mcp /exit
+!cmd runs in your shell, outside the model's history
 ```
 
 Config lives in `~/.anchor/config.json`. Sessions are stored in `~/.anchor/sessions/`.

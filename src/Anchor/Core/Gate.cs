@@ -18,8 +18,11 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
 {
     public const string Declined = "The user declined this action. Do not retry it; ask the user how to proceed if you are blocked.";
 
+    const int UndoDepth = 20;
+
     bool _alwaysWrite;
     readonly HashSet<string> _alwaysPrograms = [];
+    readonly LinkedList<Dictionary<string, (string? Before, string After)>> _turns = [];
 
     public Workspace Workspace => workspace;
 
@@ -53,8 +56,48 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
 
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         await File.WriteAllTextAsync(full, after, ct);
+        if (_turns.Last?.Value is { } changes)
+            changes[full] = (changes.TryGetValue(full, out var first) ? first.Before : before, after);
         emit(new FileChanged(rel, diff.Added, diff.Removed));
         return diff;
+    }
+
+    /// <summary>Starts recording file changes for /undo.</summary>
+    public void BeginTurn()
+    {
+        if (_turns.Last?.Value.Count == 0)
+            return;
+        _turns.AddLast([]);
+        if (_turns.Count > UndoDepth)
+            _turns.RemoveFirst();
+    }
+
+    /// <summary>Reverts the file-tool changes of the most recent turn that made any. Files changed since are left alone.</summary>
+    public (List<string> Restored, List<string> Skipped) Undo()
+    {
+        while (_turns.Last?.Value.Count == 0)
+            _turns.RemoveLast();
+        List<string> restored = [], skipped = [];
+        if (_turns.Last?.Value is not { } changes)
+            return (restored, skipped);
+        _turns.RemoveLast();
+
+        foreach (var (full, (before, after)) in changes)
+        {
+            var rel = workspace.IsInside(full) ? workspace.Relative(full) : full;
+            var current = File.Exists(full) ? File.ReadAllText(full) : null;
+            if (current != after)
+            {
+                skipped.Add(rel);
+                continue;
+            }
+            if (before is null)
+                File.Delete(full);
+            else
+                File.WriteAllText(full, before);
+            restored.Add(rel);
+        }
+        return (restored, skipped);
     }
 
     /// <summary>Runs a shell command in the workspace root and returns its masked output.</summary>

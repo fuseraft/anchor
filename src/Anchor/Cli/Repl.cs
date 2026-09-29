@@ -4,19 +4,30 @@ using Anchor.Providers;
 
 namespace Anchor.Cli;
 
+public sealed record ReplOptions(ProviderSettings Provider, string SessionsDir, bool Yolo, bool Resumed, long ContextWindow);
+
 /// <summary>The interactive loop: read a line, run it as a slash command, a shell escape, or an agent turn.</summary>
-public sealed class Repl(Agent agent, Renderer renderer, Workspace workspace, ProviderSettings provider, bool yolo = false)
+public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer renderer, ReplOptions options)
 {
+    const int ReplayTurns = 3;
+
     CancellationTokenSource? _turn;
     DateTime _lastIdleInterrupt;
-    ProviderSettings _provider = provider;
+    ProviderSettings _provider = options.Provider;
+
+    Workspace Workspace => gate.Workspace;
 
     public async Task<int> RunAsync()
     {
         Console.CancelKeyPress += OnCancel;
-        renderer.Line($"{renderer.Bold("anchor")} {renderer.Dim($"· {_provider.Model} · {workspace.Root}")}");
-        if (yolo)
+        renderer.Line($"{renderer.Bold("anchor")} {renderer.Dim($"· {_provider.Model} · {Workspace.Root}")}");
+        if (options.Yolo)
             renderer.Line(renderer.Yellow("--yolo: writes, commands and outside reads run without asking. Secret files and dangerous commands are still denied."));
+        if (options.Resumed)
+        {
+            renderer.Line(renderer.Dim($"Resumed session {session.Id}."));
+            renderer.Replay(agent.History, ReplayTurns);
+        }
         renderer.Line(renderer.Dim("/help for commands, Ctrl+D to exit"));
 
         while (true)
@@ -33,22 +44,30 @@ public sealed class Repl(Agent agent, Renderer renderer, Workspace workspace, Pr
                 await ShellAsync(line[1..]);
             else if (line.StartsWith('/'))
             {
-                if (!Command(line))
+                if (!await CommandAsync(line))
                     return 0;
             }
             else
-                await TurnAsync(line);
+            {
+                Console.WriteLine();
+                gate.BeginTurn();
+                await CancellableAsync(ct => agent.RunTurnAsync(line, ct));
+            }
+            session.Sync(agent.History);
         }
     }
 
-    async Task TurnAsync(string input)
+    async Task CancellableAsync(Func<CancellationToken, Task> work)
     {
         using var cts = new CancellationTokenSource();
         _turn = cts;
         try
         {
-            Console.WriteLine();
-            await agent.RunTurnAsync(input, cts.Token);
+            await work(cts.Token);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            renderer.Line(renderer.Yellow("  (cancelled)"));
         }
         finally
         {
@@ -56,7 +75,7 @@ public sealed class Repl(Agent agent, Renderer renderer, Workspace workspace, Pr
         }
     }
 
-    bool Command(string line)
+    async Task<bool> CommandAsync(string line)
     {
         var parts = line.Split(' ', 2, StringSplitOptions.TrimEntries);
         switch (parts[0])
@@ -66,6 +85,38 @@ public sealed class Repl(Agent agent, Renderer renderer, Workspace workspace, Pr
             case "/clear":
                 agent.History.Clear();
                 renderer.Line(renderer.Dim("History cleared."));
+                break;
+            case "/compact":
+                await CancellableAsync(async ct =>
+                {
+                    var result = await agent.CompactAsync(ct);
+                    if (result?.Outcome == CompactOutcome.NothingToCompact)
+                        renderer.Line(renderer.Dim("Nothing to compact yet: the recent turns are kept as they are."));
+                    else if (result?.Outcome == CompactOutcome.Rejected)
+                        renderer.Line(renderer.Yellow("The summary wasn't smaller than the conversation; history is unchanged."));
+                });
+                break;
+            case "/context":
+                var tokens = agent.ContextTokens;
+                renderer.Line($"~{tokens:N0} of {options.ContextWindow:N0} tokens ({100.0 * tokens / options.ContextWindow:0}%), {agent.History.Count} messages" +
+                              (agent.LastContextTokens is null ? renderer.Dim(" (estimated)") : ""));
+                break;
+            case "/undo":
+                var (restored, skipped) = gate.Undo();
+                if (restored.Count == 0 && skipped.Count == 0)
+                    renderer.Line(renderer.Dim("Nothing to undo."));
+                foreach (var path in restored)
+                    renderer.Line(renderer.Dim($"  restored {path}"));
+                foreach (var path in skipped)
+                    renderer.Line(renderer.Yellow($"  skipped {path}: it changed after anchor wrote it"));
+                if (restored.Count > 0)
+                    agent.History.Add(Messages.Create(MessageKind.Note,
+                        $"[anchor] The user undid your file changes. These files are back to their earlier content: {string.Join(", ", restored)}."));
+                break;
+            case "/sessions":
+                foreach (var s in SessionLog.List(options.SessionsDir, Workspace.Root).Take(10))
+                    renderer.Line($"{(s.Id == session.Id ? "*" : " ")} {s.Id}  {renderer.Dim(s.Updated.ToString("g"))}  {Truncate(s.Title, 60)}");
+                renderer.Line(renderer.Dim("Resume one with: anchor --resume <id>"));
                 break;
             case "/model" when parts.Length == 1:
                 renderer.Line($"{_provider.Model} {renderer.Dim($"({_provider.Provider})")}");
@@ -86,6 +137,10 @@ public sealed class Repl(Agent agent, Renderer renderer, Workspace workspace, Pr
             case "/help":
                 renderer.Line("""
                     /model [name]   show or switch the model
+                    /context        how full the context window is
+                    /compact        summarize older turns now
+                    /undo           revert the files changed in the last turn that changed any
+                    /sessions       list sessions in this directory
                     /clear          forget the conversation
                     /exit           quit (or Ctrl+D)
                     !<command>      run a shell command yourself; the model never sees it
@@ -106,7 +161,7 @@ public sealed class Repl(Agent agent, Renderer renderer, Workspace workspace, Pr
         var psi = OperatingSystem.IsWindows()
             ? new ProcessStartInfo("cmd.exe", ["/c", command])
             : new ProcessStartInfo(Environment.GetEnvironmentVariable("SHELL") ?? "/bin/sh", ["-c", command]);
-        psi.WorkingDirectory = workspace.Root;
+        psi.WorkingDirectory = Workspace.Root;
         try
         {
             using var process = Process.Start(psi)!;
@@ -129,8 +184,13 @@ public sealed class Repl(Agent agent, Renderer renderer, Workspace workspace, Pr
             return;
         }
         if (DateTime.UtcNow - _lastIdleInterrupt < TimeSpan.FromSeconds(2))
+        {
+            session.Sync(agent.History);
             Environment.Exit(0);
+        }
         _lastIdleInterrupt = DateTime.UtcNow;
         Console.Write("\n(press Ctrl+C again or Ctrl+D to exit)\n› ");
     }
+
+    static string Truncate(string s, int max) => s.Length > max ? s[..(max - 3)] + "..." : s;
 }
