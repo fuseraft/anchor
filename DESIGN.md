@@ -199,3 +199,5 @@ plugin registry. Any of these can be added later as a tool behind the gate.
 5. `-p` and `--json` modes, then the v0.1.0 release (Linux and macOS; Windows waits for
    shell safety rules that understand cmd and PowerShell; until then, Windows builds ask before
    every shell command and offer no "always" for them).
+6. Windows builds and install scripts, `--until`, parallel sub-agents, and a documentation
+   site; then the v0.2.0 release.
