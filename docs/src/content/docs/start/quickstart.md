@@ -16,8 +16,9 @@ anchor reads API keys from the environment. With either of these set, it picks a
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-For OpenAI (`OPENAI_API_KEY`) or any other OpenAI-compatible server, pass `--model` or see
-[Configuration](/anchor/start/configuration/).
+Or run `anchor setup` to choose a provider, save its key in your OS keychain and pick a model
+from a list. It also sets up LiteLLM and other OpenAI-compatible servers. anchor offers it on
+first start when no key is set. For more, see [Configuration](/anchor/start/configuration/).
 
 ## 2. Start a session
 

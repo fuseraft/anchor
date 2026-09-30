@@ -18,6 +18,11 @@ Type these at the `›` prompt. Anything else is a message to the model, except 
 The conversation carries over to the new model. The model name follows the same rules as
 `--model`; see [Configuration](/anchor/start/configuration/#choosing-a-model).
 
+### /setup
+
+Runs the [setup wizard](/anchor/start/configuration/#the-setup-wizard): choose a provider, save its
+key and pick a model. The session switches to the chosen model and keeps the conversation.
+
 ### /context
 
 Shows how full the context window is, the number of messages, and token totals for the whole

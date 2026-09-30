@@ -73,7 +73,7 @@ public sealed class HeadlessTests : IDisposable
         var session = SessionLog.Create(Path.Combine(_root, ".sessions"), workspace.Root, "fake");
         var hub = new McpHub(toolbox, gate, observed, new MemoryKeychain());
         return new Harness(agent, gate, session, hub, Task.CompletedTask, new ProviderSettings("openai", "fake", null, "X"), 100_000,
-            Path.Combine(_root, ".sessions"), [], [], usage, m => Providers.Providers.Resolve(m));
+            Path.Combine(_root, ".sessions"), [], [], usage, new ModelSource(_ => null, () => new Config()));
     }
 
     [Fact]

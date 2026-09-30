@@ -2,13 +2,15 @@ namespace Anchor.Cli;
 
 /// <summary>Command-line options. <see cref="Parse"/> returns an exit code instead when it handled the request itself.</summary>
 public sealed record Options(string? Model, bool Yolo, bool Resume, string? ResumeId, bool Print, string? Prompt, bool Json, string? Until = null,
-    IReadOnlyList<string>? Allow = null, int? MaxRounds = null, int? Timeout = null)
+    IReadOnlyList<string>? Allow = null, int? MaxRounds = null, int? Timeout = null, bool Setup = false)
 {
     public const string Usage = """
-        usage: anchor [--model <name>] [--yolo] [--allow <rule>]... [--resume [id]] [-p [prompt]] [--until <check>]
+        usage: anchor setup
+               anchor [--model <name>] [--yolo] [--allow <rule>]... [--resume [id]] [-p [prompt]] [--until <check>]
                       [--max-rounds <n>] [--timeout <seconds>] [--json]
 
         Starts an interactive coding agent in the current directory.
+        anchor setup chooses a provider, saves its API key and picks a model.
 
           -m, --model <name>   model to use (default: provider.model in the config)
           --yolo               don't ask before writes, commands and reads outside the directory
@@ -30,6 +32,9 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
 
     public static (Options? Options, int ExitCode) Parse(string[] args, TextWriter output, TextWriter error)
     {
+        if (args is ["setup"])
+            return (new Options(null, false, false, null, false, null, false, Setup: true), 0);
+
         string? model = null, resumeId = null, prompt = null, until = null;
         bool yolo = false, resume = false, print = false, json = false;
         List<string> allow = [];

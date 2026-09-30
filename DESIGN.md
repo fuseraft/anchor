@@ -108,6 +108,8 @@ tests/Anchor.Tests/
   - `clientId`, `clientSecret`, and `scopes` are optional overrides.
 - Tokens live in the OS keychain (Keychain, `secret-tool`, Credential Manager), never in a
   plaintext file. Without a keychain, tokens are kept in memory only.
+- API keys saved by `anchor setup` also live in the keychain, under the name of the variable they
+  stand in for. The variable wins when it's set.
 - `/mcp login <server>` and `/mcp logout <server>` manage sign-ins.
 - The connect timeout stretches to 5 minutes while sign-in is pending.
 - The browser launcher can be swapped out in tests.

@@ -9,7 +9,7 @@ namespace Anchor.Cli;
 public sealed record Harness(
     Agent Agent, Gate Gate, SessionLog Session, McpHub Mcp, Task McpReady, ProviderSettings Provider, long ContextWindow,
     string SessionsDir, IReadOnlyList<Skill> Skills, IReadOnlyList<AgentDefinition> Agents, SessionUsage Usage,
-    Func<string, ProviderSettings> ResolveModel);
+    ModelSource Models);
 
 /// <summary>How a mode shows events, asks for approval, and reports warnings.</summary>
 public sealed record Output(Action<AgentEvent> Emit, IApprover Approver, Action<string> Warn, bool Interactive);
@@ -19,10 +19,10 @@ public static class Startup
     public static async Task<Harness> BuildAsync(Options options, Output output)
     {
         var config = Config.Load();
+        var keychain = Keychain.Default();
+        var models = new ModelSource(ModelSource.StoredKeys(keychain), Config.Load);
         var provider = Providers.Providers.Resolve(options.Model ?? config.Provider.Model, config.Provider.Name, config.Provider.Endpoint, config.Provider.ApiKeyEnv, config.Providers);
-        // /model and sub-agents name a model alone, so only the custom providers carry over.
-        ProviderSettings resolveModel(string model) => Providers.Providers.Resolve(model, custom: config.Providers);
-        var client = Providers.Providers.Create(provider);
+        var client = models.Create(provider);
         var window = Providers.Providers.ContextWindow(provider, config.Provider.ContextWindow);
 
         var workspace = new Workspace(Directory.GetCurrentDirectory());
@@ -54,12 +54,12 @@ public static class Startup
         {
             if (model is null)
                 return (agent.Client, agent.Options);
-            var settings = resolveModel(model);
-            return (Providers.Providers.Create(settings), Providers.Providers.Options(settings));
+            var settings = models.Resolve(model);
+            return (models.Create(settings), Providers.Providers.Options(settings));
         }, () => new Compactor(window), options.MaxRounds);
         toolbox.Add(new AgentTools(runner, agents, skills).All());
 
-        var hub = new McpHub(toolbox, gate, emit, Keychain.Default(),
+        var hub = new McpHub(toolbox, gate, emit, keychain,
             connectTimeout: options.Timeout is { } t ? TimeSpan.FromSeconds(t) : null);
         var ready = hub.StartAsync(await TrustedServersAsync(config, workspace, output), CancellationToken.None);
 
@@ -70,7 +70,7 @@ public static class Startup
             (session, var history) = SessionLog.Open(sessionsDir, options.ResumeId, workspace.Root, provider.Model);
             agent.History.AddRange(history);
         }
-        return new Harness(agent, gate, session, hub, ready, provider, window, sessionsDir, skills, agents, usage, resolveModel);
+        return new Harness(agent, gate, session, hub, ready, provider, window, sessionsDir, skills, agents, usage, models);
     }
 
     // A cloned repo's .mcp.json can start any program, so the user decides once per server and config.

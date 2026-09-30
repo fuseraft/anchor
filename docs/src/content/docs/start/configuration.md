@@ -4,7 +4,8 @@ description: Choose a model and provider, point anchor at an OpenAI-compatible s
 ---
 
 anchor works with no config file when `ANTHROPIC_API_KEY` or `XAI_API_KEY` is set. To choose a
-model, add a provider, or configure MCP servers, create `~/.anchor/config.json`:
+model, add a provider, or configure MCP servers, run the [setup wizard](#the-setup-wizard) or create
+`~/.anchor/config.json`:
 
 ```json
 {
@@ -14,6 +15,28 @@ model, add a provider, or configure MCP servers, create `~/.anchor/config.json`:
 
 The file accepts comments and trailing commas. The full schema is in the
 [config reference](/anchor/reference/config/).
+
+## The setup wizard
+
+`anchor setup`, or `/setup` in a session, asks three things and writes the answers to the config:
+
+1. **Where your models come from:** Anthropic, OpenAI, xAI, or another server such as LiteLLM. For
+   another server, it asks for the URL, a short name to use as `<name>/<model>`, and the name of
+   the environment variable for its key.
+2. **The API key:** if the variable is already set, anchor uses it. Otherwise you can paste the key
+   and anchor saves it in the OS keychain (Keychain on macOS, `secret-tool` on Linux, Credential
+   Manager on Windows), never in a file.
+3. **The model:** picked from the server's `/models` list, or typed if the server has no list.
+   Move with ↑/↓ and press Enter; typing filters the list, and a name that matches nothing is
+   used as typed.
+
+anchor offers the wizard when you start it interactively with no model configured and no API key
+set. Running it again replaces `provider.model` and updates the named provider, and keeps the
+rest of your config. The config's comments can't be kept, so a commented file is first copied to
+`config.json.bak`.
+
+A key saved by the wizard stands in for its environment variable, so the config still names the
+variable (`apiKeyEnv`). When the variable is set, its value wins.
 
 ## Choosing a model
 

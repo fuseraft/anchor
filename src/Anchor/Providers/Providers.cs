@@ -45,6 +45,10 @@ public static class Providers
         ("XAI_API_KEY", "grok-4.5"),
     ];
 
+    /// <summary>True when an API key variable is set that picks a model with no config.</summary>
+    public static bool HasDefaultModel() =>
+        Fallbacks.Any(f => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(f.Env)));
+
     /// <summary>Fills in provider, endpoint and key variable from the model name, letting explicit config win.</summary>
     public static ProviderSettings Resolve(string? model, string? provider = null, string? endpoint = null, string? apiKeyEnv = null,
         IReadOnlyDictionary<string, CustomProvider>? custom = null)
@@ -82,12 +86,18 @@ public static class Providers
         return new(p.Type, model, p.Endpoint, p.ApiKeyEnv, p.Headers, p.ContextWindow, name);
     }
 
-    public static IChatClient Create(ProviderSettings settings)
+    /// <summary>The keychain account <c>anchor setup</c> stores a key under, named for the variable it stands in for.</summary>
+    public static string KeychainAccount(string apiKeyEnv) => $"api-key/{apiKeyEnv}";
+
+    /// <summary>Builds a client. The key comes from <c>ApiKeyEnv</c>, or from <paramref name="storedKey"/> (the keychain) when the variable is unset.</summary>
+    public static IChatClient Create(ProviderSettings settings, Func<string, string?>? storedKey = null)
     {
         // A custom provider without apiKeyEnv authenticates some other way (headers, or none at all), but the SDKs want a key.
-        var key = settings.ApiKeyEnv is null ? "unused" : Environment.GetEnvironmentVariable(settings.ApiKeyEnv);
+        var key = settings.ApiKeyEnv is null ? "unused"
+            : Environment.GetEnvironmentVariable(settings.ApiKeyEnv) is { Length: > 0 } fromEnv ? fromEnv
+            : storedKey?.Invoke(settings.ApiKeyEnv);
         if (string.IsNullOrEmpty(key))
-            throw new InvalidOperationException($"{settings.ApiKeyEnv} is not set (needed for {settings.Model}).");
+            throw new InvalidOperationException($"{settings.ApiKeyEnv} is not set (needed for {settings.Model}). Set it, or run anchor setup to save a key.");
         var headers = (settings.Headers ?? new Dictionary<string, string>()).ToDictionary(h => h.Key, h => Anchor.Mcp.McpConfig.Expand(h.Value));
 
         switch (settings.Provider)
@@ -112,6 +122,35 @@ public static class Providers
             default:
                 throw new InvalidOperationException($"Unknown provider '{settings.Provider}'. Use 'anthropic' or 'openai'.");
         }
+    }
+
+    /// <summary>The model ids a server offers, from its <c>/models</c> list (OpenAI-compatible or Anthropic).</summary>
+    public static async Task<List<string>> ListModelsAsync(HttpClient http, string type, string endpoint, string? key,
+        IReadOnlyDictionary<string, string>? headers, CancellationToken ct)
+    {
+        var url = type == "anthropic" ? endpoint.TrimEnd('/') + "/v1/models?limit=1000" : endpoint.TrimEnd('/') + "/models";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (type == "anthropic")
+        {
+            request.Headers.Add("anthropic-version", "2023-06-01");
+            if (key is not null)
+                request.Headers.Add("x-api-key", key);
+        }
+        else if (key is not null)
+            request.Headers.Authorization = new("Bearer", key);
+        foreach (var (name, value) in headers ?? new Dictionary<string, string>())
+            request.Headers.TryAddWithoutValidation(name, Anchor.Mcp.McpConfig.Expand(value));
+
+        using var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"{url} answered {(int)response.StatusCode} {response.ReasonPhrase}.");
+        using var json = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        if (!json.RootElement.TryGetProperty("data", out var data) || data.ValueKind != System.Text.Json.JsonValueKind.Array)
+            throw new InvalidOperationException($"{url} did not return a model list.");
+        return [.. data.EnumerateArray()
+            .Select(m => m.TryGetProperty("id", out var id) ? id.GetString() : null)
+            .OfType<string>()
+            .Order(StringComparer.OrdinalIgnoreCase)];
     }
 
     /// <summary>Context window in tokens, from config or a conservative per-family default.</summary>

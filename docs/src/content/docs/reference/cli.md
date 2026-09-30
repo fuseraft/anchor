@@ -4,12 +4,14 @@ description: Every anchor command-line option, environment variable and exit cod
 ---
 
 ```
+anchor setup
 anchor [--model <name>] [--yolo] [--allow <rule>]... [--resume [id]] [-p [prompt]] [--until <check>]
        [--max-rounds <n>] [--timeout <seconds>] [--json]
 ```
 
 With no options, anchor starts an [interactive session](/anchor/guides/repl/) in the current
-directory.
+directory. `anchor setup` runs the [setup wizard](/anchor/start/configuration/#the-setup-wizard) and
+exits.
 
 ## Options
 
@@ -33,6 +35,7 @@ directory.
 ## Examples
 
 ```sh
+anchor setup                                  # choose a provider and model
 anchor                                        # interactive
 anchor -m claude-opus-5-5                     # interactive, with another model
 anchor --resume                               # continue the latest session here
@@ -55,7 +58,8 @@ anchor --json                                 # editor protocol
 | `NO_COLOR`          | Turn off colored output.                                                |
 
 A model on another OpenAI-compatible server reads its key from the variable named in
-`provider.apiKeyEnv`. MCP server configs can reference any variable as `${NAME}`.
+`provider.apiKeyEnv`. When a key variable is unset, anchor uses the key `anchor setup` saved for it
+in the OS keychain, if there is one. MCP server configs can reference any variable as `${NAME}`.
 
 ## Exit codes
 

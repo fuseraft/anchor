@@ -73,6 +73,7 @@ stays open so you can finish it before pressing Enter.
 | ------------------ | --------------------------------------------------------------------------- |
 | `/help`            | List commands.                                                              |
 | `/model [name]`    | Show the model, or switch to another. The conversation carries over.       |
+| `/setup`           | Choose a provider, save its key and pick a model. [More](/anchor/start/configuration/#the-setup-wizard) |
 | `/context`         | How full the context window is, and token usage for the session.           |
 | `/until [check]`   | Keep each turn going until a command exits 0. [More](/anchor/guides/until/) |
 | `/compact`         | Summarize older turns now.                                                  |

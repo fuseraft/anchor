@@ -6,7 +6,7 @@ namespace Anchor.Cli;
 
 public sealed record ReplOptions(ProviderSettings Provider, string SessionsDir, bool Yolo, bool Resumed, long ContextWindow,
     IReadOnlyList<Skill> Skills, IReadOnlyList<AgentDefinition> Agents, SessionUsage Usage, Anchor.Mcp.McpHub Mcp,
-    Func<string, ProviderSettings> ResolveModel);
+    ModelSource Models);
 
 /// <summary>The interactive loop: read a line, run it as a slash command, a shell escape, or an agent turn.</summary>
 public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer renderer, ReplOptions options)
@@ -107,6 +107,14 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
             lines.Add(next);
         }
         return string.Join('\n', lines);
+    }
+
+    void SwitchModel(string name)
+    {
+        var next = options.Models.Resolve(name);
+        agent.Use(options.Models.Create(next), Providers.Providers.Options(next));
+        _provider = next;
+        renderer.Line(renderer.Dim($"Model: {next.Model}"));
     }
 
     async Task<bool> CommandAsync(string line)
@@ -212,10 +220,20 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
             case "/model":
                 try
                 {
-                    var next = options.ResolveModel(parts[1]);
-                    agent.Use(Providers.Providers.Create(next), Providers.Providers.Options(next));
-                    _provider = next;
-                    renderer.Line(renderer.Dim($"Model: {next.Model}"));
+                    SwitchModel(parts[1]);
+                }
+                catch (InvalidOperationException e)
+                {
+                    renderer.Line(renderer.Red(e.Message));
+                }
+                break;
+            case "/setup":
+                try
+                {
+                    var setup = new Setup(new ConsoleSetupIO(), Anchor.Mcp.Keychain.Default(), new HttpClient { Timeout = TimeSpan.FromSeconds(30) },
+                        Path.Combine(Config.Home, "config.json"));
+                    if (await setup.RunAsync() is { } model)
+                        SwitchModel(model);
                 }
                 catch (InvalidOperationException e)
                 {
@@ -238,6 +256,7 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
             case "/help":
                 renderer.Line("""
                     /model [name]   show or switch the model
+                    /setup          choose a provider, save its key and pick a model
                     /context        how full the context window is, and session token usage
                     /agents         list sub-agents
                     /skills         list skills

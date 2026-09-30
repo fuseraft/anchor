@@ -48,8 +48,9 @@ Building needs the .NET 10 SDK. The tests also need `git` and `python3`.
 
 ## Configure
 
-Set an API key in the environment. With `ANTHROPIC_API_KEY` or `XAI_API_KEY`, anchor picks a
-default model; otherwise, or to choose one, pass `--model` or set it in `~/.anchor/config.json`:
+Run `anchor setup` to choose a provider (Anthropic, OpenAI, xAI, or a server such as LiteLLM), save
+its key in the OS keychain and pick a model. Or set an API key in the environment. With
+`ANTHROPIC_API_KEY` or `XAI_API_KEY`, anchor picks a default model; otherwise, or to choose one, pass `--model` or set it in `~/.anchor/config.json`:
 
 ```json
 {

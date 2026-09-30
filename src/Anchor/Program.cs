@@ -1,5 +1,6 @@
 using Anchor.Cli;
 using Anchor.Core;
+using Anchor.Mcp;
 
 var (options, exitCode) = Options.Parse(args, Console.Out, Console.Error);
 if (options is null)
@@ -36,11 +37,22 @@ try
         return await new JsonMode(json, approver, Console.In).RunAsync(h);
     }
 
+    if (options.Setup || !Console.IsInputRedirected && Setup.Needed(options, Config.Load()))
+    {
+        if (!options.Setup)
+            Console.WriteLine("No model is configured yet, and no ANTHROPIC_API_KEY or XAI_API_KEY is set. Let's set one up.");
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        var model = await new Setup(new ConsoleSetupIO(), Keychain.Default(), http, Path.Combine(Config.Home, "config.json")).RunAsync();
+        if (options.Setup || model is null)
+            return model is null ? 1 : 0;
+        Console.WriteLine();
+    }
+
     {
         var renderer = Renderer.ForConsole();
         var h = await Startup.BuildAsync(options, new Output(renderer.Render, new ConsoleApprover(renderer), m => renderer.Line(renderer.Yellow(m)), Interactive: true));
         await using var _ = h.Mcp;
-        var replOptions = new ReplOptions(h.Provider, h.SessionsDir, options.Yolo, options.Resume, h.ContextWindow, h.Skills, h.Agents, h.Usage, h.Mcp, h.ResolveModel);
+        var replOptions = new ReplOptions(h.Provider, h.SessionsDir, options.Yolo, options.Resume, h.ContextWindow, h.Skills, h.Agents, h.Usage, h.Mcp, h.Models);
         return await new Repl(h.Agent, h.Gate, h.Session, renderer, replOptions).RunAsync();
     }
 }
