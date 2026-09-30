@@ -9,6 +9,9 @@ tools, and a deterministic harness decides what it may touch.
   and a write shows you the diff. Secret files (`.env`, keys, credentials) and dangerous
   commands (`sudo`, `rm -rf /`, `curl | sh`) are always denied, even with `--yolo`. Secret
   values are masked in command output.
+- **Remembers your "always".** Answering "always" to a command or MCP tool is saved for that
+  directory (in your own `~/.anchor`, never the repo), so later sessions and `-p` don't ask again.
+  File writes and interpreters like `python3` are only ever allowed for the session.
 - **Long sessions.** Context is kept under the model's window by summarizing older turns,
   trimming old tool output, and as a last resort dropping the oldest steps of a long turn.
   Sessions are saved and can be resumed. `/undo` reverts the last turn's file changes.
@@ -71,7 +74,7 @@ git diff | anchor -p "review this change"
 anchor -p --yolo "fix the failing test"      # -p can't ask, so it refuses unless --yolo
 ```
 
-In the REPL: `/help`, `/model`, `/context`, `/until`, `/compact`, `/undo`, `/sessions`, `/agents`,
+In the REPL: `/help`, `/model`, `/context`, `/until`, `/compact`, `/approvals`, `/undo`, `/sessions`, `/agents`,
 `/skills`, `/mcp` (`/mcp login|logout <server>`), `/clear`, `/exit`. `!cmd` runs a command in
 your own shell; the model never sees it. Ctrl+C cancels the running turn.
 

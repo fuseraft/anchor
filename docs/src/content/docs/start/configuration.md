@@ -72,5 +72,6 @@ ANCHOR_HOME=/tmp/anchor-scratch anchor
 | `config.json`              | Your configuration                                    |
 | `sessions/`                | Saved sessions, one JSONL file each                   |
 | `mcp-trust.json`           | Your answers about project MCP servers               |
+| `approvals.json`           | "Always" answers saved per directory                  |
 | `skills/<name>/SKILL.md`   | Your personal [skills](/anchor/guides/skills/)        |
 | `agents/<name>.md`         | Your personal [sub-agents](/anchor/guides/sub-agents/) |

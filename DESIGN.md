@@ -47,6 +47,15 @@ tests/Anchor.Tests/
 6. **Messages are typed.** Every message carries its kind (user, assistant, tool, summary), so
    anchor never parses string prefixes to tell them apart.
 
+## Approvals
+
+- "Always" for commands (by program) and MCP tools (by name) is saved per workspace in
+  `~/.anchor/approvals.json`, so later sessions and `-p` don't ask again. The file belongs to the
+  user, so a project can't grant itself anything.
+- Not saved: "always" for file writes, because the diff is the point of asking, and for commands
+  that use an interpreter (`bash`, `python3`, `node`, `eval`, ...), which can run anything.
+- `/approvals` lists what is saved; `/approvals clear` forgets every "always" answer.
+
 ## Sub-agents
 
 - The `agent(task, agent?)` tool runs a fresh `Agent` with its own history and returns only its
@@ -147,7 +156,7 @@ tests/Anchor.Tests/
 
 ```
 anchor [--yolo] [--resume [id]] [--model m] [-p "prompt"] [--until check] [--json]
-/help /model /context /until /compact /undo /sessions /clear /agents /skills /mcp /exit
+/help /model /context /until /compact /approvals /undo /sessions /clear /agents /skills /mcp /exit
 !cmd runs in your shell, outside the model's history
 ```
 

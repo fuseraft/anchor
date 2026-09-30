@@ -14,17 +14,19 @@ public interface IApprover
 }
 
 /// <summary>The only code that lets a tool read outside the workspace, write a file, or run a process: policy, then approval, then the effect.</summary>
-public sealed class Gate(Workspace workspace, Policy policy, IApprover approver, Action<AgentEvent> emit)
+/// <param name="saved">Where "always" answers for programs and MCP tools outlive the session; null keeps them in memory only.</param>
+public sealed class Gate(Workspace workspace, Policy policy, IApprover approver, Action<AgentEvent> emit, ApprovalStore? saved = null)
 {
     public const string Declined = "The user declined this action. Do not retry it; ask the user how to proceed if you are blocked.";
 
+    const string SavedNote = " (saved for this directory)";
     const int UndoDepth = 20;
     static readonly TimeSpan CheckTimeout = TimeSpan.FromMinutes(10);
     static readonly AsyncLocal<string?> Unaskable = new();
 
     bool _alwaysWrite;
-    readonly HashSet<string> _alwaysPrograms = [];
-    readonly HashSet<string> _alwaysExternal = [];
+    readonly HashSet<string> _alwaysPrograms = [.. saved?.Load().Programs ?? []];
+    readonly HashSet<string> _alwaysExternal = [.. saved?.Load().Tools ?? []];
     readonly LinkedList<Dictionary<string, (string? Before, string After)>> _turns = [];
 
     public Workspace Workspace => workspace;
@@ -34,6 +36,18 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     /// run this way, so two approval prompts never appear at once. The caller's own flow is unaffected.
     /// </summary>
     public static void RefuseAsking(string reason) => Unaskable.Value = reason;
+
+    /// <summary>"Always" answers saved for this workspace.</summary>
+    public ApprovalStore.Saved SavedApprovals => saved?.Load() ?? new();
+
+    /// <summary>Forgets every "always" answer, saved or from this session.</summary>
+    public void ForgetApprovals()
+    {
+        _alwaysWrite = false;
+        _alwaysPrograms.Clear();
+        _alwaysExternal.Clear();
+        saved?.Clear();
+    }
 
     /// <summary>Files written so far; a check loop compares it across a turn to see whether the turn changed anything.</summary>
     public int Writes { get; private set; }
@@ -118,10 +132,16 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     {
         // "Always" is keyed on programs from the bash parse, which is only trustworthy when bash runs the command.
         var programs = policy.ParsesShell ? ShellCommand.Programs(command) : new HashSet<string>();
+        // An interpreter can run anything, so "always" for one lasts only this session.
         var known = programs.Count > 0 && programs.All(_alwaysPrograms.Contains);
-        var always = programs.Count > 0 ? $"commands using {string.Join(", ", programs.Order())}" : null;
-        await EnforceAsync(policy.Run(command), new ApprovalRequest($"Run: {command}", null, always),
-            known, always is null ? null : () => _alwaysPrograms.UnionWith(programs), ct);
+        var save = saved is not null && programs.Count > 0 && !programs.Any(ShellCommand.RunsAnyCode);
+        var always = programs.Count > 0 ? $"commands using {string.Join(", ", programs.Order())}{(save ? SavedNote : "")}" : null;
+        await EnforceAsync(policy.Run(command), new ApprovalRequest($"Run: {command}", null, always), known, always is null ? null : () =>
+        {
+            _alwaysPrograms.UnionWith(programs);
+            if (save)
+                saved!.Add(programs: programs);
+        }, ct);
 
         var (_, output) = await ExecuteAsync(command, timeout, ct);
         return Secrets.Mask(output, workspace);
@@ -183,8 +203,12 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     public async Task<string> CallExternalAsync(string tool, bool readOnly, string arguments, Func<CancellationToken, Task<string>> call, CancellationToken ct)
     {
         var detail = arguments.Length > 2_000 ? arguments[..2_000] + " ..." : arguments;
-        await EnforceAsync(policy.External(readOnly), new ApprovalRequest($"Call {tool}", detail, $"all calls to {tool}"),
-            _alwaysExternal.Contains(tool), () => _alwaysExternal.Add(tool), ct);
+        await EnforceAsync(policy.External(readOnly), new ApprovalRequest($"Call {tool}", detail, $"all calls to {tool}{(saved is null ? "" : SavedNote)}"),
+            _alwaysExternal.Contains(tool), () =>
+            {
+                _alwaysExternal.Add(tool);
+                saved?.Add(tool: tool);
+            }, ct);
         return Secrets.Mask(await call(ct), workspace);
     }
 

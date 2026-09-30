@@ -31,6 +31,11 @@ A command is read-only only if every part of it is. `grep foo *.py | sort` quali
 - Starting an MCP server defined by a project's `.mcp.json`. anchor asks once per server and
   remembers the answer.
 
+Answering "always" to a command or an MCP tool saves it for this directory in
+`~/.anchor/approvals.json`. The file is yours, not the project's, so a cloned repository can't
+approve anything on your behalf. "Always" for file writes, and for commands that use an interpreter
+such as `bash`, `python3` or `node`, lasts only for the session. Saved approvals never lift a denial.
+
 ## What is always denied
 
 These are refused even with `--yolo`:

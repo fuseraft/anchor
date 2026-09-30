@@ -51,6 +51,15 @@ Reverts the file changes of the most recent turn that made any, and tells the mo
 since anchor wrote them are skipped. Changes made by shell commands aren't tracked. Repeat to go
 further back, up to 20 turns.
 
+### /approvals
+
+```
+/approvals         list the commands and MCP tools saved as "always" for this directory
+/approvals clear   forget every "always" answer, saved or from this session
+```
+
+See [Approvals](/anchor/guides/repl/#approvals).
+
 ## Sessions
 
 ### /sessions

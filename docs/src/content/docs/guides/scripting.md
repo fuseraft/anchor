@@ -25,7 +25,10 @@ cat error.log | anchor -p
 Nobody can answer a prompt in `-p` mode, so anything that would ask is refused, and the refusal is
 reported on stderr. Read-only work, such as reading files or running `git diff`, works as usual.
 
-For work that changes things, pass `--yolo`. Hard denials and secret masking still apply.
+Commands and MCP tools you've answered "always" to in an interactive session in the same directory
+are saved and run without asking, so a `-p` run can use `npm test` once you've allowed `npm`.
+
+For anything else that changes things, pass `--yolo`. Hard denials and secret masking still apply.
 
 ```sh
 anchor -p --yolo "fix the failing test" --until "npm test"

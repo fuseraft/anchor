@@ -14,11 +14,13 @@ public sealed class GateTests : IDisposable
         Directory.Delete(_outside, recursive: true);
     }
 
-    Gate NewGate(FakeApprover approver, bool yolo = false, bool parsesShell = true)
+    Gate NewGate(FakeApprover approver, bool yolo = false, bool parsesShell = true, ApprovalStore? saved = null)
     {
         var workspace = new Workspace(_root);
-        return new Gate(workspace, new Policy(workspace, yolo) { ParsesShell = parsesShell }, approver, _events.Add);
+        return new Gate(workspace, new Policy(workspace, yolo) { ParsesShell = parsesShell }, approver, _events.Add, saved);
     }
+
+    ApprovalStore Store(string? workspace = null) => new(Path.Combine(_outside, "approvals.json"), workspace ?? _root);
 
     string At(string rel) => Path.Combine(_root, rel);
 
@@ -216,5 +218,59 @@ public sealed class GateTests : IDisposable
         Assert.Contains("always denied", e.Message);
         Assert.Throws<ToolException>(() => gate.WritePath("innocent.txt"));
         Assert.Equal(2, approver.Requests.Count);
+    }
+
+    [Fact]
+    public async Task SavedApprovals_CarryProgramsAndToolsIntoTheNextSession()
+    {
+        var first = new FakeApprover(Answer.Always);
+        var gate = NewGate(first, saved: Store());
+        await gate.RunAsync("touch a", TimeSpan.FromSeconds(10), default);
+        await gate.CallExternalAsync("mcp__docs__edit", false, "{}", _ => Task.FromResult("ok"), default);
+        Assert.All(first.Requests, r => Assert.EndsWith("(saved for this directory)", r.AlwaysLabel));
+
+        var next = new FakeApprover(Answer.No);
+        gate = NewGate(next, saved: Store());
+        await gate.RunAsync("touch b", TimeSpan.FromSeconds(10), default);
+        await gate.CallExternalAsync("mcp__docs__edit", false, "{}", _ => Task.FromResult("ok"), default);
+
+        Assert.Empty(next.Requests);
+        Assert.Equal(["touch"], gate.SavedApprovals.Programs);
+        Assert.Equal(["mcp__docs__edit"], gate.SavedApprovals.Tools);
+    }
+
+    [Fact]
+    public async Task SavedApprovals_SkipWritesAndInterpreters()
+    {
+        var approver = new FakeApprover(Answer.Always);
+        var gate = NewGate(approver, saved: Store());
+        await gate.WriteAsync(At("a.txt"), null, "1", default);
+        await gate.RunAsync("python3 -c 'print(1)'", TimeSpan.FromSeconds(10), default);
+        await gate.RunAsync("python3 -c 'print(2)'", TimeSpan.FromSeconds(10), default);
+
+        Assert.Equal(2, approver.Requests.Count);
+        Assert.DoesNotContain("saved", approver.Requests[1].AlwaysLabel);
+        Assert.Empty(gate.SavedApprovals.Programs);
+
+        var next = new FakeApprover(Answer.No);
+        gate = NewGate(next, saved: Store());
+        await Assert.ThrowsAsync<ToolException>(() => gate.WriteAsync(At("b.txt"), null, "2", default));
+        await Assert.ThrowsAsync<ToolException>(() => gate.RunAsync("python3 -c 'print(3)'", TimeSpan.FromSeconds(10), default));
+        Assert.Equal(2, next.Requests.Count);
+    }
+
+    [Fact]
+    public async Task SavedApprovals_ArePerDirectoryAndCanBeForgotten()
+    {
+        await NewGate(new FakeApprover(Answer.Always), saved: Store()).RunAsync("touch a", TimeSpan.FromSeconds(10), default);
+        Assert.Empty(Store(_outside).Load().Programs);
+
+        var approver = new FakeApprover(Answer.No);
+        var gate = NewGate(approver, saved: Store());
+        gate.ForgetApprovals();
+        await Assert.ThrowsAsync<ToolException>(() => gate.RunAsync("touch b", TimeSpan.FromSeconds(10), default));
+
+        Assert.Single(approver.Requests);
+        Assert.Empty(Store().Load().Programs);
     }
 }

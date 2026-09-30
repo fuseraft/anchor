@@ -49,12 +49,18 @@ Press a single key:
 | Key       | Effect                                                         |
 | --------- | -------------------------------------------------------------- |
 | `y`       | Allow this action once.                                        |
-| `a`       | Allow this kind of action for the rest of the session.         |
+| `a`       | Allow this kind of action from now on (see below).             |
 | any other | Decline. The model is told not to retry, and to ask you if it's stuck. |
 
 What "always" covers depends on the action: all file writes inside the directory, commands that
-use the same programs, or every call to one MCP tool. It lasts until you exit. See
-[Safety and approvals](/anchor/guides/safety/) for what asks and what doesn't.
+use the same programs, or every call to one MCP tool.
+
+"Always" for commands and MCP tools is saved for this directory, so the next session (including
+`-p`) doesn't ask again; the label ends in "(saved for this directory)" when it will be. Two kinds
+last only until you exit: file writes, because seeing each diff is the point, and commands using an
+interpreter (`bash`, `python3`, `node`, ...), which can run anything. `/approvals` lists what is
+saved and `/approvals clear` forgets it. See [Safety and approvals](/anchor/guides/safety/) for
+what asks and what doesn't.
 
 ## Pasting
 
@@ -70,6 +76,7 @@ stays open so you can finish it before pressing Enter.
 | `/context`         | How full the context window is, and token usage for the session.           |
 | `/until [check]`   | Keep each turn going until a command exits 0. [More](/anchor/guides/until/) |
 | `/compact`         | Summarize older turns now.                                                  |
+| `/approvals`       | List saved "always" answers. `/approvals clear` forgets them.              |
 | `/undo`            | Revert the files changed in the last turn that changed any.                |
 | `/sessions`        | List recent sessions in this directory.                                    |
 | `/agents`          | List sub-agents.                                                            |

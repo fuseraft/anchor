@@ -35,7 +35,8 @@ public static class Startup
         foreach (var warning in skillWarnings.Concat(agentWarnings))
             output.Warn(warning);
 
-        var gate = new Gate(workspace, new Policy(workspace, options.Yolo, skills.Select(s => s.Directory)), output.Approver, emit);
+        var gate = new Gate(workspace, new Policy(workspace, options.Yolo, skills.Select(s => s.Directory)), output.Approver, emit,
+            new ApprovalStore(Path.Combine(Config.Home, "approvals.json"), workspace.Root));
         var toolbox = new Toolbox([.. new FileTools(gate).All(), .. new EditTools(gate).All(), .. new ShellTool(gate).All()]);
         var systemPrompt = SystemPrompt.Build(workspace, DateOnly.FromDateTime(DateTime.Now), skills);
         var agent = new Agent(client, toolbox, systemPrompt, emit, Providers.Providers.Options(provider), compactor: new Compactor(window));

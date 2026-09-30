@@ -221,6 +221,19 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
                     renderer.Line(renderer.Red(e.Message));
                 }
                 break;
+            case "/approvals" when parts.Length == 1:
+                var saved = gate.SavedApprovals;
+                if (saved.Programs.Count + saved.Tools.Count == 0)
+                    renderer.Line(renderer.Dim("No approvals saved for this directory. Answer [a]lways to a command or MCP tool to save one."));
+                foreach (var program in saved.Programs)
+                    renderer.Line($"  command  {program}");
+                foreach (var tool in saved.Tools)
+                    renderer.Line($"  tool     {tool}");
+                break;
+            case "/approvals" when parts[1] == "clear":
+                gate.ForgetApprovals();
+                renderer.Line(renderer.Dim("Forgot every \"always\" answer for this directory, saved or from this session."));
+                break;
             case "/help":
                 renderer.Line("""
                     /model [name]   show or switch the model
@@ -229,6 +242,7 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
                     /skills         list skills
                     /mcp            list MCP servers; /mcp login|logout <server> to sign in or out
                     /until [check]  keep each turn going until the check command exits 0; /until off to stop
+                    /approvals      list "always" answers saved for this directory; /approvals clear to forget them
                     /compact        summarize older turns now
                     /undo           revert the files changed in the last turn that changed any
                     /sessions       list sessions in this directory

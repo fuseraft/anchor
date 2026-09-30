@@ -70,6 +70,10 @@ public static partial class ShellCommand
         return commands.Count > 0 && commands.All(c => IsReadOnly(c, isInside));
     }
 
+    /// <summary>Whether approving the program approves arbitrary code: a shell, a script interpreter, eval or source.</summary>
+    public static bool RunsAnyCode(string program) =>
+        Interpreters.Contains(program) || program is "eval" or "source" or "." || program.StartsWith("python", StringComparison.Ordinal);
+
     /// <summary>Program names in the command, used for "always allow" approvals.</summary>
     public static IReadOnlySet<string> Programs(string command) => Parse(command).Select(c => c.Program).ToHashSet();
 
