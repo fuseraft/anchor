@@ -61,7 +61,16 @@ default model; otherwise, or to choose one, pass `--model` or set it in `~/.anch
 }
 ```
 
-For another OpenAI-compatible server, set `provider.endpoint` and `provider.apiKeyEnv`.
+For another OpenAI-compatible server, set `provider.endpoint` and `provider.apiKeyEnv`. To reach
+many models through one proxy, such as LiteLLM, name it under `providers` and use `<name>/<model>`:
+
+```json
+{
+  "providers": { "work": { "endpoint": "https://litellm.example.com/v1", "apiKeyEnv": "LITELLM_API_KEY" } },
+  "provider": { "model": "work/anthropic.claude-sonnet-5" }
+}
+```
+
 `provider.contextWindow` overrides the context size. `ANCHOR_HOME` moves `~/.anchor`.
 
 ## Use

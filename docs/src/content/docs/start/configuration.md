@@ -52,11 +52,58 @@ of the environment variable that holds its key:
 
 The variable must be set, even if the server ignores it (`export OLLAMA_API_KEY=unused`).
 
+## Named providers (LiteLLM and other proxies)
+
+To reach several models through one server, such as a LiteLLM proxy at work, give the server a name
+under `providers` and write its models as `<name>/<model>`:
+
+```json
+{
+  "providers": {
+    "work": {
+      "endpoint": "https://litellm.example.com/v1",
+      "apiKeyEnv": "LITELLM_API_KEY"
+    }
+  },
+  "provider": { "model": "work/claude-sonnet-5" }
+}
+```
+
+Everything after the first `/` is sent to the server as the model name, so `work/anthropic/claude-sonnet-5`
+asks for `anthropic/claude-sonnet-5`, and Bedrock-style ids such as `work/anthropic.claude-sonnet-5` or
+`work/xai.grok-4.6` are passed through unchanged. The same names work with `--model`, `/model` and a sub-agent's
+`model:`, so you can switch between the proxy's models mid-session:
+
+```text
+/model work/gpt-5
+```
+
+A provider speaks the OpenAI chat completions API unless you set `"type": "anthropic"`. `headers` adds
+request headers, with `${VAR}` replaced from the environment, and `apiKeyEnv` can be left out when the
+server needs no key or authenticates through a header:
+
+```json
+{
+  "providers": {
+    "work": {
+      "endpoint": "https://litellm.example.com/v1",
+      "headers": { "Authorization": "Bearer ${LITELLM_API_KEY}", "X-Team": "platform" },
+      "contextWindow": 128000
+    }
+  }
+}
+```
+
+A name that doesn't start with a configured provider is treated as before, so `claude-sonnet-5` still
+goes straight to Anthropic.
+
 ## Context window
 
 anchor keeps the conversation under the model's context window. It assumes 200,000 tokens for
-Claude, 256,000 for Grok 4, and 128,000 for anything else. Set `provider.contextWindow` if your
-model's window is different, especially for local models with small windows.
+Claude, 256,000 for Grok 4, and 128,000 for anything else, going by the model name: any name
+containing `claude-` or `grok-4` counts, so `anthropic.claude-sonnet-5` and `xai.grok-4.6` are
+recognized. Set `provider.contextWindow`, or `contextWindow` on a named
+provider, if your model's window is different, especially for local models with small windows.
 
 ## The anchor home directory
 

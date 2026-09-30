@@ -9,6 +9,8 @@ public sealed class Config
 
     public ProviderConfig Provider { get; set; } = new();
 
+    public Dictionary<string, Anchor.Providers.CustomProvider>? Providers { get; set; }
+
     public Dictionary<string, Anchor.Mcp.McpServerConfig>? McpServers { get; set; }
 
     public static string Home =>

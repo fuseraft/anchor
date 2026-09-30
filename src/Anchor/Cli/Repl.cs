@@ -5,7 +5,8 @@ using Anchor.Providers;
 namespace Anchor.Cli;
 
 public sealed record ReplOptions(ProviderSettings Provider, string SessionsDir, bool Yolo, bool Resumed, long ContextWindow,
-    IReadOnlyList<Skill> Skills, IReadOnlyList<AgentDefinition> Agents, SessionUsage Usage, Anchor.Mcp.McpHub Mcp);
+    IReadOnlyList<Skill> Skills, IReadOnlyList<AgentDefinition> Agents, SessionUsage Usage, Anchor.Mcp.McpHub Mcp,
+    Func<string, ProviderSettings> ResolveModel);
 
 /// <summary>The interactive loop: read a line, run it as a slash command, a shell escape, or an agent turn.</summary>
 public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer renderer, ReplOptions options)
@@ -206,12 +207,12 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
                 renderer.Line(renderer.Dim($"After each turn anchor runs `{_until}` and keeps working until it exits 0 (at most {Until.MaxRounds} rounds, or until a round changes no files)."));
                 break;
             case "/model" when parts.Length == 1:
-                renderer.Line($"{_provider.Model} {renderer.Dim($"({_provider.Provider})")}");
+                renderer.Line($"{_provider.Model} {renderer.Dim($"({_provider.Via ?? _provider.Provider})")}");
                 break;
             case "/model":
                 try
                 {
-                    var next = Providers.Providers.Resolve(parts[1]);
+                    var next = options.ResolveModel(parts[1]);
                     agent.Use(Providers.Providers.Create(next), Providers.Providers.Options(next));
                     _provider = next;
                     renderer.Line(renderer.Dim($"Model: {next.Model}"));

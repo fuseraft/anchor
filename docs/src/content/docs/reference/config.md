@@ -16,6 +16,10 @@ optional. Keys are case-insensitive, and comments and trailing commas are allowe
     "apiKeyEnv": "ANTHROPIC_API_KEY",
     "contextWindow": 200000
   },
+  // Named servers; use their models as "work/<model>".
+  "providers": {
+    "work": { "endpoint": "https://litellm.example.com/v1", "apiKeyEnv": "LITELLM_API_KEY" }
+  },
   // MCP servers available in every project.
   "mcpServers": {
     "files": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }
@@ -27,7 +31,7 @@ optional. Keys are case-insensitive, and comments and trailing commas are allowe
 
 | Key             | Type   | Description                                                                                   |
 | --------------- | ------ | --------------------------------------------------------------------------------------------- |
-| `model`         | string | The model name. `--model` overrides it.                                                       |
+| `model`         | string | The model name, or `<provider>/<model>` for a [named provider](#providers). `--model` overrides it. |
 | `name`          | string | `anthropic` or `openai`. Inferred from the model name when omitted; `openai` for unknown names. |
 | `endpoint`      | string | The API base URL, for OpenAI-compatible servers other than OpenAI and xAI.                   |
 | `apiKeyEnv`     | string | The environment variable that holds the API key.                                             |
@@ -43,6 +47,21 @@ their defaults:
 | `gpt-`, `o1`, `o3`, `o4` | `openai`    | OpenAI's API              | `OPENAI_API_KEY`    | 128,000         |
 
 Any other model defaults to a 128,000-token window.
+
+## providers
+
+An object mapping a name to an API server, such as a LiteLLM proxy. A model written `<name>/<model>`
+is sent to that server as `<model>` (everything after the first `/`). This works in
+`provider.model`, `--model`, `/model` and a sub-agent's `model:`. `provider.name`, `endpoint` and
+`apiKeyEnv` don't apply to these models; `provider.contextWindow` still overrides the window.
+
+| Key             | Type   | Description                                                                                 |
+| --------------- | ------ | ------------------------------------------------------------------------------------------- |
+| `endpoint`      | string | The API base URL. Required.                                                                 |
+| `type`          | string | `openai` (chat completions, the default) or `anthropic` (messages).                         |
+| `apiKeyEnv`     | string | The environment variable that holds the API key. Omit it if the server needs no key.       |
+| `headers`       | object | Extra request headers. `${NAME}` in a value is replaced with the environment variable.     |
+| `contextWindow` | number | The context window for this server's models. Defaults by model name: a name containing `claude-` gets 200,000 and one containing `grok-4` gets 256,000, so Bedrock ids like `anthropic.claude-sonnet-5` work. |
 
 ## mcpServers
 

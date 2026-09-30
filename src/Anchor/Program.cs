@@ -40,7 +40,7 @@ try
         var renderer = Renderer.ForConsole();
         var h = await Startup.BuildAsync(options, new Output(renderer.Render, new ConsoleApprover(renderer), m => renderer.Line(renderer.Yellow(m)), Interactive: true));
         await using var _ = h.Mcp;
-        var replOptions = new ReplOptions(h.Provider, h.SessionsDir, options.Yolo, options.Resume, h.ContextWindow, h.Skills, h.Agents, h.Usage, h.Mcp);
+        var replOptions = new ReplOptions(h.Provider, h.SessionsDir, options.Yolo, options.Resume, h.ContextWindow, h.Skills, h.Agents, h.Usage, h.Mcp, h.ResolveModel);
         return await new Repl(h.Agent, h.Gate, h.Session, renderer, replOptions).RunAsync();
     }
 }
