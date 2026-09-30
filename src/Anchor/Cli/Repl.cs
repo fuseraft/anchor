@@ -12,6 +12,9 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
 {
     const int ReplayTurns = 3;
 
+    // A terminal delivers a paste in one burst, so input still waiting this long after Enter is part of the same paste.
+    static readonly TimeSpan PasteGap = TimeSpan.FromMilliseconds(50);
+
     CancellationTokenSource? _turn;
     DateTime _lastIdleInterrupt;
     ProviderSettings _provider = options.Provider;
@@ -36,7 +39,7 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
         {
             Console.Write("\n› ");
             renderer.AtPrompt = true;
-            var line = Console.ReadLine();
+            var line = await ReadInputAsync();
             renderer.AtPrompt = false;
             if (line is null)
                 return 0;
@@ -46,7 +49,7 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
 
             if (line.StartsWith('!'))
                 await ShellAsync(line[1..]);
-            else if (line.StartsWith('/'))
+            else if (line.StartsWith('/') && !line.Contains('\n'))
             {
                 if (!await CommandAsync(line))
                     return 0;
@@ -84,6 +87,25 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
         {
             _turn = null;
         }
+    }
+
+    // Reads one line, plus the rest of a multi-line paste, so a paste becomes one message instead of one turn per line.
+    // An unterminated last line stays open for editing until Enter.
+    static async Task<string?> ReadInputAsync()
+    {
+        var line = Console.ReadLine();
+        if (line is null || Console.IsInputRedirected)
+            return line;
+
+        List<string> lines = [line];
+        while (true)
+        {
+            await Task.Delay(PasteGap);
+            if (!Console.KeyAvailable || Console.ReadLine() is not { } next)
+                break;
+            lines.Add(next);
+        }
+        return string.Join('\n', lines);
     }
 
     async Task<bool> CommandAsync(string line)

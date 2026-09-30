@@ -56,6 +56,11 @@ What "always" covers depends on the action: all file writes inside the directory
 use the same programs, or every call to one MCP tool. It lasts until you exit. See
 [Safety and approvals](/anchor/guides/safety/) for what asks and what doesn't.
 
+## Pasting
+
+A multi-line paste is sent as one message. If the paste doesn't end in a newline, its last line
+stays open so you can finish it before pressing Enter.
+
 ## Slash commands
 
 | Command            | What it does                                                                |
