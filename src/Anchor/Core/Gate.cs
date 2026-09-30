@@ -8,9 +8,19 @@ public enum Answer { No, Yes, Always }
 /// <summary>What the user is asked to approve. <paramref name="AlwaysLabel"/> is null when "always" is not offered.</summary>
 public sealed record ApprovalRequest(string Title, string? Detail, string? AlwaysLabel);
 
+/// <summary>A question for the user with suggested answers; with <paramref name="AllowOther"/>, the user may type their own.</summary>
+public sealed record Question(string Text, IReadOnlyList<string> Options, bool AllowOther);
+
+/// <summary>The person at the other end: approves actions and answers questions.</summary>
 public interface IApprover
 {
     Task<Answer> ApproveAsync(ApprovalRequest request, CancellationToken ct);
+
+    /// <summary>False when no one can answer (-p), so the ask_user tool isn't offered.</summary>
+    bool CanAsk => false;
+
+    /// <summary>The user's answer, or null if they dismissed the question.</summary>
+    Task<string?> AskAsync(Question question, CancellationToken ct) => Task.FromResult<string?>(null);
 }
 
 /// <summary>The only code that lets a tool read outside the workspace, write a file, or run a process: policy, then approval, then the effect.</summary>

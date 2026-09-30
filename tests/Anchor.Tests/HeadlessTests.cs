@@ -68,7 +68,7 @@ public sealed class HeadlessTests : IDisposable
         var usage = new SessionUsage();
         Action<AgentEvent> observed = e => { usage.Observe(e); emit(e); };
         var gate = new Gate(workspace, new Policy(workspace), approver, observed);
-        var toolbox = new Toolbox([.. new FileTools(gate).All(), .. new EditTools(gate).All()]);
+        var toolbox = new Toolbox([.. new FileTools(gate).All(), .. new EditTools(gate).All(), .. approver.CanAsk ? new AskTool(approver).All() : []]);
         var agent = new Agent(client, toolbox, "system", observed);
         var session = SessionLog.Create(Path.Combine(_root, ".sessions"), workspace.Root, "fake");
         var hub = new McpHub(toolbox, gate, observed, new MemoryKeychain());
@@ -206,6 +206,33 @@ public sealed class HeadlessTests : IDisposable
         Assert.Equal(0, await run.WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.Equal("hi", File.ReadAllText(Path.Combine(_root, "a.txt")));
         Assert.Contains(output.Events, e => (string)e["type"]! == "file_changed");
+    }
+
+    [Fact]
+    public async Task JsonMode_RoundTripsQuestions()
+    {
+        var output = new JsonLines();
+        var json = new JsonEvents(output);
+        var approver = new JsonApprover(json);
+        var stdin = new LineFeed();
+        var client = new FakeChatClient().Call("ask_user", new { question = "Which database?", options = new[] { "Postgres", "SQLite" } }).Text("ok");
+        var h = Build(client, approver, json.Emit);
+        var run = new JsonMode(json, approver, stdin).RunAsync(h);
+
+        await output.WaitForAsync(e => (string)e["type"]! == "ready");
+        stdin.Send("""{"type":"user_input","text":"set up storage"}""");
+        var question = await output.WaitForAsync(e => (string)e["type"]! == "question");
+        Assert.Equal("Which database?", (string)question["text"]!);
+        Assert.Equal(["Postgres", "SQLite"], question["options"]!.AsArray().Select(o => (string)o!));
+        Assert.True((bool)question["allowOther"]!);
+
+        stdin.Send($$"""{"type":"question_response","id":"{{question["id"]}}","answer":"SQLite"}""");
+        await output.WaitForAsync(e => (string)e["type"]! == "ready", count: 2);
+        stdin.Close();
+
+        Assert.Equal(0, await run.WaitAsync(TimeSpan.FromSeconds(10)));
+        var result = h.Agent.History.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Single();
+        Assert.Equal("The user chose: SQLite", result.Result?.ToString());
     }
 
     [Fact]

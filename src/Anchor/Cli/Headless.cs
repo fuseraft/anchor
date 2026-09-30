@@ -88,7 +88,7 @@ public static class PrintMode
 
 /// <summary>
 /// --json without -p: a line protocol for editors. Requests on stdin: <c>{"type":"user_input","text":…}</c>,
-/// <c>{"type":"approval_response","id":…,"answer":"yes|no|always"}</c>, <c>{"type":"cancel"}</c>. Events go to stdout.
+/// <c>{"type":"approval_response","id":…,"answer":"yes|no|always"}</c>, <c>{"type":"question_response","id":…,"answer":…}</c>, <c>{"type":"cancel"}</c>. Events go to stdout.
 /// </summary>
 public sealed class JsonMode(JsonEvents json, JsonApprover approver, TextReader stdin)
 {
@@ -133,11 +133,14 @@ public sealed class JsonMode(JsonEvents json, JsonApprover approver, TextReader 
                 case "approval_response":
                     approver.Answer((string?)request!["id"], (string?)request["answer"]);
                     break;
+                case "question_response":
+                    approver.Reply((string?)request!["id"], request["answer"] is JsonValue a && a.TryGetValue<string>(out var reply) ? reply : null);
+                    break;
                 case "cancel":
                     turnCts?.Cancel();
                     break;
                 default:
-                    json.Error("Expected user_input (with text), approval_response, or cancel.");
+                    json.Error("Expected user_input (with text), approval_response, question_response, or cancel.");
                     break;
             }
         }
@@ -204,6 +207,7 @@ public sealed class JsonEvents(TextWriter output)
 public sealed class JsonApprover(JsonEvents json) : IApprover
 {
     readonly ConcurrentDictionary<string, TaskCompletionSource<Answer>> _pending = new();
+    readonly ConcurrentDictionary<string, TaskCompletionSource<string?>> _questions = new();
     int _next;
 
     public async Task<Answer> ApproveAsync(ApprovalRequest request, CancellationToken ct)
@@ -227,6 +231,42 @@ public sealed class JsonApprover(JsonEvents json) : IApprover
         {
             _pending.TryRemove(id, out _);
         }
+    }
+
+    public bool CanAsk => true;
+
+    /// <summary>Sends a question event and waits for the matching question_response; a null answer means dismissed.</summary>
+    public async Task<string?> AskAsync(Question question, CancellationToken ct)
+    {
+        var id = $"q{Interlocked.Increment(ref _next)}";
+        var answer = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _questions[id] = answer;
+        json.Write(new JsonObject
+        {
+            ["type"] = "question",
+            ["id"] = id,
+            ["text"] = question.Text,
+            ["options"] = new JsonArray([.. question.Options.Select(o => (JsonNode)o)]),
+            ["allowOther"] = question.AllowOther,
+        });
+        try
+        {
+            return await answer.Task.WaitAsync(ct);
+        }
+        finally
+        {
+            _questions.TryRemove(id, out _);
+        }
+    }
+
+    public void Reply(string? id, string? answer)
+    {
+        if (id is null || !_questions.TryGetValue(id, out var pending))
+        {
+            json.Error($"No pending question with id '{id}'.");
+            return;
+        }
+        pending.TrySetResult(string.IsNullOrWhiteSpace(answer) ? null : answer.Trim());
     }
 
     public void Answer(string? id, string? answer)

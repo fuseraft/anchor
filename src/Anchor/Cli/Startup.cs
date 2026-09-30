@@ -58,6 +58,8 @@ public static class Startup
             return (models.Create(settings), Providers.Providers.Options(settings));
         }, () => new Compactor(window), options.MaxRounds);
         toolbox.Add(new AgentTools(runner, agents, skills).All());
+        if (output.Approver.CanAsk)
+            toolbox.Add(new AskTool(output.Approver).All());
 
         var hub = new McpHub(toolbox, gate, emit, keychain,
             connectTimeout: options.Timeout is { } t ? TimeSpan.FromSeconds(t) : null);

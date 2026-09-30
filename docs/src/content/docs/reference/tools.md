@@ -17,6 +17,7 @@ These are the tools the model can call. Use these names in a named sub-agent's `
 | `agent`       | Hand a task to one sub-agent.                            | No (its own tools may ask)     |
 | `agents`      | Run up to 4 read-only sub-agents in parallel.            | Never                          |
 | `skill`       | Load a skill's instructions.                             | No                             |
+| `ask_user`    | Ask you a multiple-choice question.                      | It is the question             |
 | `mcp__<server>__<tool>` | A tool from an MCP server.                     | Unless marked read-only        |
 
 Secret files are denied to every tool, and every result is capped at 30,000 characters (the
@@ -111,3 +112,21 @@ Returns every report, headed `## Task 1`, `## Task 2`, and so on.
 | `name`    | The skill name. |
 
 Only offered when at least one skill is installed.
+
+## ask_user
+
+Asks you a multiple-choice question when the model is blocked on a decision only you can make,
+such as a preference the request and the code don't settle. In the REPL it shows the same picker
+as `anchor setup`: move with ↑/↓ and press Enter. The last entry, "Something else", lets you type
+your own answer. Esc or Ctrl+C dismisses the question, and the model continues on its own
+judgment and says what it assumed.
+
+| Parameter     | Default | Description                                            |
+| ------------- | ------- | ------------------------------------------------------ |
+| `question`    |         | The question, as one sentence.                         |
+| `options`     |         | 2 to 8 answers to choose from, the recommended one first. |
+| `allow_other` | `true`  | Whether you can type an answer that isn't an option.   |
+
+Offered in the REPL and in `--json` sessions, where it becomes a
+[`question` event](/anchor/reference/json/#events-it-adds). It's not offered with `-p`, where
+no one can answer, or to sub-agents.

@@ -62,6 +62,7 @@ programs.
 | ------------------ | -------------------------------- | ----------------------------------------------------- |
 | `ready`            | `session`, `model`, `tools`      | At startup and after each turn: it can take input.    |
 | `approval_request` | `id`, `title`, `detail`, `always` | An action needs approval. `detail` is the diff for writes; `always` is the "always" label, or `null` if not offered. |
+| `question`         | `id`, `text`, `options`, `allowOther` | The model asks a multiple-choice question with `ask_user`. The turn waits for a `question_response`. |
 | `error`            | `message`                        | A request was invalid.                                |
 
 ### Requests
@@ -71,6 +72,7 @@ Send one JSON object per line on stdin:
 ```json
 {"type":"user_input","text":"fix the failing test"}
 {"type":"approval_response","id":"a1","answer":"yes"}
+{"type":"question_response","id":"q2","answer":"SQLite"}
 {"type":"cancel"}
 ```
 
@@ -78,6 +80,7 @@ Send one JSON object per line on stdin:
 | ------------------- | ------------------ | -------------------------------------------------------------- |
 | `user_input`        | `text`             | Start a turn. Rejected while a turn is running.               |
 | `approval_response` | `id`, `answer`     | Answer an `approval_request`: `yes`, `no` or `always`. Anything else is `no`. |
+| `question_response` | `id`, `answer`     | Answer a `question`: one of its `options`, or any other text if `allowOther` is true. A missing or empty `answer`, or text that isn't an option when `allowOther` is false, dismisses the question. |
 | `cancel`            |                    | Cancel the running turn.                                       |
 
 The session ends when stdin closes.

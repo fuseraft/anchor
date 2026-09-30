@@ -33,7 +33,7 @@ public sealed class SubAgentRunner(Toolbox toolbox, string systemPrompt, Action<
     public async Task<string> RunAsync(string task, AgentDefinition? definition, CancellationToken ct, string? label = null)
     {
         var name = label ?? definition?.Name ?? "agent";
-        var tools = toolbox.Subset((definition?.Tools ?? ReadOnlyTools).Where(t => t is not ("agent" or "agents")));
+        var tools = toolbox.Subset((definition?.Tools ?? ReadOnlyTools).Where(t => t is not ("agent" or "agents" or "ask_user")));
         var (client, options) = clientFor(definition?.Model);
         var prompt = systemPrompt + Instructions + (definition is null ? "" : $"\n\n{definition.Prompt}");
 

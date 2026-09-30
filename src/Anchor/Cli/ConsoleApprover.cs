@@ -24,6 +24,21 @@ public sealed class ConsoleApprover(Renderer renderer) : IApprover
         return answer;
     }
 
+    public bool CanAsk => true;
+
+    public Task<string?> AskAsync(Question question, CancellationToken ct)
+    {
+        renderer.Line(renderer.Yellow($"  ? {question.Text}"));
+        const string other = "Something else (type an answer)";
+        var answer = Picker.Choose(null, question.AllowOther ? [.. question.Options, other] : question.Options);
+        if (answer == other)
+        {
+            Console.Write("  Your answer: ");
+            answer = Console.ReadLine()?.Trim() is { Length: > 0 } typed ? typed : null;
+        }
+        return Task.FromResult(answer);
+    }
+
     static async Task<char> ReadKeyAsync(CancellationToken ct)
     {
         if (Console.IsInputRedirected)

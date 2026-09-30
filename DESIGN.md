@@ -17,7 +17,7 @@ src/Anchor/              one project
   Core/SessionLog.cs     append-only JSONL
   Core/Definitions.cs    skills and sub-agent definitions (YAML frontmatter)
   Core/SubAgentRunner.cs fresh agent per task, same gate
-  Tools/                 read, list, glob, grep, write, edit, shell, agent, skill
+  Tools/                 read, list, glob, grep, write, edit, shell, agent, skill, ask_user
   Mcp/                   config and trust, background connections, OAuth, keychain
   Providers/             anthropic (native, cached), openai-compatible
   Cli/                   REPL, rendering, approvals, config
