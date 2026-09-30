@@ -28,10 +28,26 @@ reported on stderr. Read-only work, such as reading files or running `git diff`,
 Commands and MCP tools you've answered "always" to in an interactive session in the same directory
 are saved and run without asking, so a `-p` run can use `npm test` once you've allowed `npm`.
 
-For anything else that changes things, pass `--yolo`. Hard denials and secret masking still apply.
+To allow specific things for one run, pass `--allow` once for each: a program, an MCP tool
+(`mcp__server__tool`), or `edits` for file writes in the directory. A command runs only when every
+program in it is allowed. Nothing is saved.
 
 ```sh
-anchor -p --yolo "fix the failing test" --until "npm test"
+anchor -p --allow edits --allow npm "fix the failing test" --until "npm test"
+```
+
+To allow everything that would ask, pass `--yolo`. Hard denials and secret masking still apply
+either way.
+
+## Limits
+
+`--max-rounds <n>` stops the run after `n` model requests, counted across all `--until` rounds
+(sub-agents' requests aren't counted). `--timeout <seconds>` stops it after that long, including
+time spent running the check. Both end the run with a distinct exit code and `result` status, so
+a calling program can tell them apart from a failure.
+
+```sh
+anchor -p --yolo "fix the failing test" --until "npm test" --max-rounds 40 --timeout 900
 ```
 
 Project MCP servers you've never approved interactively are skipped in `-p` mode.
@@ -45,6 +61,8 @@ Project MCP servers you've never approved interactively are skipped in `-p` mode
 | `2`   | A usage error in the command line.                         |
 | `3`   | The loop guard stopped a turn that was going in circles.   |
 | `4`   | The `--until` check never passed.                          |
+| `5`   | The run reached `--max-rounds`.                            |
+| `124` | The run reached `--timeout`.                               |
 | `130` | Cancelled with Ctrl+C.                                     |
 
 ## JSON output
@@ -62,7 +80,7 @@ anchor -p "list the TODOs" --json
 {"type":"text","text":"There are 3 TODOs:"}
 {"type":"usage","input":5210,"output":84,"cached":2304}
 {"type":"turn_end","reason":"completed","detail":null}
-{"type":"result","status":"completed","text":"There are 3 TODOs: ...","check":null,"session":"20260928-225355-be7b","usage":{"input":5210,"output":84,"cached":2304}}
+{"type":"result","status":"completed","text":"There are 3 TODOs: ...","check":null,"files_changed":[],"session":"20260928-225355-be7b","usage":{"input":5210,"output":84,"cached":2304}}
 ```
 
 Every event type is in the [JSON reference](/anchor/reference/json/).

@@ -53,6 +53,23 @@ public sealed class GateTests : IDisposable
     }
 
     [Fact]
+    public async Task Allow_PreapprovesProgramsAndToolsButNotDenials()
+    {
+        var approver = new FakeApprover(Answer.No);
+        var gate = NewGate(approver);
+        gate.Allow("touch");
+        gate.Allow("mcp__docs__write");
+
+        await gate.RunAsync("touch a", TimeSpan.FromSeconds(10), default);
+        Assert.Equal("ok", await gate.CallExternalAsync("mcp__docs__write", false, "{}", _ => Task.FromResult("ok"), default));
+        await Assert.ThrowsAsync<ToolException>(() => gate.RunAsync("touch b && rm c", TimeSpan.FromSeconds(10), default));
+        await Assert.ThrowsAsync<ToolException>(() => gate.RunAsync("sudo touch d", TimeSpan.FromSeconds(10), default));
+
+        Assert.True(File.Exists(At("a")));
+        Assert.Single(approver.Requests);
+    }
+
+    [Fact]
     public async Task Write_AlwaysSkipsLaterPromptsInsideOnly()
     {
         var approver = new FakeApprover(Answer.Always);

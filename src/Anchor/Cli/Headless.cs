@@ -10,32 +10,47 @@ namespace Anchor.Cli;
 /// <summary>-p: one turn, then exit. The answer goes to stdout; progress goes to stderr (or everything to stdout as JSON lines).</summary>
 public static class PrintMode
 {
-    public static async Task<int> RunAsync(Harness h, string prompt, JsonEvents? json, TextWriter stdout, string? until = null)
+    public static async Task<int> RunAsync(Harness h, string prompt, JsonEvents? json, TextWriter stdout, string? until = null, TimeSpan? timeout = null)
     {
         using var cts = new CancellationTokenSource();
+        var interrupted = false;
         ConsoleCancelEventHandler cancel = (_, e) =>
         {
             e.Cancel = true;
+            interrupted = true;
             cts.Cancel();
         };
         Console.CancelKeyPress += cancel;
+        if (timeout is { } limit)
+            cts.CancelAfter(limit);
         try
         {
             await h.McpReady;
             h.Gate.BeginTurn();
-            var (end, check) = until is null
-                ? (await h.Agent.RunTurnAsync(prompt, cts.Token), (CheckEnd?)null)
-                : await Until.RunAsync(h.Agent, h.Gate, until, prompt, cts.Token);
+            TurnEnd end;
+            CheckEnd? check = null;
+            try
+            {
+                (end, check) = until is null
+                    ? (await h.Agent.RunTurnAsync(prompt, cts.Token), null)
+                    : await Until.RunAsync(h.Agent, h.Gate, until, prompt, cts.Token);
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+                end = TurnEnd.Cancelled; // during the --until check
+            }
             h.Session.Sync(h.Agent.History);
+            var timedOut = end == TurnEnd.Cancelled && !interrupted && timeout is not null;
 
             var answer = end == TurnEnd.Completed ? FinalText(h.Agent.History) : "";
             if (json is not null)
                 json.Write(new JsonObject
                 {
                     ["type"] = "result",
-                    ["status"] = JsonEvents.Snake(end.ToString()),
+                    ["status"] = timedOut ? "timed_out" : JsonEvents.Snake(end.ToString()),
                     ["text"] = answer,
                     ["check"] = check is null ? null : JsonEvents.Snake(check.Value.ToString()),
+                    ["files_changed"] = new JsonArray([.. h.Gate.TurnChanges.Select(f => (JsonNode)f)]),
                     ["session"] = h.Session.Id,
                     ["usage"] = new JsonObject { ["input"] = h.Usage.Input, ["output"] = h.Usage.Output, ["cached"] = h.Usage.Cached },
                 });
@@ -47,6 +62,8 @@ public static class PrintMode
                 TurnEnd.Completed when check is not (null or CheckEnd.Passed) => 4,
                 TurnEnd.Completed => 0,
                 TurnEnd.LoopStopped => 3,
+                TurnEnd.RoundLimit => 5,
+                TurnEnd.Cancelled when timedOut => 124,
                 TurnEnd.Cancelled => 130,
                 _ => 1,
             };
@@ -225,7 +242,7 @@ public sealed class RefusingApprover(Action<string> report) : IApprover
 {
     public Task<Answer> ApproveAsync(ApprovalRequest request, CancellationToken ct)
     {
-        report($"Refused (no one to ask in -p mode; use --yolo to allow): {request.Title}");
+        report($"Refused (no one to ask in -p mode; use --allow or --yolo): {request.Title}");
         return Task.FromResult(Answer.No);
     }
 }

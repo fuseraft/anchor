@@ -59,7 +59,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
             case TurnEnded { Reason: TurnEnd.Cancelled }:
                 Line(Yellow("  (cancelled)"));
                 break;
-            case TurnEnded { Reason: TurnEnd.LoopStopped } t:
+            case TurnEnded { Reason: TurnEnd.LoopStopped or TurnEnd.RoundLimit } t:
                 Line(Yellow($"  stopped: {t.Detail}"));
                 break;
             case TurnEnded { Reason: TurnEnd.Error } t:

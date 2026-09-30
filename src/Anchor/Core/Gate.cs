@@ -49,6 +49,23 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
         saved?.Clear();
     }
 
+    /// <summary>
+    /// Pre-approves, for this session only, what <c>--allow</c> names: a program, an MCP tool (<c>mcp__server__tool</c>),
+    /// or <c>edits</c> for file writes in the workspace. Like answering "always"; denials still apply.
+    /// </summary>
+    public void Allow(string rule)
+    {
+        if (rule == "edits")
+            _alwaysWrite = true;
+        else if (rule.StartsWith("mcp__", StringComparison.Ordinal))
+            _alwaysExternal.Add(rule);
+        else
+            _alwaysPrograms.Add(rule);
+    }
+
+    /// <summary>Files the current turn has written with the file tools, relative to the workspace when inside it.</summary>
+    public List<string> TurnChanges => [.. (_turns.Last?.Value.Keys ?? Enumerable.Empty<string>()).Select(Display).Order(StringComparer.Ordinal)];
+
     /// <summary>Files written so far; a check loop compares it across a turn to see whether the turn changed anything.</summary>
     public int Writes { get; private set; }
 
@@ -74,7 +91,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     {
         var diff = Diff.Build(before ?? "", after);
         var verdict = policy.Write(full, full);
-        var rel = workspace.IsInside(full) ? workspace.Relative(full) : full;
+        var rel = Display(full);
         var title = before is null ? $"Create {rel}" : $"Edit {rel}";
         var inside = verdict.Reason == Policy.InsideWrite;
         await EnforceAsync(verdict, new ApprovalRequest(title, diff.Text, inside ? "all file writes in the workspace" : null),
@@ -111,7 +128,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
 
         foreach (var (full, (before, after)) in changes)
         {
-            var rel = workspace.IsInside(full) ? workspace.Relative(full) : full;
+            var rel = Display(full);
             var current = File.Exists(full) ? File.ReadAllText(full) : null;
             if (current != after)
             {
@@ -211,6 +228,8 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
             }, ct);
         return Secrets.Mask(await call(ct), workspace);
     }
+
+    string Display(string full) => workspace.IsInside(full) ? workspace.Relative(full) : full;
 
     (string Literal, string Real) Paths(string? path)
     {

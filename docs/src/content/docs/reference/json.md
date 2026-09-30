@@ -19,7 +19,7 @@ With `--json`, anchor writes one JSON object per line to stdout. Every object ha
 | `check`          | `command`, `round`, `passed`, `output`                         | An `--until` check ran.                        |
 | `sub_agent`      | `agent`, `event`                                               | An event from a sub-agent. `event` is any event on this list. |
 | `usage`          | `input`, `output`, `cached`                                    | Token usage for a turn.                        |
-| `turn_end`       | `reason`, `detail`                                             | A turn ended. `reason` is `completed`, `cancelled`, `loop_stopped` or `error`. |
+| `turn_end`       | `reason`, `detail`                                             | A turn ended. `reason` is `completed`, `cancelled`, `loop_stopped`, `round_limit` or `error`. |
 
 Parallel sub-agents are named `agent 1`, `agent 2`, and so on in `sub_agent` events.
 
@@ -33,6 +33,7 @@ Parallel sub-agents are named `agent 1`, `agent 2`, and so on in `sub_agent` eve
   "status": "completed",
   "text": "The final answer.",
   "check": null,
+  "files_changed": ["src/app.ts"],
   "session": "20260928-225355-be7b",
   "usage": { "input": 5210, "output": 84, "cached": 2304 }
 }
@@ -40,14 +41,15 @@ Parallel sub-agents are named `agent 1`, `agent 2`, and so on in `sub_agent` eve
 
 | Field     | Description                                                                      |
 | --------- | -------------------------------------------------------------------------------- |
-| `status`  | How the turn ended: `completed`, `cancelled`, `loop_stopped` or `error`.        |
+| `status`  | How the run ended: `completed`, `cancelled`, `loop_stopped`, `round_limit`, `timed_out` or `error`. |
 | `text`    | The final answer, or empty if the turn didn't complete.                          |
 | `check`   | With `--until`: `passed`, `no_changes` or `out_of_rounds`. Otherwise `null`.     |
+| `files_changed` | Files anchor's file tools wrote during the run, relative to the directory. Changes made by shell commands aren't tracked; use `git status` for those. |
 | `session` | The session id, for `--resume`.                                                  |
 | `usage`   | Token totals for the run, sub-agents included.                                   |
 
 Approvals can't be answered in this mode: anything that would ask is refused and reported as a
-`notice`, unless `--yolo` is on.
+`notice`, unless `--allow` covers it or `--yolo` is on.
 
 ## The editor protocol
 

@@ -75,7 +75,8 @@ Everything in the always-denied list is still denied, and secrets are still mask
 warning at startup when it's on.
 
 In `-p` mode nobody can answer a prompt, so without `--yolo` anything that would ask is refused and
-reported. See [Scripting](/anchor/guides/scripting/).
+reported. `--allow <rule>` lifts the question for one program, MCP tool, or `edits`, for that run
+only. See [Scripting](/anchor/guides/scripting/).
 
 ## Windows
 

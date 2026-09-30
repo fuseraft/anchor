@@ -27,8 +27,9 @@ tests/Anchor.Tests/
 ## Rules
 
 1. **Own the loop.** anchor drives `IChatClient` directly instead of using
-   `UseFunctionInvocation()`. The turn ends on the model's final text. There is no round cap:
-   anchor stops when the model repeats the same call 5 times or fails 3 calls in a row.
+   `UseFunctionInvocation()`. The turn ends on the model's final text. There is no default round
+   cap: anchor stops when the model repeats the same call 5 times or fails 3 calls in a row. A `-p`
+   caller can set its own with `--max-rounds`.
 2. **One gate.** Tools reach the disk and processes only through `Gate`: `ReadPathAsync`,
    `WriteAsync` (the user sees a diff first), and `RunAsync`. Each one runs the same sequence:
    policy, then approval, then the effect. A test fails if a tool touches files or processes
@@ -155,7 +156,8 @@ tests/Anchor.Tests/
 ## Surface
 
 ```
-anchor [--yolo] [--resume [id]] [--model m] [-p "prompt"] [--until check] [--json]
+anchor [--yolo] [--allow rule]... [--resume [id]] [--model m] [-p "prompt"] [--until check]
+       [--max-rounds n] [--timeout s] [--json]
 /help /model /context /until /compact /approvals /undo /sessions /clear /agents /skills /mcp /exit
 !cmd runs in your shell, outside the model's history
 ```
@@ -169,10 +171,15 @@ Config lives in `~/.anchor/config.json`. Sessions are stored in `~/.anchor/sessi
   is a socket or a device is ignored when a prompt argument is given, because it may never close.
 - Nobody can answer approvals in `-p`, so anything that would ask is refused and reported, unless
   `--yolo` is on. Project MCP servers that were never approved interactively are skipped.
+- `--allow <rule>` is "always" given up front, for the session only: a program, an MCP tool, or
+  `edits`. It is never saved, and it never lifts a denial.
+- `--max-rounds` caps the main agent's model requests over the whole run; `--timeout` cancels the
+  run. Sub-agents are bounded by their own loop guard, not by `--max-rounds`.
 - Exit codes: 0 completed, 1 error, 2 usage, 3 stopped by the loop guard, 4 the `--until` check never
-  passed, 130 cancelled.
+  passed, 5 reached `--max-rounds`, 124 reached `--timeout` (as with `timeout(1)`), 130 cancelled.
 - `--json` writes every event as one JSON object per line. With `-p` it ends with a `result`
-  line. Without `-p` it is a protocol for editors:
+  line: status, answer, `--until` result, files the file tools wrote, session id and usage. Without
+  `-p` it is a protocol for editors:
   - Requests on stdin: `user_input`, `approval_response`, `cancel`.
   - It announces `ready` whenever it can take input.
   - Approvals arrive as `approval_request` events with an id.

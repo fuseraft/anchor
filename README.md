@@ -72,6 +72,7 @@ anchor --resume              # continue the latest session in this directory
 anchor -p "why does the build fail?"
 git diff | anchor -p "review this change"
 anchor -p --yolo "fix the failing test"      # -p can't ask, so it refuses unless --yolo
+anchor -p --allow edits --allow dotnet "fix the failing test" --max-rounds 40 --timeout 900
 ```
 
 In the REPL: `/help`, `/model`, `/context`, `/until`, `/compact`, `/approvals`, `/undo`, `/sessions`, `/agents`,
@@ -134,8 +135,13 @@ Code's format. `${VAR}` in values is replaced from the environment.
 - It reads `{"type":"user_input","text":"..."}`,
   `{"type":"approval_response","id":"a1","answer":"yes|no|always"}` and `{"type":"cancel"}`.
 
+The `result` line has the status, the answer, `files_changed` (written by anchor's file tools), the
+session id and token usage. `--allow <rule>` pre-approves a program, an MCP tool
+(`mcp__server__tool`) or `edits` for that run only. `--max-rounds <n>` and `--timeout <seconds>`
+bound a `-p` run.
+
 Exit codes for `-p`: 0 completed, 1 error, 2 usage, 3 stopped by the loop guard, 4 the `--until`
-check never passed, 130 cancelled.
+check never passed, 5 reached `--max-rounds`, 124 reached `--timeout`, 130 cancelled.
 
 ## Develop
 

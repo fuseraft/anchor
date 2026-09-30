@@ -100,7 +100,7 @@ public sealed class HeadlessTests : IDisposable
         await PrintMode.RunAsync(h, "write a.txt", null, new StringWriter());
 
         Assert.False(File.Exists(Path.Combine(_root, "a.txt")));
-        Assert.Contains("use --yolo", Assert.Single(reports));
+        Assert.Contains("--allow", Assert.Single(reports));
     }
 
     [Fact]
@@ -112,6 +112,47 @@ public sealed class HeadlessTests : IDisposable
 
         Assert.Equal(3, await PrintMode.RunAsync(Build(client, new RefusingApprover(_ => { }), _ => { }), "x", null, new StringWriter()));
         Assert.Equal(1, await PrintMode.RunAsync(Build(new FakeChatClient().Throws(new HttpRequestException("401")), new RefusingApprover(_ => { }), _ => { }), "x", null, new StringWriter()));
+    }
+
+    [Fact]
+    public async Task PrintJson_AllowedEditsAreMadeAndListed()
+    {
+        var output = new JsonLines();
+        var json = new JsonEvents(output);
+        var client = new FakeChatClient()
+            .Call("write_file", new { path = "b.txt", content = "x" })
+            .Call("write_file", new { path = "a.txt", content = "y" })
+            .Text("wrote both");
+        var h = Build(client, new RefusingApprover(_ => { }), json.Emit);
+        h.Gate.Allow("edits");
+
+        Assert.Equal(0, await PrintMode.RunAsync(h, "x", json, new StringWriter()));
+        Assert.Equal(["a.txt", "b.txt"], output.Events[^1]["files_changed"]!.AsArray().Select(f => (string)f!));
+    }
+
+    [Fact]
+    public async Task Print_MaxRoundsStopsTheTurn()
+    {
+        var output = new JsonLines();
+        var json = new JsonEvents(output);
+        var client = new FakeChatClient().Call("read_file", new { path = "missing.txt" }).Text("never reached");
+        var h = Build(client, new RefusingApprover(_ => { }), json.Emit);
+        h.Agent.MaxRounds = 1;
+
+        Assert.Equal(5, await PrintMode.RunAsync(h, "x", json, new StringWriter()));
+        Assert.Equal("round_limit", (string)output.Events[^1]["status"]!);
+        Assert.Single(client.Requests);
+    }
+
+    [Fact]
+    public async Task Print_TimeoutCancelsTheTurn()
+    {
+        var output = new JsonLines();
+        var json = new JsonEvents(output);
+        var h = Build(new FakeChatClient().TextThenHang("thinking"), new RefusingApprover(_ => { }), json.Emit);
+
+        Assert.Equal(124, await PrintMode.RunAsync(h, "x", json, new StringWriter(), timeout: TimeSpan.FromMilliseconds(200)));
+        Assert.Equal("timed_out", (string)output.Events[^1]["status"]!);
     }
 
     [Fact]
@@ -258,6 +299,11 @@ public class OptionsTests
         Assert.Contains("needs -p", error.ToString());
         Assert.Equal((null, 2), Options.Parse(["--until", "make test"], TextWriter.Null, TextWriter.Null));
         Assert.Equal("make test", Parse("-p", "hi", "--until", "make test")?.Until);
+        Assert.Equal((null, 2), Options.Parse(["--timeout", "30"], TextWriter.Null, TextWriter.Null));
+        Assert.Equal((null, 2), Options.Parse(["-p", "hi", "--max-rounds", "0"], TextWriter.Null, TextWriter.Null));
+        var limited = Parse("-p", "hi", "--allow", "dotnet", "--allow", "edits", "--max-rounds", "20", "--timeout", "600");
+        Assert.Equal(["dotnet", "edits"], limited?.Allow);
+        Assert.Equal((20, 600), (limited?.MaxRounds, limited?.Timeout));
 
         var output = new StringWriter();
         Assert.Equal((null, 0), Options.Parse(["--help"], output, TextWriter.Null));

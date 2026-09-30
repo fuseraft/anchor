@@ -37,9 +37,14 @@ public static class Startup
 
         var gate = new Gate(workspace, new Policy(workspace, options.Yolo, skills.Select(s => s.Directory)), output.Approver, emit,
             new ApprovalStore(Path.Combine(Config.Home, "approvals.json"), workspace.Root));
+        foreach (var rule in options.Allow ?? [])
+            gate.Allow(rule);
         var toolbox = new Toolbox([.. new FileTools(gate).All(), .. new EditTools(gate).All(), .. new ShellTool(gate).All()]);
         var systemPrompt = SystemPrompt.Build(workspace, DateOnly.FromDateTime(DateTime.Now), skills);
-        var agent = new Agent(client, toolbox, systemPrompt, emit, Providers.Providers.Options(provider), compactor: new Compactor(window));
+        var agent = new Agent(client, toolbox, systemPrompt, emit, Providers.Providers.Options(provider), compactor: new Compactor(window))
+        {
+            MaxRounds = options.MaxRounds,
+        };
 
         // Sub-agents use the main agent's current model unless their definition names one.
         var runner = new SubAgentRunner(toolbox, systemPrompt, emit, model =>

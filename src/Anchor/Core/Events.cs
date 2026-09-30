@@ -31,4 +31,4 @@ public sealed record UsageReport(long Input, long Output, long CachedInput) : Ag
 
 public sealed record TurnEnded(TurnEnd Reason, string? Detail = null) : AgentEvent;
 
-public enum TurnEnd { Completed, Cancelled, LoopStopped, Error }
+public enum TurnEnd { Completed, Cancelled, LoopStopped, RoundLimit, Error }

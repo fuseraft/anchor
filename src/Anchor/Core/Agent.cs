@@ -11,6 +11,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     ChatOptions _options = WithTools(options, toolbox);
     readonly Limits _limits = limits ?? new Limits();
     bool _warnedFull;
+    int _rounds;
 
     public List<ChatMessage> History { get; } = [];
 
@@ -19,6 +20,9 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     public ChatOptions Options => _options;
 
     public string SystemPrompt { get; set; } = systemPrompt;
+
+    /// <summary>The most model requests this agent may make over its life (-p --max-rounds); null for no limit.</summary>
+    public int? MaxRounds { get; set; }
 
     /// <summary>Size of the last request plus its reply, as reported by the provider; null when unknown.</summary>
     public long? LastContextTokens { get; private set; }
@@ -62,6 +66,8 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
         {
             while (true)
             {
+                if (_rounds++ >= MaxRounds)
+                    return End(TurnEnd.RoundLimit, $"reached the limit of {MaxRounds} model requests");
                 streamed = [];
                 try
                 {

@@ -1,21 +1,27 @@
 namespace Anchor.Cli;
 
 /// <summary>Command-line options. <see cref="Parse"/> returns an exit code instead when it handled the request itself.</summary>
-public sealed record Options(string? Model, bool Yolo, bool Resume, string? ResumeId, bool Print, string? Prompt, bool Json, string? Until = null)
+public sealed record Options(string? Model, bool Yolo, bool Resume, string? ResumeId, bool Print, string? Prompt, bool Json, string? Until = null,
+    IReadOnlyList<string>? Allow = null, int? MaxRounds = null, int? Timeout = null)
 {
     public const string Usage = """
-        usage: anchor [--model <name>] [--yolo] [--resume [id]] [-p [prompt]] [--until <check>] [--json]
+        usage: anchor [--model <name>] [--yolo] [--allow <rule>]... [--resume [id]] [-p [prompt]] [--until <check>]
+                      [--max-rounds <n>] [--timeout <seconds>] [--json]
 
         Starts an interactive coding agent in the current directory.
 
           -m, --model <name>   model to use (default: provider.model in the config)
           --yolo               don't ask before writes, commands and reads outside the directory
                                (secret files and dangerous commands are always denied)
+          --allow <rule>       don't ask for this, for this run only; repeatable. <rule> is a program
+                               (dotnet), an MCP tool (mcp__server__tool), or edits (file writes in the directory)
           -r, --resume [id]    continue the latest session in this directory, or the given one
           -p, --print [prompt] run one prompt and print the answer; piped stdin is appended to it
                                (without --yolo, anything that would ask is refused)
           --until <check>      with -p: after each turn run <check>, and keep working until it exits 0
                                (at most 5 rounds; exit code 4 if it never passes)
+          --max-rounds <n>     with -p: stop after n model requests (exit code 5)
+          --timeout <seconds>  with -p: stop after this long (exit code 124)
           --json               write events as JSON lines; without -p, read requests from stdin
           --version, --help
 
@@ -26,6 +32,8 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
     {
         string? model = null, resumeId = null, prompt = null, until = null;
         bool yolo = false, resume = false, print = false, json = false;
+        List<string> allow = [];
+        int? maxRounds = null, timeout = null;
         for (var i = 0; i < args.Length; i++)
         {
             bool HasValue() => i + 1 < args.Length && !args[i + 1].StartsWith('-');
@@ -49,6 +57,17 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
                     break;
                 case "--until" when i + 1 < args.Length:
                     until = args[++i];
+                    break;
+                case "--allow" when i + 1 < args.Length:
+                    allow.Add(args[++i]);
+                    break;
+                case "--max-rounds" when i + 1 < args.Length && int.TryParse(args[i + 1], out var rounds) && rounds > 0:
+                    maxRounds = rounds;
+                    i++;
+                    break;
+                case "--timeout" when i + 1 < args.Length && int.TryParse(args[i + 1], out var seconds) && seconds > 0:
+                    timeout = seconds;
+                    i++;
                     break;
                 case "--json":
                     json = true;
@@ -77,7 +96,12 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
             error.WriteLine("anchor: --until needs -p; in the REPL, use /until <check>.");
             return (null, 2);
         }
-        return (new Options(model, yolo, resume, resumeId, print, prompt, json, until), 0);
+        if ((maxRounds ?? timeout) is not null && !print)
+        {
+            error.WriteLine("anchor: --max-rounds and --timeout need -p.");
+            return (null, 2);
+        }
+        return (new Options(model, yolo, resume, resumeId, print, prompt, json, until, allow.Count > 0 ? allow : null, maxRounds, timeout), 0);
     }
 
     public static string Version
