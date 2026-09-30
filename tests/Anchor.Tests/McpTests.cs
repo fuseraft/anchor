@@ -42,11 +42,12 @@ public sealed class McpTests : IAsyncLifetime
         Args = [Path.Combine(AppContext.BaseDirectory, "Fixtures", "fake_mcp_server.py")],
     }, false);
 
-    async Task StartAsync(Answer answer = Answer.Yes, bool yolo = false, params McpServer[] servers)
+    async Task StartAsync(Answer answer = Answer.Yes, bool yolo = false, TimeSpan? connectTimeout = null, params McpServer[] servers)
     {
         _approver = new FakeApprover(answer);
         var workspace = new Workspace(_root);
-        _hub = new McpHub(_toolbox, new Gate(workspace, new Policy(workspace, yolo), _approver, _events.Add), _events.Add, new MemoryKeychain());
+        _hub = new McpHub(_toolbox, new Gate(workspace, new Policy(workspace, yolo), _approver, _events.Add), _events.Add, new MemoryKeychain(),
+            connectTimeout: connectTimeout);
         await _hub.StartAsync(servers.Length > 0 ? servers : [Fake()], default);
     }
 
@@ -69,6 +70,21 @@ public sealed class McpTests : IAsyncLifetime
 
         Assert.Equal(new McpStatus("fake", "connected", 4), Assert.Single(_hub.Status));
         Assert.Equal(["mcp__fake__echo", "mcp__fake__fail", "mcp__fake__leak", "mcp__fake__write_note"], _toolbox.Names);
+    }
+
+    [Fact]
+    public async Task ConnectTimeout_GivesUpOnAServerThatNeverAnswers_AndOnTheRest()
+    {
+        var silent = new McpServer("silent", new McpServerConfig { Command = "sleep", Args = ["30"] }, false);
+
+        await StartAsync(connectTimeout: TimeSpan.FromSeconds(2), servers: [Fake(), silent, Fake("late")]);
+
+        Assert.Equal([
+            new McpStatus("fake", "connected", 4),
+            new McpStatus("late", "failed", 0, "didn't connect within the 2-second limit"),
+            new McpStatus("silent", "failed", 0, "didn't connect within the 2-second limit"),
+        ], _hub.Status);
+        Assert.Contains(_events, e => e is Notice { Message: "MCP server 'silent' is unavailable: didn't connect within the 2-second limit" });
     }
 
     [Fact]

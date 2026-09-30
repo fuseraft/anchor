@@ -41,10 +41,12 @@ either way.
 
 ## Limits
 
-`--max-rounds <n>` stops the run after `n` model requests, counted across all `--until` rounds
-(sub-agents' requests aren't counted). `--timeout <seconds>` stops it after that long, including
-time spent running the check. Both end the run with a distinct exit code and `result` status, so
-a calling program can tell them apart from a failure.
+`--max-rounds <n>` stops the run after `n` model requests, counted across all `--until` rounds. Each
+sub-agent gets the same limit of its own; one that reaches it stops and reports what it has.
+`--timeout <seconds>` stops it after that long, including time spent running the check but not time
+spent starting MCP servers: startup gets a separate limit of the same length, and a server that
+hasn't connected by then is skipped. Both end the run with a distinct exit code and `result` status,
+so a calling program can tell them apart from a failure.
 
 ```sh
 anchor -p --yolo "fix the failing test" --until "npm test" --max-rounds 40 --timeout 900

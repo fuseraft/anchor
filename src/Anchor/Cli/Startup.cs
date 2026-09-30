@@ -53,10 +53,11 @@ public static class Startup
                 return (agent.Client, agent.Options);
             var settings = Providers.Providers.Resolve(model);
             return (Providers.Providers.Create(settings), Providers.Providers.Options(settings));
-        }, () => new Compactor(window));
+        }, () => new Compactor(window), options.MaxRounds);
         toolbox.Add(new AgentTools(runner, agents, skills).All());
 
-        var hub = new McpHub(toolbox, gate, emit, Keychain.Default());
+        var hub = new McpHub(toolbox, gate, emit, Keychain.Default(),
+            connectTimeout: options.Timeout is { } t ? TimeSpan.FromSeconds(t) : null);
         var ready = hub.StartAsync(await TrustedServersAsync(config, workspace, output), CancellationToken.None);
 
         var sessionsDir = Path.Combine(Config.Home, "sessions");

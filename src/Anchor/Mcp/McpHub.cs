@@ -11,7 +11,8 @@ namespace Anchor.Mcp;
 public sealed record McpStatus(string Name, string State, int Tools, string? Detail = null);
 
 /// <summary>Connects the configured MCP servers in the background and offers their tools, gated, as mcp__server__tool.</summary>
-public sealed class McpHub(Toolbox toolbox, Gate gate, Action<AgentEvent> emit, IKeychain keychain, Action<Uri>? openBrowser = null) : IAsyncDisposable
+public sealed class McpHub(Toolbox toolbox, Gate gate, Action<AgentEvent> emit, IKeychain keychain, Action<Uri>? openBrowser = null,
+    TimeSpan? connectTimeout = null) : IAsyncDisposable
 {
     readonly Dictionary<string, McpClient> _clients = [];
     readonly Dictionary<string, McpStatus> _status = [];
@@ -35,12 +36,28 @@ public sealed class McpHub(Toolbox toolbox, Gate gate, Action<AgentEvent> emit, 
             }
         return Task.Run(async () =>
         {
+            // The connect timeout covers startup as a whole, not each server.
+            using var limit = Limit(ct);
             foreach (var server in list)
-                await ConnectAsync(server.Name, ct);
+                await ConnectAsync(server.Name, ct, limit);
         }, ct);
     }
 
     public async Task ConnectAsync(string name, CancellationToken ct)
+    {
+        using var limit = Limit(ct);
+        await ConnectAsync(name, ct, limit);
+    }
+
+    CancellationTokenSource Limit(CancellationToken ct)
+    {
+        var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        if (connectTimeout is { } timeout)
+            limit.CancelAfter(timeout);
+        return limit;
+    }
+
+    async Task ConnectAsync(string name, CancellationToken ct, CancellationTokenSource limit)
     {
         McpServer server;
         lock (_lock)
@@ -48,8 +65,8 @@ public sealed class McpHub(Toolbox toolbox, Gate gate, Action<AgentEvent> emit, 
         await DisconnectAsync(name);
         try
         {
-            var client = await CreateClientAsync(server, ct);
-            var tools = await client.ListToolsAsync(cancellationToken: ct);
+            var client = await CreateClientAsync(server, limit.Token);
+            var tools = await client.ListToolsAsync(cancellationToken: limit.Token);
             lock (_lock)
             {
                 _clients[name] = client;
@@ -59,9 +76,10 @@ public sealed class McpHub(Toolbox toolbox, Gate gate, Action<AgentEvent> emit, 
         }
         catch (Exception e) when (!ct.IsCancellationRequested)
         {
+            var message = limit.IsCancellationRequested ? $"didn't connect within the {connectTimeout!.Value.TotalSeconds:0}-second limit" : e.Message;
             lock (_lock)
-                _status[name] = new McpStatus(name, "failed", 0, e.Message);
-            emit(new Notice($"MCP server '{name}' is unavailable: {e.Message}"));
+                _status[name] = new McpStatus(name, "failed", 0, message);
+            emit(new Notice($"MCP server '{name}' is unavailable: {message}"));
         }
     }
 
@@ -103,7 +121,7 @@ public sealed class McpHub(Toolbox toolbox, Gate gate, Action<AgentEvent> emit, 
                 // The SDK (2.1) waits this long before killing the server without closing its stdin first, so waiting longer only delays exit.
                 ShutdownTimeout = TimeSpan.FromMilliseconds(500),
             });
-            return await McpClient.CreateAsync(stdio, cancellationToken: ct);
+            return await McpClient.CreateAsync(stdio, InitOptions(TimeSpan.FromSeconds(60)), cancellationToken: ct);
         }
 
         var url = McpConfig.Expand(config.Url!);
@@ -129,8 +147,11 @@ public sealed class McpHub(Toolbox toolbox, Gate gate, Action<AgentEvent> emit, 
         var http = new HttpClient(new SameOriginRedirects(config.Headers.Keys));
         var transport = new HttpClientTransport(options, http, ownsHttpClient: true);
         // A person reading a consent page needs longer than the default 60 seconds.
-        return await McpClient.CreateAsync(transport, new McpClientOptions { InitializationTimeout = TimeSpan.FromMinutes(5) }, cancellationToken: ct);
+        return await McpClient.CreateAsync(transport, InitOptions(TimeSpan.FromMinutes(5)), cancellationToken: ct);
     }
+
+    /// <summary>With a connect timeout (from --timeout), the handshake may use all of it; the linked token in ConnectAsync enforces it.</summary>
+    McpClientOptions InitOptions(TimeSpan fallback) => new() { InitializationTimeout = connectTimeout ?? fallback };
 
     public async ValueTask DisposeAsync()
     {

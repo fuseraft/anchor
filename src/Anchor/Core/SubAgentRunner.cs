@@ -4,7 +4,7 @@ namespace Anchor.Core;
 
 /// <summary>Runs one task in a fresh agent with its own context, through the same gate, and returns only its final report.</summary>
 public sealed class SubAgentRunner(Toolbox toolbox, string systemPrompt, Action<AgentEvent> emit,
-    Func<string?, (IChatClient Client, ChatOptions Options)> clientFor, Func<Compactor>? compactor = null)
+    Func<string?, (IChatClient Client, ChatOptions Options)> clientFor, Func<Compactor>? compactor = null, int? maxRounds = null)
 {
     public static readonly string[] ReadOnlyTools = ["read_file", "list_dir", "glob", "grep", "skill"];
 
@@ -43,7 +43,10 @@ public sealed class SubAgentRunner(Toolbox toolbox, string systemPrompt, Action<
             if (e is TurnEnded ended)
                 detail = ended.Detail;
             emit(new SubAgentEvent(name, e));
-        }, options, compactor: compactor?.Invoke());
+        }, options, compactor: compactor?.Invoke())
+        {
+            MaxRounds = maxRounds,
+        };
 
         var end = await agent.RunTurnAsync(task, ct);
         ct.ThrowIfCancellationRequested();

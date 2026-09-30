@@ -21,11 +21,19 @@ public static class PrintMode
             cts.Cancel();
         };
         Console.CancelKeyPress += cancel;
-        if (timeout is { } limit)
-            cts.CancelAfter(limit);
         try
         {
-            await h.McpReady;
+            // MCP startup doesn't count toward --timeout, but Ctrl+C still stops it.
+            try
+            {
+                await h.McpReady.WaitAsync(cts.Token);
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+                return 130;
+            }
+            if (timeout is { } limit)
+                cts.CancelAfter(limit);
             h.Gate.BeginTurn();
             TurnEnd end;
             CheckEnd? check = null;
