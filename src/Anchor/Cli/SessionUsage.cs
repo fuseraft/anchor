@@ -2,7 +2,7 @@ using Anchor.Core;
 
 namespace Anchor.Cli;
 
-/// <summary>Token totals for the session, sub-agents included. Parallel sub-agents report from several threads.</summary>
+/// <summary>Token totals for the session, sub-agents included. Background sub-agents report from several threads.</summary>
 public sealed class SessionUsage
 {
     readonly Lock _lock = new();

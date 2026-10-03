@@ -21,7 +21,7 @@ With `--json`, anchor writes one JSON object per line to stdout. Every object ha
 | `usage`          | `input`, `output`, `cached`                                    | Token usage for a turn.                        |
 | `turn_end`       | `reason`, `detail`                                             | A turn ended. `reason` is `completed`, `cancelled`, `loop_stopped`, `round_limit` or `error`. |
 
-Parallel sub-agents are named `agent 1`, `agent 2`, and so on in `sub_agent` events.
+In `sub_agent` events, `agent` is the sub-agent's id: its name and a number, such as `agent-1` or `reviewer-2`.
 
 ## With -p
 
@@ -88,7 +88,7 @@ The session ends when stdin closes.
 ### A session
 
 ```json
-→ {"type":"ready","session":"20260928-231002-4f1a","model":"claude-sonnet-5","tools":["read_file","list_dir","glob","grep","write_file","edit_file","shell","agent","agents"]}
+→ {"type":"ready","session":"20260928-231002-4f1a","model":"claude-sonnet-5","tools":["read_file","list_dir","glob","grep","write_file","edit_file","shell","agent","agent_status","agent_stop"]}
 ← {"type":"user_input","text":"create hello.txt"}
 → {"type":"tool_start","id":"toolu_1","name":"write_file","summary":"hello.txt"}
 → {"type":"approval_request","id":"a1","title":"Create hello.txt","detail":"@@ -0,0 +1 @@\n+hello\n","always":"all file writes in the workspace"}

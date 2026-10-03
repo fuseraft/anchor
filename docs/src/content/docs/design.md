@@ -65,8 +65,8 @@ src/Anchor/
   Core/Compactor.cs      summarize, trim, drop rounds
   Core/Until.cs          work until a check command passes
   Core/SessionLog.cs     append-only JSONL sessions
-  Core/SubAgentRunner.cs fresh agents per task, same gate
-  Tools/                 read, list, glob, grep, write, edit, shell, agent, agents, skill
+  Core/SubAgentRunner.cs fresh agents per task in the background, same gate
+  Tools/                 read, list, glob, grep, write, edit, shell, agent tools, skill
   Mcp/                   config and trust, background connections, OAuth, keychain
   Providers/             Anthropic (native, cached) and OpenAI-compatible
   Cli/                   REPL, rendering, approvals, -p and --json

@@ -119,9 +119,9 @@ model sees it. A command decides when the work is done, never a model.
   Review the change you're given. Report problems with file:line.
   ```
 
-  For a question that splits into parts, the model can run up to 4 default sub-agents at the same
-  time. They only read, and anything that would ask you (like reading outside the directory) is
-  refused rather than prompting. Named sub-agents always run one at a time.
+  Sub-agents run in the background, up to 4 at once, while the model keeps working. Their reports
+  come back as messages, and the turn waits for every one. Ask how they're doing while it waits,
+  and the model checks with `agent_status`.
 
 - **Skills.** Skills live in `.agents/skills/<name>/SKILL.md` or `~/.anchor/skills/<name>/SKILL.md`.
   Only their descriptions are in the prompt; the model loads a skill when a task matches it.

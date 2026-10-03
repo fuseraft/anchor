@@ -59,8 +59,9 @@ tests/Anchor.Tests/
 
 ## Sub-agents
 
-- The `agent(task, agent?)` tool runs a fresh `Agent` with its own history and returns only its
-  final text to the parent.
+- The `agent(task, agent?)` tool starts a fresh `Agent` with its own history in the background and
+  returns its id at once. Only its final text reaches the parent, as a note it reads after its
+  current step.
 - A sub-agent goes through the same gate, policy and approver as the main agent. Its tools are
   filtered at call time, so `--yolo` and safe defaults apply to it the same way.
 - The default sub-agent is read-only. Named sub-agents live in `.agents/agents/*.md`
@@ -68,10 +69,14 @@ tests/Anchor.Tests/
 - Sub-agents can't spawn other sub-agents: depth is limited to 1.
 - Events are tagged with the agent's id, so the renderer can nest them. Sub-agent token usage
   counts toward the session total shown by `/context`.
-- `agent` runs one sub-agent at a time. `agents(tasks)` runs up to 4 default read-only sub-agents
-  at the same time, tagged `agent 1`, `agent 2`, and so on. Inside them, anything that would ask
-  the user is refused (`Gate.RefuseAsking`, scoped to their async flow), so two approval prompts
-  never appear at once. Named sub-agents never run in parallel. `/agents` lists them.
+- Up to 4 run at once, tagged with ids like `agent-1` or `reviewer-2`. `agent_status` reports
+  what each is doing and `agent_stop` stops one.
+- Sub-agents belong to the turn that started them. When the model answers while some still run,
+  the turn waits for the next report or for the user to type something (such as asking how
+  they're doing), then gives it to the model. Cancelling or ending the turn stops whatever still
+  runs, so nothing outlives it.
+- Approvals and questions go through `SerialApprover`, one at a time; a sub-agent's approvals are
+  labelled with its id. `/agents` lists the agents available.
 
 ## Skills
 

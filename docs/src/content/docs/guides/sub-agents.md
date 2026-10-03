@@ -1,6 +1,6 @@
 ---
 title: Sub-agents
-description: Hand work to sub-agents with their own context, run read-only investigations in parallel, and define your own named agents.
+description: Hand work to sub-agents that run in the background with their own context, check on them, and define your own named agents.
 ---
 
 A sub-agent is a fresh agent with its own conversation. The main agent gives it a task, it works
@@ -15,21 +15,54 @@ place we parse dates".
 Without a name, a sub-agent is read-only. It has `read_file`, `list_dir`, `glob`, `grep` and
 `skill`, and nothing that writes or runs commands.
 
-## Parallel sub-agents
+## Background sub-agents
 
-When a question splits into independent parts, the model can run up to **4** default sub-agents at
-the same time with the `agents` tool:
+Sub-agents run in the background. The model starts one with the `agent` tool, gets an id like
+`agent-1` back at once, and can keep working or start more, up to **4** at a time. When a question
+splits into independent parts, it starts one per part:
 
 ```
-  ↳ agents 3 tasks
-    [agent 1] ↳ read_file src/Core/Gate.cs
-    [agent 3] ↳ read_file src/Core/Compactor.cs
-    [agent 2] ↳ read_file src/Core/Agent.cs
+  ↳ agent Find where sessions are written
+  ↳ agent Find where sessions are read back
+    [agent-1] ↳ grep SessionLog
+    [agent-2] ↳ read_file src/Core/SessionLog.cs
+    [agent-1] ↳ read_file src/Cli/Repl.cs
 ```
 
-Parallel sub-agents never show you an approval prompt, so two prompts can't appear at once.
-Anything that would ask, such as reading outside the directory, is refused, and the sub-agent
-reports what it couldn't do. Named sub-agents always run one at a time.
+Each report comes back to the model as a message when that sub-agent finishes. If the model
+finishes its own reply while sub-agents are still running, the turn waits for them.
+
+### Checking on them
+
+In the full-screen REPL, the status line shows each running sub-agent with its tool calls and
+tokens so far, updated as it works:
+
+```
+⠙ working · claude-sonnet-5 · 12% context · agent-1: 7 calls, 12k tokens · agent-2: 3 calls, 4.1k tokens
+```
+
+For more detail, ask. While the turn waits, type a message, such as "how are the agents doing?". The model reads it
+straight away and can call `agent_status`. That shows each sub-agent's state, how long it has run,
+how many tool calls it has made and the latest ones. The model can also stop one that is no longer
+needed with `agent_stop`.
+
+You don't have to wait for the turn to pause. Anything you type while it runs reaches the model
+after its current step.
+
+### Lifetime
+
+Sub-agents belong to the turn that started them. Ctrl+C cancels the turn and every sub-agent with
+it. If the turn ends any other way, such as hitting the loop guard, sub-agents still running are
+stopped and their reports dropped.
+
+### Approvals
+
+Sub-agents can ask for approval while other agents work. Prompts appear one at a time, and a
+sub-agent's prompt names it:
+
+```
+  ? [reviewer-2] Run: dotnet test
+```
 
 ## Named sub-agents
 
@@ -63,6 +96,8 @@ The body is added to the sub-agent's system prompt.
 
 - Sub-agents go through the same gate, policy and approvals as the main agent. A named agent with
   `write_file` still shows you the diff and asks.
+- Two sub-agents, or a sub-agent and the main agent, can work on the same files at once. Give
+  agents that write separate files, or run them one after another.
 - Sub-agents can't start their own sub-agents.
 - A sub-agent can't ask you questions. If something is ambiguous, it makes a reasonable choice and
   says so in its report.

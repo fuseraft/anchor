@@ -22,7 +22,7 @@ public sealed class SubAgentTests : IDisposable
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
-    // Parallel sub-agents report from several threads.
+    // Background sub-agents report from several threads.
     void Record(AgentEvent e)
     {
         lock (_events)
@@ -109,11 +109,11 @@ public sealed class SubAgentTests : IDisposable
     }
 
     [Fact]
-    public async Task AgentTool_RejectsUnknownNames()
+    public void AgentTool_RejectsUnknownNames()
     {
         var tools = new AgentTools(Runner(new FakeChatClient()), [new AgentDefinition("reviewer", "reviews", null, null, "")], []);
 
-        var e = await Assert.ThrowsAsync<ToolException>(() => tools.RunAgent("x", "nope"));
+        var e = Assert.Throws<ToolException>(() => tools.RunAgent("x", "nope"));
 
         Assert.Contains("Available: reviewer", e.Message);
     }
@@ -123,84 +123,244 @@ public sealed class SubAgentTests : IDisposable
     {
         var tools = new AgentTools(Runner(new FakeChatClient()), [new AgentDefinition("reviewer", "Reviews diffs", null, null, "")], []).All().ToList();
 
-        Assert.Equal(["agent", "agents"], tools.Select(t => t.Name));
+        Assert.Equal(["agent", "agent_status", "agent_stop"], tools.Select(t => t.Name));
         Assert.Contains("- reviewer: Reviews diffs", tools[0].Description);
     }
 
     [Fact]
-    public async Task Parallel_RunsTheTasksAtTheSameTime_AndReturnsEveryReportInOrder()
+    public async Task Background_TheTurnWaitsForTheReport_AndTheModelReadsItAsANote()
     {
-        var report = await Runner(new RendezvousClient(3)).RunParallelAsync(["a", "b", "c"], default);
+        var release = new TaskCompletionSource();
+        var sub = new FakeChatClient().Enqueue(ct => After(release.Task, "a.txt says alpha", ct));
+        var main = new FakeChatClient()
+            .Call("agent", new { task = "what does a.txt say?" })
+            .Enqueue(_ =>
+            {
+                release.SetResult();
+                return Reply("waiting for agent-1");
+            })
+            .Text("a.txt says alpha");
+        var (agent, _) = MainAgent(main, sub);
 
-        Assert.Equal("## Task 1\nreport on a\n\n## Task 2\nreport on b\n\n## Task 3\nreport on c", report);
-        Assert.Equal(["agent 1", "agent 2", "agent 3"], _events.OfType<SubAgentEvent>().Select(e => e.Agent).Distinct().Order());
+        var end = await agent.RunTurnAsync("ask a sub-agent", default).WaitAsync(Wait);
+
+        Assert.Equal(TurnEnd.Completed, end);
+        Assert.StartsWith("Started agent-1 in the background", ResultOf(agent, "agent"));
+        var note = Assert.Single(main.Requests[^1], m => Messages.Kind(m) == MessageKind.Note);
+        Assert.Equal("[anchor] Sub-agent agent-1 finished. Its report:\n\na.txt says alpha", note.Text);
     }
 
     [Fact]
-    public async Task Parallel_RefusesWhatWouldAsk_ButTheCallerStillAsks()
+    public async Task Background_WhileTheTurnWaits_TheUserCanAskHowItsGoing()
     {
-        var outside = Directory.CreateTempSubdirectory("anchor-sub-outside-").FullName;
-        try
+        var release = new TaskCompletionSource();
+        var waiting = new TaskCompletionSource();
+        var reading = new TaskCompletionSource();
+        var sub = new FakeChatClient().Call("read_file", new { path = "a.txt" }).Enqueue(ct =>
         {
-            var file = Path.Combine(outside, "o.txt");
-            File.WriteAllText(file, "outside");
-            var client = new FakeChatClient().Call("read_file", new { path = file }).Text("could not read it");
+            reading.SetResult();
+            return After(release.Task, "done", ct);
+        });
+        var main = new FakeChatClient()
+            .Call("agent", new { task = "look around" })
+            .Enqueue(_ =>
+            {
+                waiting.SetResult();
+                return Reply("waiting");
+            })
+            .Call("agent_status")
+            .Enqueue(_ =>
+            {
+                release.SetResult();
+                return Reply("agent-1 is still reading");
+            })
+            .Text("all done");
+        var (agent, _) = MainAgent(main, sub);
 
-            var report = await Runner(client).RunParallelAsync(["read o.txt"], default);
+        var turn = agent.RunTurnAsync("investigate", default);
+        await Task.WhenAll(waiting.Task, reading.Task).WaitAsync(Wait);
+        agent.Interject("how is it going?");
+        Assert.Equal(TurnEnd.Completed, await turn.WaitAsync(Wait));
 
-            Assert.Contains("could not read it", report);
-            Assert.Empty(_approver.Requests);
-            Assert.Contains(_events, e => e is SubAgentEvent { Inner: ToolFinished { Ok: false, Result: var r } } && r.Contains("Not allowed without approval"));
+        Assert.Contains(main.Requests[2], m => m.Role == ChatRole.User && m.Text == "how is it going?");
+        var status = ResultOf(agent, "agent_status");
+        Assert.StartsWith("agent-1: running for", status);
+        Assert.Contains("Latest: read_file a.txt", status);
+        Assert.Contains(main.Requests[^1], m => Messages.Kind(m) == MessageKind.Note && m.Text.Contains("Sub-agent agent-1 finished"));
+    }
 
-            await Assert.ThrowsAsync<ToolException>(() => _gate.ReadPathAsync(file, default));
-            Assert.Single(_approver.Requests);
-        }
-        finally
+    [Fact]
+    public async Task Background_StoppingOne_DeliversNoReport()
+    {
+        var sub = new FakeChatClient().Enqueue(ct => After(new TaskCompletionSource().Task, "never", ct));
+        var main = new FakeChatClient()
+            .Call("agent", new { task = "dig" })
+            .Call("agent_stop", new { id = "agent-1" })
+            .Text("stopped it");
+        var (agent, runner) = MainAgent(main, sub);
+
+        Assert.Equal(TurnEnd.Completed, await agent.RunTurnAsync("go", default).WaitAsync(Wait));
+
+        Assert.Equal("Stopped agent-1. Its report won't arrive.", ResultOf(agent, "agent_stop"));
+        Assert.False(runner.Busy);
+        Assert.DoesNotContain(agent.History, m => Messages.Kind(m) == MessageKind.Note);
+    }
+
+    [Fact]
+    public async Task Background_CancellingTheTurn_StopsItsSubAgents()
+    {
+        using var cts = new CancellationTokenSource();
+        var sub = new FakeChatClient().Enqueue(ct => After(new TaskCompletionSource().Task, "never", ct));
+        var main = new FakeChatClient()
+            .Call("agent", new { task = "dig" })
+            .Enqueue(_ =>
+            {
+                cts.CancelAfter(50);
+                return Reply("waiting");
+            });
+        var (agent, runner) = MainAgent(main, sub);
+
+        Assert.Equal(TurnEnd.Cancelled, await agent.RunTurnAsync("go", cts.Token).WaitAsync(Wait));
+
+        Assert.False(runner.Busy);
+        Assert.Equal("No sub-agents have run in this turn.", runner.Status());
+    }
+
+    [Fact]
+    public async Task Background_AtMostFourRunAtOnce()
+    {
+        var hang = new FakeChatClient();
+        for (var i = 0; i < SubAgentRunner.MaxRunning; i++)
+            hang.Enqueue(ct => After(new TaskCompletionSource().Task, "never", ct));
+        var runner = Runner(hang);
+
+        for (var i = 0; i < SubAgentRunner.MaxRunning; i++)
+            runner.Start($"task {i}", null, default);
+        var e = Assert.Throws<ToolException>(() => runner.Start("one more", null, default));
+
+        Assert.Contains("4 sub-agents are already running", e.Message);
+        await runner.StopAsync().WaitAsync(Wait);
+        Assert.False(runner.Busy);
+    }
+
+    [Fact]
+    public async Task Running_ShowsEachSubAgentsToolCallsAndTokens_AsItWorks()
+    {
+        var release = new TaskCompletionSource();
+        var reading = new TaskCompletionSource();
+        var sub = new FakeChatClient()
+            .Enqueue(_ => new[]
+            {
+                new ChatResponseUpdate(ChatRole.Assistant, [new FunctionCallContent("c1", "read_file", FakeChatClient.Args(new { path = "a.txt" }))]) { MessageId = "m" },
+                new ChatResponseUpdate(ChatRole.Assistant, [new UsageContent(new() { InputTokenCount = 1_200, OutputTokenCount = 34 })]) { MessageId = "m" },
+            }.ToAsyncEnumerable())
+            .Enqueue(ct =>
+            {
+                reading.SetResult();
+                return After(release.Task, "done", ct);
+            });
+        var runner = Runner(sub);
+        var changes = 0;
+        runner.Changed += () => Interlocked.Increment(ref changes);
+
+        runner.Start("look", null, default);
+        await reading.Task.WaitAsync(Wait);
+
+        Assert.Equal([new SubAgentStats("agent-1", 1, 1_234)], runner.Running);
+        Assert.Contains("1 tool call, 1,234 tokens", runner.Status("agent-1"));
+        Assert.True(changes >= 2);
+
+        release.SetResult();
+        await runner.StopAsync().WaitAsync(Wait);
+        Assert.Empty(runner.Running);
+    }
+
+    [Fact]
+    public void StatusLine_ListsRunningSubAgentsCompactly()
+    {
+        Assert.Equal("", Anchor.Cli.Repl.SubAgentStatus([]));
+        Assert.Equal(" · agent-1: 7 calls, 12k tokens · reviewer-2: 1 call, 950 tokens · agent-3: 40 calls, 1.2M tokens · agent-4: 2 calls, 4.1k tokens",
+            Anchor.Cli.Repl.SubAgentStatus([new("agent-1", 7, 12_345), new("reviewer-2", 1, 950), new("agent-3", 40, 1_234_567), new("agent-4", 2, 4_100)]));
+    }
+
+    [Fact]
+    public async Task SerialApprover_NamesTheAskingSubAgent_AndAsksOneAtATime()
+    {
+        var inner = new HeldApprover();
+        var approver = new SerialApprover(inner);
+
+        var first = Task.Run(() =>
         {
-            Directory.Delete(outside, recursive: true);
+            SerialApprover.ActFor("agent-1");
+            return approver.ApproveAsync(new ApprovalRequest("Run: ls", null, null), default);
+        });
+        await inner.Asked.WaitAsync(Wait);
+        var second = approver.ApproveAsync(new ApprovalRequest("Run: pwd", null, null), default);
+        await Task.Delay(50);
+
+        Assert.Equal(["[agent-1] Run: ls"], inner.Titles);
+        inner.Answer.SetResult(Answer.Yes);
+        Assert.Equal(Answer.Yes, await first.WaitAsync(Wait));
+        Assert.Equal(Answer.Yes, await second.WaitAsync(Wait));
+        Assert.Equal(["[agent-1] Run: ls", "Run: pwd"], inner.Titles);
+    }
+
+    static readonly TimeSpan Wait = TimeSpan.FromSeconds(5);
+
+    (Agent Agent, SubAgentRunner Runner) MainAgent(FakeChatClient main, FakeChatClient sub)
+    {
+        var runner = Runner(sub);
+        _toolbox.Add(new AgentTools(runner, [], []).All());
+        var agent = new Agent(main, _toolbox, "main prompt", Record) { Background = runner };
+        runner.Report = agent.Notify;
+        return (agent, runner);
+    }
+
+    static string ResultOf(Agent agent, string tool)
+    {
+        var callId = agent.History.SelectMany(m => m.Contents).OfType<FunctionCallContent>().First(c => c.Name == tool).CallId;
+        return Messages.ResultText(agent.History.SelectMany(m => m.Contents).OfType<FunctionResultContent>().First(r => r.CallId == callId));
+    }
+
+    static async IAsyncEnumerable<ChatResponseUpdate> Reply(string text)
+    {
+        await Task.Yield();
+        yield return new ChatResponseUpdate(ChatRole.Assistant, text) { MessageId = "m" };
+    }
+
+    static async IAsyncEnumerable<ChatResponseUpdate> After(Task release, string text, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        await release.WaitAsync(ct);
+        yield return new ChatResponseUpdate(ChatRole.Assistant, text) { MessageId = "m" };
+    }
+
+    /// <summary>Holds every approval until the test answers, and records what was asked.</summary>
+    sealed class HeldApprover : IApprover
+    {
+        readonly TaskCompletionSource _asked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public List<string> Titles { get; } = [];
+
+        public Task Asked => _asked.Task;
+
+        public TaskCompletionSource<Answer> Answer { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<Answer> ApproveAsync(ApprovalRequest request, CancellationToken ct)
+        {
+            lock (Titles)
+                Titles.Add(request.Title);
+            _asked.TrySetResult();
+            return Answer.Task;
         }
     }
 
     [Fact]
-    public async Task AgentsTool_TakesOneToFourTasks()
+    public void ListArguments_AreSummarizedByTheirCount()
     {
-        var tools = new AgentTools(Runner(new FakeChatClient()), [], []);
-
-        await Assert.ThrowsAsync<ToolException>(() => tools.RunAgents([]));
-        await Assert.ThrowsAsync<ToolException>(() => tools.RunAgents(["1", "2", "3", "4", "5"]));
-    }
-
-    [Fact]
-    public void AgentsCall_IsSummarizedByItsTaskCount()
-    {
-        static string Summary(string json) => Toolbox.Summarize(new FunctionCallContent("c", "agents",
+        static string Summary(string json) => Toolbox.Summarize(new FunctionCallContent("c", "tool",
             new Dictionary<string, object?> { ["tasks"] = System.Text.Json.JsonDocument.Parse(json).RootElement }));
 
         Assert.Equal("3 tasks", Summary("""["a", "b", "c"]"""));
         Assert.Equal("only one", Summary("""["only one"]"""));
-    }
-
-    /// <summary>Answers each request with its task, but only once every expected request is in flight at the same time.</summary>
-    sealed class RendezvousClient(int expected) : IChatClient
-    {
-        readonly TaskCompletionSource _all = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        int _arrived;
-
-        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
-        {
-            var task = messages.Last().Text;
-            if (Interlocked.Increment(ref _arrived) == expected)
-                _all.SetResult();
-            await _all.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
-            yield return new ChatResponseUpdate(ChatRole.Assistant, $"report on {task}") { MessageId = "m" };
-        }
-
-        public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken ct = default) =>
-            throw new NotSupportedException();
-
-        public object? GetService(Type serviceType, object? serviceKey = null) => null;
-
-        public void Dispose() { }
     }
 }

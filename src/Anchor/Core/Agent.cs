@@ -4,6 +4,16 @@ using Microsoft.Extensions.AI;
 
 namespace Anchor.Core;
 
+/// <summary>Work a turn starts that runs alongside it, such as background sub-agents. The turn waits for it before it ends.</summary>
+public interface IBackground
+{
+    /// <summary>True while any of it is still running.</summary>
+    bool Busy { get; }
+
+    /// <summary>Stops whatever is still running and waits for it to end.</summary>
+    Task StopAsync();
+}
+
 /// <summary>Runs turns: stream a response, execute its tool calls through the gate, repeat until the model answers in text.</summary>
 public sealed class Agent(IChatClient client, Toolbox toolbox, string systemPrompt, Action<AgentEvent> emit,
     ChatOptions? options = null, Limits? limits = null, Compactor? compactor = null)
@@ -12,8 +22,11 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     ChatOptions _options = WithTools(options, toolbox);
     readonly Limits _limits = limits ?? new Limits();
     readonly ConcurrentQueue<string> _interjections = new();
+    readonly ConcurrentQueue<string> _notes = new();
+    readonly SemaphoreSlim _wake = new(0);
     bool _warnedFull;
     int _rounds;
+    long _turnTokens;
 
     public List<ChatMessage> History { get; } = [];
 
@@ -31,8 +44,25 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
 
     public long ContextTokens => LastContextTokens ?? Messages.EstimateTokens(Context()) + 1_000;
 
+    /// <summary>Tokens the current (or last) turn has used so far, input and output, as the provider reported them.</summary>
+    public long TurnTokens => Interlocked.Read(ref _turnTokens);
+
+    /// <summary>Work this agent's turns start in the background (sub-agents); a turn doesn't end while it runs.</summary>
+    public IBackground? Background { get; set; }
+
     /// <summary>Adds a message the user typed while the turn runs; the model reads it after the current step's tool results.</summary>
-    public void Interject(string text) => _interjections.Enqueue(text);
+    public void Interject(string text)
+    {
+        _interjections.Enqueue(text);
+        _wake.Release();
+    }
+
+    /// <summary>Adds a note from anchor, such as a background sub-agent's report; the model reads it like an interjection.</summary>
+    public void Notify(string text)
+    {
+        _notes.Enqueue(text);
+        _wake.Release();
+    }
 
     /// <summary>Takes the interjections not read yet, as one message; null when there are none.</summary>
     public string? TakeInterjections()
@@ -72,6 +102,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
 
         var guard = new LoopGuard(_limits);
         var usage = new UsageDetails();
+        Interlocked.Exchange(ref _turnTokens, 0);
         var overflowRetried = false;
         List<ChatResponseUpdate> streamed = [];
         List<AIContent>? results = null;
@@ -81,7 +112,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
             while (true)
             {
                 if (_rounds++ >= MaxRounds)
-                    return End(TurnEnd.RoundLimit, $"reached the limit of {MaxRounds} model requests");
+                    return await EndAsync(TurnEnd.RoundLimit, $"reached the limit of {MaxRounds} model requests");
                 streamed = [];
                 try
                 {
@@ -109,6 +140,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
                 if (response.Usage is { } u)
                 {
                     usage.Add(u);
+                    Interlocked.Exchange(ref _turnTokens, (usage.InputTokenCount ?? 0) + (usage.OutputTokenCount ?? 0));
                     LastContextTokens = (u.InputTokenCount ?? 0) + (u.OutputTokenCount ?? 0);
                 }
                 else
@@ -118,8 +150,13 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
                 var calls = response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>().ToList();
                 if (calls.Count == 0)
                 {
+                    if (await AwaitBackgroundAsync(ct))
+                    {
+                        ReadInbox();
+                        continue;
+                    }
                     await ReduceContextAsync(force: false, ct);
-                    return End(TurnEnd.Completed);
+                    return await EndAsync(TurnEnd.Completed);
                 }
 
                 results = [];
@@ -161,29 +198,60 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
                 History.Add(new ChatMessage(ChatRole.Tool, results));
                 results = null;
                 if (stop is not null)
-                    return End(TurnEnd.LoopStopped, stop);
-                if (TakeInterjections() is { } typed)
-                    History.Add(new ChatMessage(ChatRole.User, typed));
+                    return await EndAsync(TurnEnd.LoopStopped, stop);
+                ReadInbox();
                 await ReduceContextAsync(force: false, ct);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             Recover(userMessage, streamed, results, "Cancelled by the user.");
-            return End(TurnEnd.Cancelled);
+            return await EndAsync(TurnEnd.Cancelled);
         }
         catch (Exception e)
         {
             Recover(userMessage, streamed, results, "Not run: the turn failed.");
-            return End(TurnEnd.Error, e.Message);
+            return await EndAsync(TurnEnd.Error, e.Message);
         }
 
-        TurnEnd End(TurnEnd reason, string? detail = null)
+        // Nothing the turn started outlives it: whatever still runs is stopped, and reports not yet read are dropped.
+        async Task<TurnEnd> EndAsync(TurnEnd reason, string? detail = null)
         {
+            if (Background is { } background)
+                await background.StopAsync();
+            _notes.Clear();
             emit(new UsageReport(usage.InputTokenCount ?? 0, usage.OutputTokenCount ?? 0, usage.CachedInputTokenCount ?? 0));
             emit(new TurnEnded(reason, detail));
             return reason;
         }
+    }
+
+    // The model has answered, but background work it started may still be running. Waits for that work to report, or
+    // for the user to say something (such as asking how it's going). False when there's nothing more for the model.
+    async Task<bool> AwaitBackgroundAsync(CancellationToken ct)
+    {
+        while (true)
+        {
+            // Busy is read first: a sub-agent leaves its report before it stops being busy, so none is missed.
+            var busy = Background?.Busy == true;
+            if (!_notes.IsEmpty || (busy && !_interjections.IsEmpty))
+                return true;
+            if (!busy)
+                return false;
+            await _wake.WaitAsync(ct);
+        }
+    }
+
+    // Reports and other notes from anchor, then what the user typed, for the model to read next.
+    void ReadInbox()
+    {
+        List<string> notes = [];
+        while (_notes.TryDequeue(out var note))
+            notes.Add(note);
+        if (notes.Count > 0)
+            History.Add(Messages.Create(MessageKind.Note, string.Join("\n\n", notes)));
+        if (TakeInterjections() is { } typed)
+            History.Add(new ChatMessage(ChatRole.User, typed));
     }
 
     // Summarizes older turns first; if that isn't enough (or there are none, as in one long turn), trims old tool

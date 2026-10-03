@@ -23,6 +23,39 @@ public interface IApprover
     Task<string?> AskAsync(Question question, CancellationToken ct) => Task.FromResult<string?>(null);
 }
 
+/// <summary>
+/// One prompt at a time: the main agent and its background sub-agents can need the user at once, so each approval or
+/// question waits for the one before it. A sub-agent's approvals say which sub-agent is asking.
+/// </summary>
+public sealed class SerialApprover(IApprover inner) : IApprover
+{
+    static readonly AsyncLocal<string?> Asker = new();
+    readonly SemaphoreSlim _turn = new(1, 1);
+
+    /// <summary>For the rest of the calling async flow, approvals are labelled as coming from <paramref name="name"/>.</summary>
+    public static void ActFor(string name) => Asker.Value = name;
+
+    public bool CanAsk => inner.CanAsk;
+
+    public Task<Answer> ApproveAsync(ApprovalRequest request, CancellationToken ct) =>
+        OneAtATimeAsync(() => inner.ApproveAsync(Asker.Value is { } name ? request with { Title = $"[{name}] {request.Title}" } : request, ct), ct);
+
+    public Task<string?> AskAsync(Question question, CancellationToken ct) => OneAtATimeAsync(() => inner.AskAsync(question, ct), ct);
+
+    async Task<T> OneAtATimeAsync<T>(Func<Task<T>> prompt, CancellationToken ct)
+    {
+        await _turn.WaitAsync(ct);
+        try
+        {
+            return await prompt();
+        }
+        finally
+        {
+            _turn.Release();
+        }
+    }
+}
+
 /// <summary>The only code that lets a tool read outside the workspace, write a file, or run a process: policy, then approval, then the effect.</summary>
 /// <param name="saved">Where "always" answers for programs and MCP tools outlive the session; null keeps them in memory only.</param>
 public sealed class Gate(Workspace workspace, Policy policy, IApprover approver, Action<AgentEvent> emit, ApprovalStore? saved = null)
@@ -32,20 +65,15 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     const string SavedNote = " (saved for this directory)";
     const int UndoDepth = 20;
     static readonly TimeSpan CheckTimeout = TimeSpan.FromMinutes(10);
-    static readonly AsyncLocal<string?> Unaskable = new();
 
+    // Background sub-agents use the gate alongside the main agent.
+    readonly Lock _lock = new();
     bool _alwaysWrite;
     readonly HashSet<string> _alwaysPrograms = [.. saved?.Load().Programs ?? []];
     readonly HashSet<string> _alwaysExternal = [.. saved?.Load().Tools ?? []];
     readonly LinkedList<Dictionary<string, (string? Before, string After)>> _turns = [];
 
     public Workspace Workspace => workspace;
-
-    /// <summary>
-    /// For the rest of the calling async flow, anything that would ask the user is refused instead. Parallel sub-agents
-    /// run this way, so two approval prompts never appear at once. The caller's own flow is unaffected.
-    /// </summary>
-    public static void RefuseAsking(string reason) => Unaskable.Value = reason;
 
     /// <summary>"Always" answers saved for this workspace.</summary>
     public ApprovalStore.Saved SavedApprovals => saved?.Load() ?? new();
@@ -109,9 +137,12 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
 
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         await File.WriteAllTextAsync(full, after, ct);
-        Writes++;
-        if (_turns.Last?.Value is { } changes)
-            changes[full] = (changes.TryGetValue(full, out var first) ? first.Before : before, after);
+        lock (_lock)
+        {
+            Writes++;
+            if (_turns.Last?.Value is { } changes)
+                changes[full] = (changes.TryGetValue(full, out var first) ? first.Before : before, after);
+        }
         emit(new FileChanged(rel, diff.Added, diff.Removed));
         return diff;
     }
@@ -160,7 +191,9 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
         // "Always" is keyed on programs from the bash parse, which is only trustworthy when bash runs the command.
         var programs = policy.ParsesShell ? ShellCommand.Programs(command) : new HashSet<string>();
         // An interpreter can run anything, so "always" for one lasts only this session.
-        var known = programs.Count > 0 && programs.All(_alwaysPrograms.Contains);
+        bool known;
+        lock (_lock)
+            known = programs.Count > 0 && programs.All(_alwaysPrograms.Contains);
         var save = saved is not null && programs.Count > 0 && !programs.Any(ShellCommand.RunsAnyCode);
         var always = programs.Count > 0 ? $"commands using {string.Join(", ", programs.Order())}{(save ? SavedNote : "")}" : null;
         await EnforceAsync(policy.Run(command), new ApprovalRequest($"Run: {command}", null, always), known, always is null ? null : () =>
@@ -230,8 +263,11 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     public async Task<string> CallExternalAsync(string tool, bool readOnly, string arguments, Func<CancellationToken, Task<string>> call, CancellationToken ct)
     {
         var detail = arguments.Length > 2_000 ? arguments[..2_000] + " ..." : arguments;
+        bool known;
+        lock (_lock)
+            known = _alwaysExternal.Contains(tool);
         await EnforceAsync(policy.External(readOnly), new ApprovalRequest($"Call {tool}", detail, $"all calls to {tool}{(saved is null ? "" : SavedNote)}"),
-            _alwaysExternal.Contains(tool), () =>
+            known, () =>
             {
                 _alwaysExternal.Add(tool);
                 saved?.Add(tool: tool);
@@ -259,13 +295,12 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
 
         if (preapproved)
             return;
-        if (Unaskable.Value is { } reason)
-            throw new ToolException($"Not allowed without approval, and {reason}. Report what you couldn't do instead.");
 
         var answer = await approver.ApproveAsync(request, ct);
         if (answer == Answer.No)
             throw new ToolException(Declined);
-        if (answer == Answer.Always)
-            remember?.Invoke();
+        if (answer == Answer.Always && remember is not null)
+            lock (_lock)
+                remember();
     }
 }

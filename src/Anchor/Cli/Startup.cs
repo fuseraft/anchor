@@ -9,7 +9,7 @@ namespace Anchor.Cli;
 public sealed record Harness(
     Agent Agent, Gate Gate, SessionLog Session, McpHub Mcp, Task McpReady, ProviderSettings Provider, long ContextWindow,
     string SessionsDir, IReadOnlyList<Skill> Skills, IReadOnlyList<AgentDefinition> Agents, SessionUsage Usage,
-    ModelSource Models);
+    ModelSource Models, SubAgentRunner? SubAgents = null);
 
 /// <summary>How a mode shows events, asks for approval, and reports warnings.</summary>
 public sealed record Output(Action<AgentEvent> Emit, IApprover Approver, Action<string> Warn, bool Interactive);
@@ -38,7 +38,9 @@ public static class Startup
         foreach (var warning in skillWarnings.Concat(agentWarnings))
             output.Warn(warning);
 
-        var gate = new Gate(workspace, new Policy(workspace, options.Yolo, skills.Select(s => s.Directory)), output.Approver, emit,
+        // Background sub-agents can need the user at the same time as the main agent; they take turns.
+        var approver = new SerialApprover(output.Approver);
+        var gate = new Gate(workspace, new Policy(workspace, options.Yolo, skills.Select(s => s.Directory)), approver, emit,
             new ApprovalStore(Path.Combine(Config.Home, "approvals.json"), workspace.Root));
         foreach (var rule in options.Allow ?? [])
             gate.Allow(rule);
@@ -56,10 +58,14 @@ public static class Startup
                 return (agent.Client, agent.Options);
             var settings = models.Resolve(model);
             return (models.Create(settings), Providers.Providers.Options(settings));
-        }, () => new Compactor(window), options.MaxRounds);
+        }, () => new Compactor(window), options.MaxRounds)
+        {
+            Report = agent.Notify,
+        };
+        agent.Background = runner;
         toolbox.Add(new AgentTools(runner, agents, skills).All());
-        if (output.Approver.CanAsk)
-            toolbox.Add(new AskTool(output.Approver).All());
+        if (approver.CanAsk)
+            toolbox.Add(new AskTool(approver).All());
 
         var hub = new McpHub(toolbox, gate, emit, keychain,
             connectTimeout: options.Timeout is { } t ? TimeSpan.FromSeconds(t) : null);
@@ -72,7 +78,7 @@ public static class Startup
             (session, var history) = SessionLog.Open(sessionsDir, options.ResumeId, workspace.Root, provider.Model);
             agent.History.AddRange(history);
         }
-        return new Harness(agent, gate, session, hub, ready, provider, window, sessionsDir, skills, agents, usage, models);
+        return new Harness(agent, gate, session, hub, ready, provider, window, sessionsDir, skills, agents, usage, models, runner);
     }
 
     // A cloned repo's .mcp.json can start any program, so the user decides once per server and config.

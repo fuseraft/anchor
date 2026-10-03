@@ -14,8 +14,9 @@ These are the tools the model can call. Use these names in a named sub-agent's `
 | `write_file`  | Create a file or replace its content.                    | Yes, with a diff               |
 | `edit_file`   | Replace exact text in a file.                            | Yes, with a diff               |
 | `shell`       | Run a bash command.                                      | Unless it's read-only          |
-| `agent`       | Hand a task to one sub-agent.                            | No (its own tools may ask)     |
-| `agents`      | Run up to 4 read-only sub-agents in parallel.            | Never                          |
+| `agent`       | Start a sub-agent in the background.                     | No (its own tools may ask)     |
+| `agent_status` | Check on the turn's sub-agents.                         | No                             |
+| `agent_stop`  | Stop a running sub-agent.                                | No                             |
 | `skill`       | Load a skill's instructions.                             | No                             |
 | `ask_user`    | Ask you a multiple-choice question.                      | It is the question             |
 | `mcp__<server>__<tool>` | A tool from an MCP server.                     | Unless marked read-only        |
@@ -97,13 +98,25 @@ and stderr combined, followed by the exit code, with secrets masked.
 | `task`    | The complete task, with all the context the sub-agent needs.        |
 | `agent`   | A named sub-agent. Omit for the default read-only one.              |
 
-### agents
+Returns the sub-agent's id, such as `agent-1` or `reviewer-2`, straight away. The report arrives
+later as a message. Up to 4 sub-agents can run at once.
 
-| Parameter | Description                                                     |
-| --------- | --------------------------------------------------------------- |
-| `tasks`   | 1 to 4 self-contained tasks, one per sub-agent.                 |
+### agent_status
 
-Returns every report, headed `## Task 1`, `## Task 2`, and so on.
+| Parameter | Description                                        |
+| --------- | -------------------------------------------------- |
+| `id`      | A sub-agent's id. Omit for every one in the turn. |
+
+For each sub-agent: whether it's running, finished or stopped, for how long, how many tool calls
+it has made, its latest three, and its task.
+
+### agent_stop
+
+| Parameter | Description        |
+| --------- | ------------------ |
+| `id`      | The sub-agent's id. |
+
+Stops a running sub-agent. Its report never arrives.
 
 ### skill
 

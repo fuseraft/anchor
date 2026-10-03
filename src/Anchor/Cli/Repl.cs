@@ -6,10 +6,10 @@ namespace Anchor.Cli;
 
 public sealed record ReplOptions(ProviderSettings Provider, string SessionsDir, bool Yolo, bool Resumed, long ContextWindow,
     IReadOnlyList<Skill> Skills, IReadOnlyList<AgentDefinition> Agents, SessionUsage Usage, Anchor.Mcp.McpHub Mcp,
-    ModelSource Models)
+    ModelSource Models, SubAgentRunner? SubAgents = null)
 {
     public static ReplOptions From(Harness h, Options options) =>
-        new(h.Provider, h.SessionsDir, options.Yolo, options.Resume, h.ContextWindow, h.Skills, h.Agents, h.Usage, h.Mcp, h.Models);
+        new(h.Provider, h.SessionsDir, options.Yolo, options.Resume, h.ContextWindow, h.Skills, h.Agents, h.Usage, h.Mcp, h.Models, h.SubAgents);
 }
 
 /// <summary>
@@ -28,6 +28,8 @@ public sealed class Repl
     readonly ReplOptions options;
     readonly ConcurrentQueue<string> _queued = new();
     CancellationTokenSource? _turn;
+    // The status line as of the last time the REPL drew it; sub-agent changes redraw it from their own threads.
+    volatile string? _workingStatus;
     ProviderSettings _provider;
     string? _until;
     string? _carried;
@@ -38,6 +40,12 @@ public sealed class Repl
         (this.agent, this.gate, this.session, this.renderer, this.screen, this.options) = (agent, gate, session, renderer, screen, options);
         _provider = options.Provider;
         screen.Interrupt = Interrupt;
+        if (options.SubAgents is { } subAgents)
+            subAgents.Changed += () =>
+            {
+                if (_workingStatus is { } status)
+                    screen.Status(status + SubAgentStatus(subAgents.Running), working: true);
+            };
     }
 
     Workspace Workspace => gate.Workspace;
@@ -200,8 +208,22 @@ public sealed class Repl
     void Status(bool working)
     {
         var percent = 100.0 * agent.ContextTokens / options.ContextWindow;
-        screen.Status($"{_provider.Model} · {percent:0}% context" + (_until is null ? "" : $" · until {_until}"), working);
+        var status = $"{_provider.Model} · {percent:0}% context" + (_until is null ? "" : $" · until {_until}");
+        _workingStatus = working ? status : null;
+        screen.Status(status, working);
     }
+
+    /// <summary>The running sub-agents for the status line, such as " · agent-1: 7 calls, 12k tokens"; empty when none run.</summary>
+    public static string SubAgentStatus(IReadOnlyList<SubAgentStats> running) =>
+        string.Concat(running.Select(s => $" · {s.Id}: {s.ToolCalls} call{(s.ToolCalls == 1 ? "" : "s")}, {Tokens(s.Tokens)} tokens"));
+
+    static string Tokens(long n) => n switch
+    {
+        >= 1_000_000 => $"{n / 1_000_000.0:0.#}M",
+        >= 10_000 => $"{n / 1_000}k",
+        >= 1_000 => $"{n / 1_000.0:0.#}k",
+        _ => n.ToString(),
+    };
 
     void SwitchModel(string name)
     {
@@ -241,7 +263,7 @@ public sealed class Repl
                 break;
             case "/agents":
                 renderer.Line($"agent (default)  {renderer.Dim("read-only: " + string.Join(", ", SubAgentRunner.ReadOnlyTools))}" +
-                              renderer.Dim($"; up to {SubAgentRunner.MaxParallel} can run at once"));
+                              renderer.Dim($"; up to {SubAgentRunner.MaxRunning} run at once, in the background"));
                 foreach (var a in options.Agents)
                     renderer.Line($"{a.Name}  {renderer.Dim(a.Description)}" +
                                   renderer.Dim($" [tools: {(a.Tools is null ? "read-only" : string.Join(", ", a.Tools))}{(a.Model is null ? "" : $"; model: {a.Model}")}]"));
