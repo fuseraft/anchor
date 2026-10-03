@@ -48,12 +48,15 @@ try
         Console.WriteLine();
     }
 
+    if (!options.Plain && Tui.Supported)
+        return await Tui.RunAsync(options);
+
     {
         var renderer = Renderer.ForConsole();
         var h = await Startup.BuildAsync(options, new Output(renderer.Render, new ConsoleApprover(renderer), m => renderer.Line(renderer.Yellow(m)), Interactive: true));
         await using var _ = h.Mcp;
-        var replOptions = new ReplOptions(h.Provider, h.SessionsDir, options.Yolo, options.Resume, h.ContextWindow, h.Skills, h.Agents, h.Usage, h.Mcp, h.Models);
-        return await new Repl(h.Agent, h.Gate, h.Session, renderer, replOptions).RunAsync();
+        var screen = new LineScreen(renderer, () => h.Session.Sync(h.Agent.History));
+        return await new Repl(h.Agent, h.Gate, h.Session, renderer, screen, ReplOptions.From(h, options)).RunAsync();
     }
 }
 catch (InvalidOperationException e)

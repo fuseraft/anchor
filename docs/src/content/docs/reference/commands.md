@@ -100,5 +100,9 @@ See [MCP servers](/anchor/guides/mcp/).
 | `/help`         | List commands.                                                   |
 | `/exit`, `/quit` | Quit.                                                           |
 | `!<command>`    | Run a command in your own shell. The model never sees it.        |
-| Ctrl+C          | Cancel the running turn. Twice at the prompt: exit.              |
+| Ctrl+C          | Cancel the running turn; otherwise clear the prompt. Twice: exit. |
+| Enter mid-turn  | Send what you typed into the running turn; commands wait for it to end. |
+| Alt+Enter       | New line in the message (Shift+Enter where the terminal supports it). |
+| ↑ / ↓           | Message history, from the first or last line of the prompt.     |
+| PgUp / PgDn     | Scroll the conversation; Ctrl+End follows it again.             |
 | Ctrl+D          | Exit.                                                            |

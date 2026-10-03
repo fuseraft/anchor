@@ -65,10 +65,14 @@ public sealed class BrowserLogin(string server, Action<string> notify, Action<Ur
         }
         try
         {
-            if (OperatingSystem.IsLinux())
-                Process.Start(new ProcessStartInfo("xdg-open", [url.ToString()]))?.Dispose();
-            else if (OperatingSystem.IsMacOS())
-                Process.Start(new ProcessStartInfo("open", [url.ToString()]))?.Dispose();
+            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+            {
+                // Browsers print to the terminal they're started from, which would land on the full-screen REPL.
+                var browser = Process.Start(new ProcessStartInfo(OperatingSystem.IsLinux() ? "xdg-open" : "open", [url.ToString()])
+                    { RedirectStandardOutput = true, RedirectStandardError = true });
+                browser?.BeginOutputReadLine();
+                browser?.BeginErrorReadLine();
+            }
             else
                 Process.Start(new ProcessStartInfo(url.ToString()) { UseShellExecute = true })?.Dispose();
         }

@@ -1,6 +1,6 @@
 ---
 title: Using the REPL
-description: How an interactive anchor session works - turns, approvals, slash commands, shell escapes and cancelling.
+description: How an interactive anchor session works - the screen, turns, typing while it works, approvals, slash commands, shell escapes and cancelling.
 ---
 
 Running `anchor` with no prompt starts an interactive session in the current directory.
@@ -35,22 +35,72 @@ turn that is going in circles:
 - The same call with the same arguments 3 times in a row gets a warning; 5 times stops the turn.
 - 2 failed calls in a row get a warning; 3 in a row stop the turn.
 
+## The screen
+
+The REPL fills the terminal: the conversation on top, the prompt below a rule, and a status line
+at the bottom showing the model, how full the context is, and a spinner while a turn runs.
+
+```
+anchor · claude-sonnet-5 · /home/you/my-project
+› fix the build
+Looking at the failing target first.
+  ↳ shell dotnet build
+  ✎ src/Foo.cs +4 -1
+──────────────────────────────────────────────────────────────
+› also run the tests
+⠼ working · claude-sonnet-5 · 12% context    Enter adds to the turn · Ctrl+C cancel
+```
+
+| Key                         | Effect                                                        |
+| --------------------------- | ------------------------------------------------------------- |
+| Enter                       | Send the message.                                             |
+| Alt+Enter, Shift+Enter      | New line in the message.                                      |
+| ↑ / ↓                       | On the first or last line: earlier messages (history).        |
+| ←, →, Home, End, Ctrl+Z     | Edit the message as in any editor; Ctrl+U deletes to the line start. |
+| PgUp / PgDn, mouse wheel    | Scroll the conversation. Ctrl+End jumps back to the bottom.   |
+| Ctrl+C                      | Cancel the running turn; otherwise clear the message; twice to exit. |
+| Ctrl+D                      | Exit, when the message is empty.                              |
+
+Typing `/` offers to complete a slash command.
+
+When you exit, the conversation is printed to the terminal, so it stays in your scrollback.
+`anchor --plain` runs the older line-by-line REPL instead, and anchor uses it on its own when
+stdin or stdout isn't a terminal.
+
+## Typing while anchor works
+
+You don't have to wait for a turn to finish. The prompt stays live while the model works:
+
+- A message you send joins the running turn: the model reads it right after the tool calls it's
+  making now, so you can correct course mid-turn ("skip the tests, just fix the build"). If the
+  turn ends before that, the message becomes the next turn.
+- A `/command` or `!command` waits until the turn ends, then runs.
+- A draft you haven't sent stays in the prompt when the turn ends.
+- Cancelling the turn with **Ctrl+C** also drops what you sent during it.
+
 ## Approvals
 
-When the model wants to do something that needs your say-so, anchor asks:
+When the model wants to do something that needs your say-so, anchor shows the request (with a
+diff for file writes) and asks in place of the prompt:
 
 ```
   ? Run: npm install lodash
-  Allow? [y]es [n]o [a]lways: commands using npm › 
+──────────────────────────────────────────────────────────────
+Allow? [y]es [n]o [a]lways: commands using npm
 ```
 
 Press a single key:
 
-| Key       | Effect                                                         |
-| --------- | -------------------------------------------------------------- |
-| `y`       | Allow this action once.                                        |
-| `a`       | Allow this kind of action from now on (see below).             |
-| any other | Decline. The model is told not to retry, and to ask you if it's stuck. |
+| Key        | Effect                                                         |
+| ---------- | -------------------------------------------------------------- |
+| `y`        | Allow this action once.                                        |
+| `a`        | Allow this kind of action from now on (see below).             |
+| `n`, Esc   | Decline. The model is told not to retry, and to ask you if it's stuck. |
+
+Other keys are ignored, and so is everything typed in the moment the question appears, so a `y`
+you were typing into a message never approves anything. Your unsent message comes back once
+you've answered. Questions from `ask_user` and the `/setup` wizard appear in the same place. (In
+`--plain` mode any key other than `y` or `a` declines.)
 
 What "always" covers depends on the action: all file writes inside the directory, commands that
 use the same programs, or every call to one MCP tool.
@@ -64,8 +114,7 @@ what asks and what doesn't.
 
 ## Pasting
 
-A multi-line paste is sent as one message. If the paste doesn't end in a newline, its last line
-stays open so you can finish it before pressing Enter.
+A multi-line paste goes into the prompt as it is, and you send it with Enter.
 
 ## Slash commands
 
@@ -97,7 +146,8 @@ A line starting with `!` runs in your own shell, in the working directory:
 ```
 
 The model never sees these commands or their output, and they don't need approval. Use them to
-check on things without spending tokens.
+check on things without spending tokens. The output appears in the conversation; the command gets
+no input, so interactive programs (an editor, a pager) need `--plain`. Ctrl+C stops it.
 
 ## Undo
 
@@ -112,5 +162,5 @@ check on things without spending tokens.
 
 - **Ctrl+C** during a turn cancels it. The conversation stays valid: any tool calls that didn't
   finish are marked as cancelled.
-- **Ctrl+C** twice at the prompt, or **Ctrl+D**, exits. The session is saved as you go, so you can
+- **Ctrl+C** twice with an empty prompt, or **Ctrl+D**, exits. The session is saved as you go, so you can
   [resume it](/anchor/guides/sessions/) later.

@@ -6,7 +6,7 @@ description: Every anchor command-line option, environment variable and exit cod
 ```
 anchor setup
 anchor [--model <name>] [--yolo] [--allow <rule>]... [--resume [id]] [-p [prompt]] [--until <check>]
-       [--max-rounds <n>] [--timeout <seconds>] [--json]
+       [--max-rounds <n>] [--timeout <seconds>] [--json] [--plain]
 ```
 
 With no options, anchor starts an [interactive session](/anchor/guides/repl/) in the current
@@ -26,6 +26,7 @@ exits.
 | `--max-rounds <n>`     | With `-p`: stop after `n` model requests (exit code 5). |
 | `--timeout <seconds>`  | With `-p`: stop after this many seconds (exit code 124). |
 | `--json`               | Write events as JSON lines. Without `-p`, also read requests from stdin. [More](/anchor/reference/json/) |
+| `--plain`              | Use the line-by-line REPL instead of the full-screen one. It's also used when stdin or stdout isn't a terminal. |
 | `--version`            | Print the version.                                                                                      |
 | `-h`, `--help`         | Print usage.                                                                                            |
 

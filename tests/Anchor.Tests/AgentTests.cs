@@ -402,4 +402,38 @@ public class AgentTests
         var results = agent.History.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(r => r.CallId);
         Assert.Equal(calls.Order(), results.Order());
     }
+
+    [Fact]
+    public async Task Interjection_IsReadAfterTheCurrentStepsToolResults()
+    {
+        Agent? agent = null;
+        var typing = AIFunctionFactory.Create(() => { agent!.Interject("use tabs"); return "ok"; }, "slow");
+        var client = new FakeChatClient().Call("slow", id: "c1").Text("done");
+        agent = NewAgent(client, null, typing);
+
+        await agent.RunTurnAsync("format it", CancellationToken.None);
+
+        var sent = client.Requests[1];
+        Assert.IsType<FunctionResultContent>(sent[^2].Contents.Single());
+        Assert.Equal((ChatRole.User, "use tabs"), (sent[^1].Role, sent[^1].Text));
+        Assert.Null(agent.TakeInterjections());
+    }
+
+    [Fact]
+    public async Task Interjection_LeftUnreadWhenTheTurnEndsInText()
+    {
+        Agent? agent = null;
+        var client = new FakeChatClient().Enqueue(_ =>
+        {
+            agent!.Interject("one");
+            agent.Interject("two");
+            return new[] { new ChatResponseUpdate(ChatRole.Assistant, "done") }.ToAsyncEnumerable();
+        });
+        agent = NewAgent(client);
+
+        await agent.RunTurnAsync("go", CancellationToken.None);
+
+        Assert.Equal(["go", "done"], agent.History.Select(m => m.Text));
+        Assert.Equal("one\n\ntwo", agent.TakeInterjections());
+    }
 }

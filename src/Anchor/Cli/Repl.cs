@@ -1,4 +1,4 @@
-using System.Diagnostics;
+using System.Collections.Concurrent;
 using Anchor.Core;
 using Anchor.Providers;
 
@@ -6,26 +6,44 @@ namespace Anchor.Cli;
 
 public sealed record ReplOptions(ProviderSettings Provider, string SessionsDir, bool Yolo, bool Resumed, long ContextWindow,
     IReadOnlyList<Skill> Skills, IReadOnlyList<AgentDefinition> Agents, SessionUsage Usage, Anchor.Mcp.McpHub Mcp,
-    ModelSource Models);
+    ModelSource Models)
+{
+    public static ReplOptions From(Harness h, Options options) =>
+        new(h.Provider, h.SessionsDir, options.Yolo, options.Resume, h.ContextWindow, h.Skills, h.Agents, h.Usage, h.Mcp, h.Models);
+}
 
-/// <summary>The interactive loop: read a line, run it as a slash command, a shell escape, or an agent turn.</summary>
-public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer renderer, ReplOptions options)
+/// <summary>
+/// The interactive loop: read a line, run it as a slash command, a shell escape, or an agent turn. On a full screen the
+/// user can keep typing while a turn runs: a message joins the turn at its next step, and a command waits for it to end.
+/// </summary>
+public sealed class Repl
 {
     const int ReplayTurns = 3;
 
-    // A terminal delivers a paste in one burst, so input still waiting this long after Enter is part of the same paste.
-    static readonly TimeSpan PasteGap = TimeSpan.FromMilliseconds(50);
-
+    readonly Agent agent;
+    readonly Gate gate;
+    readonly SessionLog session;
+    readonly Renderer renderer;
+    readonly IReplScreen screen;
+    readonly ReplOptions options;
+    readonly ConcurrentQueue<string> _queued = new();
     CancellationTokenSource? _turn;
-    DateTime _lastIdleInterrupt;
-    ProviderSettings _provider = options.Provider;
+    ProviderSettings _provider;
     string? _until;
+    string? _carried;
+    bool _exit;
+
+    public Repl(Agent agent, Gate gate, SessionLog session, Renderer renderer, IReplScreen screen, ReplOptions options)
+    {
+        (this.agent, this.gate, this.session, this.renderer, this.screen, this.options) = (agent, gate, session, renderer, screen, options);
+        _provider = options.Provider;
+        screen.Interrupt = Interrupt;
+    }
 
     Workspace Workspace => gate.Workspace;
 
     public async Task<int> RunAsync()
     {
-        Console.CancelKeyPress += OnCancel;
         renderer.Line($"{renderer.Bold("anchor")} {renderer.Dim($"· {_provider.Model} · {Workspace.Root}")}");
         if (options.Yolo)
             renderer.Line(renderer.Yellow("--yolo: writes, commands and outside reads run without asking. Secret files and dangerous commands are still denied."));
@@ -36,15 +54,19 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
         }
         renderer.Line(renderer.Dim("/help for commands, Ctrl+D to exit"));
 
-        while (true)
+        while (!_exit)
         {
-            Console.Write("\n› ");
-            renderer.AtPrompt = true;
-            var line = await ReadInputAsync();
-            renderer.AtPrompt = false;
+            Status(working: false);
+            var line = NextQueued();
             if (line is null)
-                return 0;
-            line = line.Trim();
+            {
+                line = await screen.ReadAsync(CancellationToken.None);
+                if (line is null)
+                    break;
+                line = line.Trim();
+                if (line.Length > 0)
+                    screen.Echo(renderer.Bold("› ") + line);
+            }
             if (line.Length == 0)
                 continue;
 
@@ -53,26 +75,76 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
             else if (line.StartsWith('/') && !line.Contains('\n'))
             {
                 if (!await CommandAsync(line))
-                    return 0;
+                    break;
             }
             else
-            {
-                Console.WriteLine();
-                gate.BeginTurn();
-                if (_until is null)
-                    await CancellableAsync(ct => agent.RunTurnAsync(line, ct));
-                else
-                    await CancellableAsync(async ct =>
-                    {
-                        if ((await Until.RunAsync(agent, gate, _until, line, ct)).Check is { } check and not CheckEnd.Passed)
-                            renderer.Line(renderer.Yellow($"  {Until.Describe(check, _until)}"));
-                    });
-            }
+                await TurnAsync(line);
             session.Sync(agent.History);
+        }
+        session.Sync(agent.History);
+        return 0;
+    }
+
+    async Task TurnAsync(string line)
+    {
+        if (!screen.FullScreen)
+            Console.WriteLine();
+        gate.BeginTurn();
+        Status(working: true);
+        using var reading = new CancellationTokenSource();
+        var typing = screen.FullScreen ? ReadWhileWorkingAsync(reading.Token) : Task.CompletedTask;
+        bool completed;
+        try
+        {
+            if (_until is null)
+                completed = await CancellableAsync(ct => agent.RunTurnAsync(line, ct));
+            else
+                completed = await CancellableAsync(async ct =>
+                {
+                    if ((await Until.RunAsync(agent, gate, _until, line, ct)).Check is { } check and not CheckEnd.Passed)
+                        renderer.Line(renderer.Yellow($"  {Until.Describe(check, _until)}"));
+                });
+        }
+        finally
+        {
+            await reading.CancelAsync();
+            await typing;
+        }
+        AfterTurn(completed);
+    }
+
+    // Lines the user sends while the turn runs. Commands and shell escapes could change things under the turn, so they
+    // wait; a message joins the turn. Ending the session (Ctrl+D) cancels the turn first.
+    async Task ReadWhileWorkingAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (await screen.ReadAsync(ct) is { } line)
+            {
+                line = line.Trim();
+                if (line.Length == 0)
+                    continue;
+                if (line.StartsWith('!') || (line.StartsWith('/') && !line.Contains('\n')))
+                {
+                    _queued.Enqueue(line);
+                    screen.Echo(renderer.Bold("› ") + line + renderer.Dim("  (runs when this turn ends)"));
+                }
+                else
+                {
+                    agent.Interject(line);
+                    screen.Echo(renderer.Bold("› ") + line);
+                }
+            }
+            _exit = true;
+            Interrupt();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
         }
     }
 
-    async Task CancellableAsync(Func<CancellationToken, Task> work)
+    // False when the user cancelled it.
+    async Task<bool> CancellableAsync(Func<CancellationToken, Task> work)
     {
         using var cts = new CancellationTokenSource();
         _turn = cts;
@@ -88,25 +160,47 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
         {
             _turn = null;
         }
+        return !cts.IsCancellationRequested;
     }
 
-    // Reads one line, plus the rest of a multi-line paste, so a paste becomes one message instead of one turn per line.
-    // An unterminated last line stays open for editing until Enter.
-    static async Task<string?> ReadInputAsync()
+    bool Interrupt()
     {
-        var line = Console.ReadLine();
-        if (line is null || Console.IsInputRedirected)
-            return line;
+        if (_turn is not { } turn)
+            return false;
+        turn.Cancel();
+        return true;
+    }
 
-        List<string> lines = [line];
-        while (true)
+    // Messages the turn ended before reading become the next turn. Cancelling a turn drops everything typed during it.
+    void AfterTurn(bool completed)
+    {
+        var unread = agent.TakeInterjections();
+        if (completed)
         {
-            await Task.Delay(PasteGap);
-            if (!Console.KeyAvailable || Console.ReadLine() is not { } next)
-                break;
-            lines.Add(next);
+            _carried = unread;
+            return;
         }
-        return string.Join('\n', lines);
+        var dropped = (unread is null ? 0 : 1) + _queued.Count;
+        _queued.Clear();
+        if (dropped > 0 && !_exit)
+            renderer.Line(renderer.Dim("  (what you sent during the turn was dropped)"));
+    }
+
+    string? NextQueued()
+    {
+        if (_carried is { } carried)
+        {
+            _carried = null;
+            renderer.Line(renderer.Dim("  (the turn ended before reading your message, so it starts the next one)"));
+            return carried;
+        }
+        return _queued.TryDequeue(out var queued) ? queued : null;
+    }
+
+    void Status(bool working)
+    {
+        var percent = 100.0 * agent.ContextTokens / options.ContextWindow;
+        screen.Status($"{_provider.Model} · {percent:0}% context" + (_until is null ? "" : $" · until {_until}"), working);
     }
 
     void SwitchModel(string name)
@@ -230,7 +324,7 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
             case "/setup":
                 try
                 {
-                    var setup = new Setup(new ConsoleSetupIO(), Anchor.Mcp.Keychain.Default(), new HttpClient { Timeout = TimeSpan.FromSeconds(30) },
+                    var setup = new Setup(screen.SetupIO, Anchor.Mcp.Keychain.Default(), new HttpClient { Timeout = TimeSpan.FromSeconds(30) },
                         Path.Combine(Config.Home, "config.json"));
                     if (await setup.RunAsync() is { } model)
                         SwitchModel(model);
@@ -270,6 +364,9 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
                     /exit           quit (or Ctrl+D)
                     !<command>      run a shell command yourself; the model never sees it
                     Ctrl+C          cancel the running turn
+
+                    While anchor works you can keep typing: Enter sends the message into the
+                    running turn, read after its current step. Commands wait for the turn to end.
                     """);
                 break;
             default:
@@ -283,38 +380,18 @@ public sealed class Repl(Agent agent, Gate gate, SessionLog session, Renderer re
     {
         if (string.IsNullOrWhiteSpace(command))
             return;
-        var psi = OperatingSystem.IsWindows()
-            ? new ProcessStartInfo("cmd.exe", ["/c", command])
-            : new ProcessStartInfo(Environment.GetEnvironmentVariable("SHELL") ?? "/bin/sh", ["-c", command]);
-        psi.WorkingDirectory = Workspace.Root;
-        try
+        await CancellableAsync(async ct =>
         {
-            using var process = Process.Start(psi)!;
-            await process.WaitForExitAsync();
-            if (process.ExitCode != 0)
-                renderer.Line(renderer.Dim($"exit {process.ExitCode}"));
-        }
-        catch (Exception e)
-        {
-            renderer.Line(renderer.Red(e.Message));
-        }
-    }
-
-    void OnCancel(object? sender, ConsoleCancelEventArgs e)
-    {
-        e.Cancel = true;
-        if (_turn is { } turn)
-        {
-            turn.Cancel();
-            return;
-        }
-        if (DateTime.UtcNow - _lastIdleInterrupt < TimeSpan.FromSeconds(2))
-        {
-            session.Sync(agent.History);
-            Environment.Exit(0);
-        }
-        _lastIdleInterrupt = DateTime.UtcNow;
-        Console.Write("\n(press Ctrl+C again or Ctrl+D to exit)\n› ");
+            try
+            {
+                if (await screen.ShellAsync(command, Workspace.Root, ct) is var code and not 0)
+                    renderer.Line(renderer.Dim($"exit {code}"));
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                renderer.Line(renderer.Red(e.Message));
+            }
+        });
     }
 
     static string Truncate(string s, int max) => s.Length > max ? s[..(max - 3)] + "..." : s;

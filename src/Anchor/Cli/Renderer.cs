@@ -12,6 +12,12 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
 
     public void Render(AgentEvent e)
     {
+        lock (output)
+            Draw(e);
+    }
+
+    void Draw(AgentEvent e)
+    {
         switch (e)
         {
             case TextDelta when !streamText:
@@ -55,6 +61,10 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
                 break;
             case SubAgentEvent s:
                 Nested(s.Agent, s.Inner);
+                break;
+            case TurnEnded { Reason: TurnEnd.Completed } when _midLine:
+                output.WriteLine();
+                _midLine = false;
                 break;
             case TurnEnded { Reason: TurnEnd.Cancelled }:
                 Line(Yellow("  (cancelled)"));
@@ -109,6 +119,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
             _midLine = false;
             if (AtPrompt)
                 output.Write("› ");
+            output.Flush();
         }
     }
 

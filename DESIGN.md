@@ -3,7 +3,7 @@
 A minimal coding harness for the terminal: one model working in one workspace with a few
 tools, plus sub-agents, skills, and MCP. It is built on C# / .NET 10 and `Microsoft.Extensions.AI`.
 
-**Budget:** under 5k lines of source. A new feature has to justify every line it adds.
+**Budget:** under 10k lines of source. A new feature has to justify every line it adds.
 
 ## Shape
 
@@ -20,7 +20,7 @@ src/Anchor/              one project
   Tools/                 read, list, glob, grep, write, edit, shell, agent, skill, ask_user
   Mcp/                   config and trust, background connections, OAuth, keychain
   Providers/             anthropic (native, cached), openai-compatible
-  Cli/                   REPL, rendering, approvals, config
+  Cli/                   REPL, full-screen TUI, rendering, approvals, config
 tests/Anchor.Tests/
 ```
 
@@ -159,10 +159,21 @@ tests/Anchor.Tests/
 
 ```
 anchor [--yolo] [--allow rule]... [--resume [id]] [--model m] [-p "prompt"] [--until check]
-       [--max-rounds n] [--timeout s] [--json]
+       [--max-rounds n] [--timeout s] [--json] [--plain]
 /help /model /context /until /compact /approvals /undo /sessions /clear /agents /skills /mcp /exit
 !cmd runs in your shell, outside the model's history
 ```
+
+The REPL is full screen (`Cli/Tui.cs`, on Terminal.Gui and its Editor view for the prompt). `Repl`
+is the controller and talks to an `IReplScreen`; `--plain`, or a stdin or stdout that isn't a
+terminal, gets the line-based `LineScreen` instead. The Renderer is unchanged: in the TUI it writes
+its ANSI text into a `Transcript`, which reads the styles back, so commands and events look the
+same in both. Approvals, `ask_user` and setup questions take the prompt's place and ignore keys
+until typing stops, so typed text can't answer them.
+
+The user can type while a turn runs. A sent message is queued on the agent and added as a user
+message after the current step's tool results, so a call is never separated from its result;
+whatever the turn didn't read becomes the next turn. Commands wait for the turn to end.
 
 Config lives in `~/.anchor/config.json`. Sessions are stored in `~/.anchor/sessions/`.
 

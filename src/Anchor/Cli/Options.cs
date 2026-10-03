@@ -2,12 +2,12 @@ namespace Anchor.Cli;
 
 /// <summary>Command-line options. <see cref="Parse"/> returns an exit code instead when it handled the request itself.</summary>
 public sealed record Options(string? Model, bool Yolo, bool Resume, string? ResumeId, bool Print, string? Prompt, bool Json, string? Until = null,
-    IReadOnlyList<string>? Allow = null, int? MaxRounds = null, int? Timeout = null, bool Setup = false)
+    IReadOnlyList<string>? Allow = null, int? MaxRounds = null, int? Timeout = null, bool Setup = false, bool Plain = false)
 {
     public const string Usage = """
         usage: anchor setup
                anchor [--model <name>] [--yolo] [--allow <rule>]... [--resume [id]] [-p [prompt]] [--until <check>]
-                      [--max-rounds <n>] [--timeout <seconds>] [--json]
+                      [--max-rounds <n>] [--timeout <seconds>] [--json] [--plain]
 
         Starts an interactive coding agent in the current directory.
         anchor setup chooses a provider, saves its API key and picks a model.
@@ -25,6 +25,7 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
           --max-rounds <n>     with -p: stop after n model requests (exit code 5)
           --timeout <seconds>  with -p: stop after this long (exit code 124)
           --json               write events as JSON lines; without -p, read requests from stdin
+          --plain              a line-by-line REPL instead of the full-screen one
           --version, --help
 
         Config: ~/.anchor/config.json (ANCHOR_HOME overrides the directory).
@@ -36,7 +37,7 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
             return (new Options(null, false, false, null, false, null, false, Setup: true), 0);
 
         string? model = null, resumeId = null, prompt = null, until = null;
-        bool yolo = false, resume = false, print = false, json = false;
+        bool yolo = false, resume = false, print = false, json = false, plain = false;
         List<string> allow = [];
         int? maxRounds = null, timeout = null;
         for (var i = 0; i < args.Length; i++)
@@ -77,6 +78,9 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
                 case "--json":
                     json = true;
                     break;
+                case "--plain":
+                    plain = true;
+                    break;
                 case "--help" or "-h":
                     output.WriteLine(Usage);
                     return (null, 0);
@@ -106,7 +110,7 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
             error.WriteLine("anchor: --max-rounds and --timeout need -p.");
             return (null, 2);
         }
-        return (new Options(model, yolo, resume, resumeId, print, prompt, json, until, allow.Count > 0 ? allow : null, maxRounds, timeout), 0);
+        return (new Options(model, yolo, resume, resumeId, print, prompt, json, until, allow.Count > 0 ? allow : null, maxRounds, timeout, Plain: plain), 0);
     }
 
     public static string Version

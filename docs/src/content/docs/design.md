@@ -6,7 +6,7 @@ description: anchor's architecture and the rules it's built on - one loop, one g
 anchor is a minimal coding harness: one model working in one directory through a few tools, plus
 sub-agents, skills and MCP. It's written in C# on .NET 10 and
 [`Microsoft.Extensions.AI`](https://learn.microsoft.com/dotnet/ai/microsoft-extensions-ai), and it
-stays under 5,000 lines of source. A new feature has to justify every line it adds.
+stays under 10,000 lines of source. A new feature has to justify every line it adds.
 
 The full design notes are in
 [`DESIGN.md`](https://github.com/fuseraft/anchor/blob/main/DESIGN.md). This page is the short

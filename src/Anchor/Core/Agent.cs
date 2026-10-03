@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.AI;
 
@@ -10,6 +11,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     IChatClient _client = client;
     ChatOptions _options = WithTools(options, toolbox);
     readonly Limits _limits = limits ?? new Limits();
+    readonly ConcurrentQueue<string> _interjections = new();
     bool _warnedFull;
     int _rounds;
 
@@ -28,6 +30,18 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     public long? LastContextTokens { get; private set; }
 
     public long ContextTokens => LastContextTokens ?? Messages.EstimateTokens(Context()) + 1_000;
+
+    /// <summary>Adds a message the user typed while the turn runs; the model reads it after the current step's tool results.</summary>
+    public void Interject(string text) => _interjections.Enqueue(text);
+
+    /// <summary>Takes the interjections not read yet, as one message; null when there are none.</summary>
+    public string? TakeInterjections()
+    {
+        List<string> texts = [];
+        while (_interjections.TryDequeue(out var text))
+            texts.Add(text);
+        return texts.Count == 0 ? null : string.Join("\n\n", texts);
+    }
 
     /// <summary>Switches model/provider; history carries over.</summary>
     public void Use(IChatClient newClient, ChatOptions newOptions)
@@ -148,6 +162,8 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
                 results = null;
                 if (stop is not null)
                     return End(TurnEnd.LoopStopped, stop);
+                if (TakeInterjections() is { } typed)
+                    History.Add(new ChatMessage(ChatRole.User, typed));
                 await ReduceContextAsync(force: false, ct);
             }
         }
