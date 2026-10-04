@@ -9,6 +9,9 @@
     <RootNamespace>Anchor</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
     <MinVerTagPrefix>v</MinVerTagPrefix>
+    <!-- Single-file publishes carry native libraries (Terminal.Gui's libonigwrap) inside the binary,
+         so a release archive is just the one file. They're extracted on first run. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
