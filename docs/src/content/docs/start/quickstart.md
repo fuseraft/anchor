@@ -55,8 +55,11 @@ Fixed: `add` was subtracting instead of adding.
 Every write shows you the diff first. Press:
 
 - **y** to allow this one action,
-- **a** to allow this kind of action for the rest of the session,
-- anything else to decline. The model is told you declined and not to retry.
+- **a** to allow this kind of action from now on: file writes for the rest of the session, a
+  command's programs or an MCP tool saved for this directory,
+- **n** or **Esc** to decline. The model is told you declined and not to retry.
+
+Other keys are ignored, so a keystroke meant for the prompt never answers.
 
 Reads inside the directory and read-only shell commands like `ls`, `grep` or `git diff` run
 without asking.

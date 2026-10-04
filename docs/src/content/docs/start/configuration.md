@@ -31,12 +31,14 @@ The file accepts comments and trailing commas. The full schema is in the
    used as typed.
 
 anchor offers the wizard when you start it interactively with no model configured and no API key
-set. Running it again replaces `provider.model` and updates the named provider, and keeps the
-rest of your config. The config's comments can't be kept, so a commented file is first copied to
-`config.json.bak`.
+set. Running it again replaces the whole `provider` section with the new `model` (so a
+`provider.endpoint`, `apiKeyEnv` or `contextWindow` you set by hand is removed), updates the named
+provider for another server, and keeps the rest of your config. The config's comments can't be
+kept, so a commented file is first copied to `config.json.bak`.
 
-A key saved by the wizard stands in for its environment variable, so the config still names the
-variable (`apiKeyEnv`). When the variable is set, its value wins.
+A key saved by the wizard stands in for its environment variable: the one the model name implies
+(such as `ANTHROPIC_API_KEY`), or the `apiKeyEnv` saved on a named provider. When the variable is
+set, its value wins.
 
 ## Choosing a model
 
@@ -73,7 +75,8 @@ of the environment variable that holds its key:
 }
 ```
 
-The variable must be set, even if the server ignores it (`export OLLAMA_API_KEY=unused`).
+The variable must be set, or have a key saved for it by `anchor setup`, even if the server ignores
+it (`export OLLAMA_API_KEY=unused`).
 
 ## Named providers (LiteLLM and other proxies)
 

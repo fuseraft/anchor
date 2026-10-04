@@ -97,4 +97,5 @@ If a server needs a pre-registered client, set it under `oauth`:
 
 Servers connect in the background, one at a time, so the prompt is ready right away and two
 sign-ins never compete for the callback port. A server that fails to start shows a warning instead
-of blocking the session. While a sign-in is pending, the connect timeout stretches to 5 minutes.
+of blocking the session. A stdio server gets 60 seconds to start; an HTTP server gets 5 minutes,
+so there's time to sign in. With `-p --timeout`, startup as a whole gets that limit instead.

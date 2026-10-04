@@ -66,7 +66,7 @@ src/Anchor/
   Core/Until.cs          work until a check command passes
   Core/SessionLog.cs     append-only JSONL sessions
   Core/SubAgentRunner.cs fresh agents per task in the background, same gate
-  Tools/                 read, list, glob, grep, write, edit, shell, agent tools, skill
+  Tools/                 read, list, glob, grep, write, edit, shell, agent tools, skill, ask_user
   Mcp/                   config and trust, background connections, OAuth, keychain
   Providers/             Anthropic (native, cached) and OpenAI-compatible
   Cli/                   REPL, rendering, approvals, -p and --json

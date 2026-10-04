@@ -87,7 +87,7 @@ anchor -p --yolo "fix the failing test"      # -p can't ask, so it refuses unles
 anchor -p --allow edits --allow dotnet "fix the failing test" --max-rounds 40 --timeout 900
 ```
 
-In the REPL: `/help`, `/model`, `/context`, `/until`, `/compact`, `/approvals`, `/undo`, `/sessions`, `/agents`,
+In the REPL: `/help`, `/model`, `/setup`, `/context`, `/until`, `/compact`, `/approvals`, `/undo`, `/sessions`, `/agents`,
 `/skills`, `/mcp` (`/mcp login|logout <server>`), `/clear`, `/exit`. `!cmd` runs a command in
 your own shell; the model never sees it. Ctrl+C cancels the running turn.
 
@@ -143,9 +143,10 @@ Code's format. `${VAR}` in values is replaced from the environment.
 `anchor --json` is a line protocol for editors:
 
 - It writes `ready`, streams events, and sends `approval_request` with an `id` when an action
-  needs approval.
+  needs approval, or `question` when the model asks a multiple-choice question.
 - It reads `{"type":"user_input","text":"..."}`,
-  `{"type":"approval_response","id":"a1","answer":"yes|no|always"}` and `{"type":"cancel"}`.
+  `{"type":"approval_response","id":"a1","answer":"yes|no|always"}`,
+  `{"type":"question_response","id":"q2","answer":"..."}` and `{"type":"cancel"}`.
 
 The `result` line has the status, the answer, `files_changed` (written by anchor's file tools), the
 session id and token usage. `--allow <rule>` pre-approves a program, an MCP tool

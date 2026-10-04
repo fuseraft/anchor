@@ -66,8 +66,9 @@ Results are `path:line: text`.
 | `path`    | File path.                   |
 | `content` | The complete file content.   |
 
-Content that looks elided, such as `// ... rest unchanged`, is rejected, so a file is never
-overwritten with a placeholder.
+When replacing an existing file, content that looks elided, such as `// ... rest unchanged`, is
+rejected (unless the file already contains that line), so a file is never overwritten with a
+placeholder.
 
 ### edit_file
 
@@ -86,7 +87,8 @@ overwritten with a placeholder.
 | `timeout_seconds` | `120`   | Up to 600.                   |
 
 Runs in the working directory with bash (or `sh`), or `cmd.exe` on Windows. stdin is closed, and
-`TERM=dumb`, `NO_COLOR=1` and `PAGER=cat` are set so commands don't wait for input. Output is stdout
+`TERM=dumb`, `NO_COLOR=1`, `PAGER=cat`, `GIT_PAGER=cat` and `GIT_TERMINAL_PROMPT=0` are set so
+commands don't wait for input. Output is stdout
 and stderr combined, followed by the exit code, with secrets masked.
 
 ## Agent tools

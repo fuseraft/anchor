@@ -44,8 +44,9 @@ These are refused even with `--yolo`:
   `id_ed25519`, `id_ecdsa`, `id_dsa`), `.netrc`, `.pgpass`, `.git-credentials`, and
   `~/.aws/credentials`. Paths are checked where they really point, so a symlink to `.env` is
   denied too. Shell commands that name these files, or globs that would match them, are denied.
-- **Privilege escalation**: `sudo`, `su`, `doas`, `pkexec`, `run0`.
-- **Raw disk operations**: `mkfs`, `fdisk`, `parted`, `wipefs`, `dd` to a device.
+- **Privilege escalation**: `sudo`, `sudoedit`, `su`, `doas`, `pkexec`, `run0`.
+- **Raw disk operations**: `mkfs`, `fdisk`, `sfdisk`, `parted`, `wipefs`, `mkswap`, and `dd` or a
+  redirect to a disk device.
 - **Deleting a system or home directory**, as in `rm -rf /` or `rm -rf ~`.
 - **Downloading and running code**, as in `curl ... | sh` or `bash <(curl ...)`.
 

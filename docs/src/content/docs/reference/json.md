@@ -88,7 +88,7 @@ The session ends when stdin closes.
 ### A session
 
 ```json
-→ {"type":"ready","session":"20260928-231002-4f1a","model":"claude-sonnet-5","tools":["read_file","list_dir","glob","grep","write_file","edit_file","shell","agent","agent_status","agent_stop"]}
+→ {"type":"ready","session":"20260928-231002-4f1a","model":"claude-sonnet-5","tools":["read_file","list_dir","glob","grep","write_file","edit_file","shell","agent","agent_status","agent_stop","ask_user"]}
 ← {"type":"user_input","text":"create hello.txt"}
 → {"type":"tool_start","id":"toolu_1","name":"write_file","summary":"hello.txt"}
 → {"type":"approval_request","id":"a1","title":"Create hello.txt","detail":"@@ -0,0 +1 @@\n+hello\n","always":"all file writes in the workspace"}

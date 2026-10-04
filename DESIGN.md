@@ -30,8 +30,8 @@ tests/Anchor.Tests/
    `UseFunctionInvocation()`. The turn ends on the model's final text. There is no default round
    cap: anchor stops when the model repeats the same call 5 times or fails 3 calls in a row. A `-p`
    caller can set its own with `--max-rounds`.
-2. **One gate.** Tools reach the disk and processes only through `Gate`: `ReadPathAsync`,
-   `WriteAsync` (the user sees a diff first), and `RunAsync`. Each one runs the same sequence:
+2. **One gate.** Tools reach the disk, processes and MCP servers only through `Gate`:
+   `ReadPathAsync`, `WriteAsync` (the user sees a diff first), `RunAsync` and `CallExternalAsync`. Each one runs the same sequence:
    policy, then approval, then the effect. A test fails if a tool touches files or processes
    directly. Paths are checked where they really point, with symlinks resolved.
 3. **Safe by default.** Writes and non-read-only shell commands ask first, and the sandbox is
@@ -45,7 +45,7 @@ tests/Anchor.Tests/
      (`base64 .env`) is not caught. The approval prompt is the guard for that case.
 5. **The core never prints.** It emits events, and a renderer draws them. `--json` is just a
    second renderer.
-6. **Messages are typed.** Every message carries its kind (user, assistant, tool, summary), so
+6. **Messages are typed.** Every message carries its kind (user, assistant, tool, summary, note), so
    anchor never parses string prefixes to tell them apart.
 
 ## Approvals
@@ -86,7 +86,7 @@ tests/Anchor.Tests/
   in both, the project copy wins.
 - Only the catalog (name + description) goes into the system prompt. The `skill(name)` tool
   loads the full body.
-- Skill resources are read with `read` and scripts run with `shell`, so the gate covers them.
+- Skill resources are read with `read_file` and scripts run with `shell`, so the gate covers them.
   There is no separate script runner that skips the checks. Files in installed skill
   directories can be read without asking; secret files in them are still denied.
 - A skill or agent file that is a symlink to a secret file is skipped. `/skills` lists them.
@@ -116,7 +116,8 @@ tests/Anchor.Tests/
 - API keys saved by `anchor setup` also live in the keychain, under the name of the variable they
   stand in for. The variable wins when it's set.
 - `/mcp login <server>` and `/mcp logout <server>` manage sign-ins.
-- The connect timeout stretches to 5 minutes while sign-in is pending.
+- HTTP servers get 5 minutes to connect, so there's time to sign in; stdio servers get 60 seconds.
+  With `-p --timeout`, startup as a whole gets that limit instead.
 - The browser launcher can be swapped out in tests.
 - Servers connect in the background, one at a time, so two sign-ins never compete for the
   callback port. A server that fails to start shows a warning instead of blocking the REPL.
@@ -163,9 +164,10 @@ tests/Anchor.Tests/
 ## Surface
 
 ```
+anchor setup
 anchor [--yolo] [--allow rule]... [--resume [id]] [--model m] [-p "prompt"] [--until check]
        [--max-rounds n] [--timeout s] [--json] [--plain]
-/help /model /context /until /compact /approvals /undo /sessions /clear /agents /skills /mcp /exit
+/help /model /setup /context /until /compact /approvals /undo /sessions /clear /agents /skills /mcp /exit
 !cmd runs in your shell, outside the model's history
 ```
 
@@ -191,16 +193,17 @@ Config lives in `~/.anchor/config.json`. Sessions are stored in `~/.anchor/sessi
   `--yolo` is on. Project MCP servers that were never approved interactively are skipped.
 - `--allow <rule>` is "always" given up front, for the session only: a program, an MCP tool, or
   `edits`. It is never saved, and it never lifts a denial.
-- `--max-rounds` caps the main agent's model requests over the whole run; `--timeout` cancels the
-  run. Sub-agents are bounded by their own loop guard, not by `--max-rounds`.
+- `--max-rounds` caps the main agent's model requests over the whole run, and each sub-agent gets
+  the same cap of its own; `--timeout` cancels the run.
 - Exit codes: 0 completed, 1 error, 2 usage, 3 stopped by the loop guard, 4 the `--until` check never
   passed, 5 reached `--max-rounds`, 124 reached `--timeout` (as with `timeout(1)`), 130 cancelled.
 - `--json` writes every event as one JSON object per line. With `-p` it ends with a `result`
   line: status, answer, `--until` result, files the file tools wrote, session id and usage. Without
   `-p` it is a protocol for editors:
-  - Requests on stdin: `user_input`, `approval_response`, `cancel`.
+  - Requests on stdin: `user_input`, `approval_response`, `question_response`, `cancel`.
   - It announces `ready` whenever it can take input.
-  - Approvals arrive as `approval_request` events with an id.
+  - Approvals arrive as `approval_request` events with an id, and `ask_user` questions as
+    `question` events.
 - Sessions from both modes can be resumed.
 
 ## Checks
