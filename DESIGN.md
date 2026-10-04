@@ -235,3 +235,6 @@ plugin registry. Any of these can be added later as a tool behind the gate.
    every shell command and offer no "always" for them).
 6. Windows builds and install scripts, `--until`, parallel sub-agents, and a documentation
    site; then the v0.2.0 release.
+7. A full-screen TUI that takes input while a turn runs, background sub-agents shown live,
+   `ask_user`, `anchor setup`, named providers, saved "always" approvals, and `--allow`,
+   `--max-rounds` and `--timeout` for `-p`; then the v0.3.0 release.
