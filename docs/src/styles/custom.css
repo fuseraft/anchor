@@ -10,3 +10,11 @@
 	--sl-color-accent: #226673;
 	--sl-color-accent-high: #0f3940;
 }
+
+/* The terminal screenshot on the landing page. */
+.screenshot {
+	display: block;
+	max-width: 100%;
+	height: auto;
+	margin-inline: auto;
+}

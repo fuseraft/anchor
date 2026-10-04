@@ -17,6 +17,14 @@ hero:
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Image } from 'astro:assets';
+import screenshot from '../../assets/screenshot.png';
+
+<Image
+	src={screenshot}
+	alt="anchor in a terminal: the agent lists the directory, reads README.md and summarizes the repo in two sentences, with token usage and a status line below."
+	class="screenshot"
+/>
 
 <CardGrid stagger>
 	<Card title="Safe by default" icon="approve-check">

@@ -5,6 +5,8 @@ tools, and a deterministic harness decides what it may touch.
 
 **Documentation: [fuseraft.github.io/anchor](https://fuseraft.github.io/anchor/)**
 
+![anchor in a terminal, summarizing this repo](docs/src/assets/screenshot.png)
+
 - **Safe by default.** Writes, most shell commands and reads outside the directory ask first,
   and a write shows you the diff. Secret files (`.env`, keys, credentials) and dangerous
   commands (`sudo`, `rm -rf /`, `curl | sh`) are always denied, even with `--yolo`. Secret
