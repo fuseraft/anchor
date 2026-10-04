@@ -1,6 +1,6 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
-using Anthropic.SDK;
+using Anthropic;
 using Microsoft.Extensions.AI;
 using OpenAI;
 
@@ -89,8 +89,9 @@ public static class Providers
     /// <summary>The keychain account <c>anchor setup</c> stores a key under, named for the variable it stands in for.</summary>
     public static string KeychainAccount(string apiKeyEnv) => $"api-key/{apiKeyEnv}";
 
-    /// <summary>Builds a client. The key comes from <c>ApiKeyEnv</c>, or from <paramref name="storedKey"/> (the keychain) when the variable is unset.</summary>
-    public static IChatClient Create(ProviderSettings settings, Func<string, string?>? storedKey = null)
+    /// <summary>Builds a client. The key comes from <c>ApiKeyEnv</c>, or from <paramref name="storedKey"/> (the keychain) when the variable is unset.
+    /// Failed requests the provider says to retry are retried, and <paramref name="onRetry"/> hears about each one.</summary>
+    public static IChatClient Create(ProviderSettings settings, Func<string, string?>? storedKey = null, Action<string>? onRetry = null)
     {
         // A custom provider without apiKeyEnv authenticates some other way (headers, or none at all), but the SDKs want a key.
         var key = settings.ApiKeyEnv is null ? "unused"
@@ -99,20 +100,27 @@ public static class Providers
         if (string.IsNullOrEmpty(key))
             throw new InvalidOperationException($"{settings.ApiKeyEnv} is not set (needed for {settings.Model}). Set it, or run anchor setup to save a key.");
         var headers = (settings.Headers ?? new Dictionary<string, string>()).ToDictionary(h => h.Key, h => Anchor.Mcp.McpConfig.Expand(h.Value));
+        var http = new HttpClient(new RetryHandler(onRetry)) { Timeout = NetworkTimeout };
 
         switch (settings.Provider)
         {
             case "anthropic":
-                var http = new HttpClient { Timeout = NetworkTimeout };
                 foreach (var (name, value) in headers)
                     http.DefaultRequestHeaders.TryAddWithoutValidation(name, value);
-                var anthropic = new AnthropicClient(key, http);
+                // RetryHandler retries, so the SDK's own retries are off.
+                var anthropic = new Anthropic.Core.ClientOptions { ApiKey = key, HttpClient = http, MaxRetries = 0, Timeout = NetworkTimeout };
                 if (settings.Endpoint is not null)
-                    anthropic.ApiUrlFormat = settings.Endpoint.TrimEnd('/') + "/{0}/{1}";
-                return new AnthropicChatClient(anthropic);
+                    anthropic.BaseUrl = settings.Endpoint.TrimEnd('/');
+                return new AnthropicChatClient(new AnthropicClient(anthropic).AsIChatClient(settings.Model));
 
             case "openai":
-                var options = new OpenAIClientOptions { NetworkTimeout = NetworkTimeout, RetryPolicy = new ClientRetryPolicy(maxRetries: 2) };
+                // RetryHandler retries, so the SDK's own policy doesn't multiply the attempts.
+                var options = new OpenAIClientOptions
+                {
+                    NetworkTimeout = NetworkTimeout,
+                    RetryPolicy = new ClientRetryPolicy(maxRetries: 0),
+                    Transport = new HttpClientPipelineTransport(http),
+                };
                 if (settings.Endpoint is not null)
                     options.Endpoint = new Uri(settings.Endpoint);
                 if (headers.Count > 0)

@@ -1,87 +1,48 @@
-using System.Runtime.CompilerServices;
-using System.Text.Json;
-using Anthropic.SDK;
-using Anthropic.SDK.Messaging;
+using Anthropic.Models.Messages;
 using Microsoft.Extensions.AI;
 
 namespace Anchor.Providers;
 
-/// <summary>Native Messages API client with a cache breakpoint on the conversation tail, so the whole history prefix is cached, not just system + tools.</summary>
-internal sealed class AnthropicChatClient(AnthropicClient client) : IChatClient
+/// <summary>The official SDK's client with cache breakpoints on the system prompt and the conversation tail,
+/// so the whole history prefix is cached, not just system + tools.</summary>
+/// <remarks>Breakpoints go on copies, never on the caller's messages; otherwise every past tail would keep one and
+/// a long session would pass the API's limit of four.</remarks>
+internal sealed class AnthropicChatClient(IChatClient inner) : DelegatingChatClient(inner)
 {
-    public async Task<ChatResponse> GetResponseAsync(
-        IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+    public override Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+        base.GetResponseAsync(WithBreakpoints(messages), options, cancellationToken);
+
+    public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+        base.GetStreamingResponseAsync(WithBreakpoints(messages), options, cancellationToken);
+
+    internal static List<ChatMessage> WithBreakpoints(IEnumerable<ChatMessage> messages)
     {
-        var updates = new List<ChatResponseUpdate>();
-        await foreach (var update in GetStreamingResponseAsync(messages, options, cancellationToken))
-            updates.Add(update);
-        return updates.ToChatResponse();
+        List<ChatMessage> list = [.. messages];
+        var system = list.FindLastIndex(m => m.Role == ChatRole.System);
+        if (system >= 0)
+            list[system] = WithTailBreakpoint(list[system]);
+        var tail = list.FindLastIndex(m => m.Role != ChatRole.System && m.Contents.Count > 0);
+        if (tail >= 0)
+            list[tail] = WithTailBreakpoint(list[tail]);
+        return list;
     }
 
-    public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-        IEnumerable<ChatMessage> messages, ChatOptions? options = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    static ChatMessage WithTailBreakpoint(ChatMessage message)
     {
-        Usage? start = null;
-        await foreach (var response in client.Messages.StreamClaudeMessageAsync(Parameters(messages, options), cancellationToken))
+        AIContent? copy = message.Contents[^1] switch
         {
-            var update = new ChatResponseUpdate
-            {
-                ResponseId = response.Id,
-                ModelId = response.Model,
-                RawRepresentation = response,
-                Role = ChatRole.Assistant,
-            };
-
-            start ??= response.StreamStartMessage?.Usage;
-
-            if (response.Delta is { } delta)
-            {
-                if (!string.IsNullOrEmpty(delta.Text))
-                    update.Contents.Add(new Microsoft.Extensions.AI.TextContent(delta.Text));
-                if (delta.StopReason is { } stop)
-                    update.FinishReason = stop == "max_tokens" ? ChatFinishReason.Length : ChatFinishReason.Stop;
-                if (response.Usage is { } usage)
-                    update.Contents.Add(new UsageContent(Normalize(start ?? usage, usage)));
-            }
-
-            foreach (var call in response.ToolCalls ?? [])
-            {
-                var args = call.Arguments?.ToString();
-                update.Contents.Add(new FunctionCallContent(call.Id, call.Name,
-                    string.IsNullOrEmpty(args) ? [] : JsonSerializer.Deserialize<Dictionary<string, object?>>(args)));
-            }
-
-            yield return update;
-        }
-    }
-
-    // Reported once per response, with OpenAI's meaning: input includes cached tokens.
-    // Anthropic's input_tokens excludes cache reads and writes, and its start and delta events split the counts.
-    internal static UsageDetails Normalize(Usage start, Usage end)
-    {
-        var read = start.CacheReadInputTokens;
-        return new UsageDetails
-        {
-            InputTokenCount = start.InputTokens + read + start.CacheCreationInputTokens,
-            OutputTokenCount = end.OutputTokens,
-            CachedInputTokenCount = read,
+            TextContent t => new TextContent(t.Text),
+            FunctionResultContent r => new FunctionResultContent(r.CallId, r.Result),
+            FunctionCallContent c => new FunctionCallContent(c.CallId, c.Name, c.Arguments),
+            _ => null,
         };
+        if (copy is null)
+            return message;
+        copy.WithCacheControl(new CacheControlEphemeral());
+        var clone = message.Clone();
+        clone.Contents = [.. message.Contents.SkipLast(1), copy];
+        return clone;
     }
-
-    MessageParameters Parameters(IEnumerable<ChatMessage> messages, ChatOptions? options)
-    {
-        var parameters = ChatClientHelper.CreateMessageParameters(client.Messages, messages, options);
-        parameters.PromptCaching = PromptCacheType.AutomaticToolsAndSystem;
-
-        var tail = parameters.Messages?.LastOrDefault(m => m.Content is { Count: > 0 })?.Content?[^1];
-        if (tail is { CacheControl: null })
-            tail.CacheControl = new CacheControl { Type = CacheControlType.ephemeral };
-        return parameters;
-    }
-
-    public object? GetService(Type serviceType, object? serviceKey = null) =>
-        serviceKey is null && serviceType.IsInstanceOfType(this) ? this : null;
-
-    public void Dispose() => client.Dispose();
 }

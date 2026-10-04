@@ -20,18 +20,18 @@ public static class Startup
     {
         var config = Config.Load();
         var keychain = Keychain.Default();
-        var models = new ModelSource(ModelSource.StoredKeys(keychain), Config.Load);
-        var provider = Providers.Providers.Resolve(options.Model ?? config.Provider.Model, config.Provider.Name, config.Provider.Endpoint, config.Provider.ApiKeyEnv, config.Providers);
-        var client = models.Create(provider);
-        var window = Providers.Providers.ContextWindow(provider, config.Provider.ContextWindow);
-
-        var workspace = new Workspace(Directory.GetCurrentDirectory());
         var usage = new SessionUsage();
         Action<AgentEvent> emit = e =>
         {
             usage.Observe(e);
             output.Emit(e);
         };
+        var models = new ModelSource(ModelSource.StoredKeys(keychain), Config.Load, m => emit(new Notice(m)));
+        var provider = Providers.Providers.Resolve(options.Model ?? config.Provider.Model, config.Provider.Name, config.Provider.Endpoint, config.Provider.ApiKeyEnv, config.Providers);
+        var client = models.Create(provider);
+        var window = Providers.Providers.ContextWindow(provider, config.Provider.ContextWindow);
+
+        var workspace = new Workspace(Directory.GetCurrentDirectory());
 
         var (skills, skillWarnings) = Definitions.LoadSkills([Path.Combine(workspace.Root, ".agents", "skills"), Path.Combine(Config.Home, "skills")]);
         var (agents, agentWarnings) = Definitions.LoadAgents([Path.Combine(workspace.Root, ".agents", "agents"), Path.Combine(Config.Home, "agents")]);

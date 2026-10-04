@@ -19,7 +19,7 @@ src/Anchor/              one project
   Core/SubAgentRunner.cs fresh agent per task, same gate
   Tools/                 read, list, glob, grep, write, edit, shell, agent, skill, ask_user
   Mcp/                   config and trust, background connections, OAuth, keychain
-  Providers/             anthropic (native, cached), openai-compatible
+  Providers/             anthropic (official SDK, cached), openai-compatible, retries
   Cli/                   REPL, full-screen TUI, rendering, approvals, config
 tests/Anchor.Tests/
 ```
@@ -122,6 +122,18 @@ tests/Anchor.Tests/
 - Servers connect in the background, one at a time, so two sign-ins never compete for the
   callback port. A server that fails to start shows a warning instead of blocking the REPL.
   `/mcp` shows each server's state.
+
+## Providers
+
+- Claude goes through Anthropic's official SDK, with cache breakpoints on the system prompt and the
+  conversation tail. The breakpoints go on copies of the messages, so they never pile up in history.
+- Both providers share one `RetryHandler` on their `HttpClient`, and the SDKs' own retries are off.
+  It retries 408, 409, 429 and 5xx (including Anthropic's 529) and dropped connections, up to 6
+  times. It waits for `Retry-After` when the provider sends one, and otherwise 1s doubling with
+  jitter, never more than a minute. Anthropic's `x-should-retry` header overrides the status.
+- A streamed response's status arrives before its first token, so a retry never repeats text the
+  user saw. An error in the middle of a stream is not retried; it ends the turn as before.
+- Each retry is a `Notice` event, so the user sees why the turn is waiting.
 
 ## Context
 
