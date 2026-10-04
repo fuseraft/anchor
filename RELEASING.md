@@ -48,15 +48,11 @@ Certificate Profile Signer" role on it.
 
 ### Homebrew and Scoop
 
-1. Create `fuseraft/homebrew-tap` (the formula goes in `Formula/anchor.rb`) and
-   `fuseraft/scoop-bucket` (the manifest goes in `bucket/anchor.json`).
-2. Add `PACKAGING_TOKEN`: a fine-grained token with contents read/write on those two repos.
-3. After the first release reaches them, add to the README and the install page:
-
-   ```sh
-   brew install fuseraft/tap/anchor
-   scoop bucket add fuseraft https://github.com/fuseraft/scoop-bucket && scoop install anchor
-   ```
+The formula lives in [`fuseraft/homebrew-tap`](https://github.com/fuseraft/homebrew-tap)
+(`Formula/anchor.rb`) and the manifest in
+[`fuseraft/scoop-bucket`](https://github.com/fuseraft/scoop-bucket) (`bucket/anchor.json`).
+The release job pushes both using `PACKAGING_TOKEN`, a fine-grained token with Contents
+read and write on those two repos.
 
 ### winget
 

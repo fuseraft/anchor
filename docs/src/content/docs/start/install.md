@@ -39,6 +39,23 @@ treat a command as read-only and never offer "always allow" for commands. See
 [Safety and approvals](/anchor/guides/safety/#windows).
 :::
 
+## With a package manager
+
+[Homebrew](https://brew.sh) on macOS and Linux:
+
+```sh
+brew install fuseraft/tap/anchor
+```
+
+[Scoop](https://scoop.sh) on Windows:
+
+```powershell
+scoop bucket add fuseraft https://github.com/fuseraft/scoop-bucket
+scoop install anchor
+```
+
+`brew upgrade anchor` and `scoop update anchor` update it.
+
 ## From a release
 
 Download an archive for your platform from the

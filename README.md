@@ -40,6 +40,14 @@ Windows (installs to `%LOCALAPPDATA%\anchor\bin` and adds it to your user `PATH`
 irm https://raw.githubusercontent.com/fuseraft/anchor/main/install.ps1 | iex
 ```
 
+With a package manager:
+
+```sh
+brew install fuseraft/tap/anchor                                    # macOS and Linux
+scoop bucket add fuseraft https://github.com/fuseraft/scoop-bucket  # Windows
+scoop install anchor
+```
+
 Or download a release from the Releases page and put `anchor` on your `PATH`, or build it:
 
 ```sh
