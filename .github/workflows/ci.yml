@@ -184,8 +184,14 @@ jobs:
             git clone --depth 1 "https://x-access-token:$PACKAGING_TOKEN@github.com/fuseraft/$1.git" "$dir"
             mkdir -p "$(dirname "$dir/$3")"
             cp "$2" "$dir/$3"
+            # Add by path: the first release creates the file, which commit -a would leave out.
+            git -C "$dir" add "$3"
+            if git -C "$dir" diff --cached --quiet; then
+              echo "$1 already has this version."
+              return
+            fi
             git -C "$dir" -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-              commit -am "anchor ${GITHUB_REF_NAME#v}" --allow-empty
+              commit -m "anchor ${GITHUB_REF_NAME#v}"
             git -C "$dir" push
           }
           publish homebrew-tap manifests/anchor.rb Formula/anchor.rb
