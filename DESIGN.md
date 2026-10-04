@@ -253,3 +253,6 @@ plugin registry. Any of these can be added later as a tool behind the gate.
 7. A full-screen TUI that takes input while a turn runs, background sub-agents shown live,
    `ask_user`, `anchor setup`, named providers, saved "always" approvals, and `--allow`,
    `--max-rounds` and `--timeout` for `-p`; then the v0.3.0 release.
+8. Claude on the official SDK (the old one failed every request), retries for both providers,
+   native libraries bundled into the binary, and checksummed, attested releases on Homebrew
+   and Scoop; then the v0.3.1 release.
