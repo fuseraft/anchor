@@ -106,6 +106,28 @@ try {
         exit 1
     }
 
+    Write-Host "Verifying checksum..."
+    $SumsAsset = $Release.assets | Where-Object { $_.name -eq 'SHA256SUMS' }
+    if (-not $SumsAsset) {
+        Write-Error "Release $Tag has no SHA256SUMS, so the download can't be verified."
+        exit 1
+    }
+    $SumsPath = Join-Path $TmpDir 'SHA256SUMS'
+    try {
+        Invoke-WebRequest -Uri $SumsAsset.browser_download_url -OutFile $SumsPath -Headers $Headers
+    } catch {
+        Write-Error ("Download of SHA256SUMS failed: " + $_.Exception.Message)
+        exit 1
+    }
+    $Expected = Get-Content $SumsPath |
+        ForEach-Object { $hash, $name = $_ -split '\s+', 2; if ($name -and $name.Trim().TrimStart('*') -eq $Archive) { $hash.ToLowerInvariant() } } |
+        Select-Object -First 1
+    $Actual = (Get-FileHash -Algorithm SHA256 -Path $ZipPath).Hash.ToLowerInvariant()
+    if (-not $Expected -or $Expected -ne $Actual) {
+        Write-Error "Checksum mismatch for $Archive; refusing to install it. Expected: $Expected Actual: $Actual"
+        exit 1
+    }
+
     Write-Host "Extracting..."
 
     # Retry extraction — AV/file-lock pressure can cause transient failures

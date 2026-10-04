@@ -20,6 +20,9 @@ curl -fsSL https://raw.githubusercontent.com/fuseraft/anchor/main/install.sh | b
 
 If `~/.local/bin` isn't on your `PATH`, the script prints the line to add to your shell's rc file.
 
+Both install scripts check the download against the release's `SHA256SUMS` and refuse to install
+an archive that doesn't match. To update, run the same command again.
+
 ## Windows
 
 ```powershell
@@ -41,6 +44,15 @@ treat a command as read-only and never offer "always allow" for commands. See
 Download an archive for your platform from the
 [Releases page](https://github.com/fuseraft/anchor/releases), extract it, and put `anchor` on your
 `PATH`. Builds are published for `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64` and `win-x64`.
+
+Each release lists the archives' checksums in `SHA256SUMS`, and carries a signed build provenance
+attestation that ties every archive to the GitHub Actions run that built it. With the
+[GitHub CLI](https://cli.github.com/), check one with:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS
+gh attestation verify anchor-<version>-linux-x64.tar.gz --repo fuseraft/anchor
+```
 
 ## From source
 

@@ -32,16 +32,20 @@ jobs:
     name: Publish (${{ matrix.rid }})
     needs: test
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { rid: linux-x64,   archive: tar }
-          - { rid: linux-arm64, archive: tar }
-          - { rid: osx-x64,     archive: tar }
-          - { rid: osx-arm64,   archive: tar }
-          - { rid: win-x64,     archive: zip }
+          - { rid: linux-x64,   os: ubuntu-latest,  archive: tar }
+          - { rid: linux-arm64, os: ubuntu-latest,  archive: tar }
+          # macOS and Windows builds run on their own OS so they can be signed there.
+          - { rid: osx-x64,     os: macos-latest,   archive: tar }
+          - { rid: osx-arm64,   os: macos-latest,   archive: tar }
+          - { rid: win-x64,     os: windows-latest, archive: zip }
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
         with:
@@ -54,12 +58,73 @@ jobs:
       - name: Publish
         run: dotnet publish src/Anchor -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -o out
 
+      # Developer ID signature with the hardened runtime, then notarization. Skipped until the secrets exist.
+      - name: Sign and notarize (macOS)
+        if: startsWith(matrix.rid, 'osx-') && startsWith(github.ref, 'refs/tags/v')
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [[ -z "$APPLE_CERTIFICATE_P12" ]]; then
+            echo "::warning::APPLE_CERTIFICATE_P12 is not set; the macOS build is not signed or notarized."
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -hex 16)"
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          codesign --force --timestamp --options runtime \
+            --entitlements packaging/anchor.entitlements --sign "$APPLE_SIGNING_IDENTITY" out/anchor
+          codesign --verify --strict --verbose=2 out/anchor
+          # A bare binary can't be stapled; Gatekeeper finds the ticket online.
+          ditto -c -k out/anchor "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --wait \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+
+      # Azure Artifact Signing (formerly Trusted Signing). Skipped until the secrets exist.
+      - name: Check Windows signing secrets
+        id: winsign
+        if: matrix.rid == 'win-x64' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        run: |
+          if [[ -z "$AZURE_CLIENT_ID" ]]; then
+            echo "::warning::AZURE_CLIENT_ID is not set; the Windows build is not signed."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sign (Windows)
+        if: steps.winsign.outputs.enabled == 'true'
+        uses: azure/artifact-signing-action@v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE }}
+          files-folder: out
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
       - name: Archive
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           [[ "$GITHUB_REF" == refs/tags/v* ]] || VERSION="dev-$(git rev-parse --short HEAD)"
           if [[ "${{ matrix.archive }}" == zip ]]; then
-            (cd out && zip "../anchor-$VERSION-${{ matrix.rid }}.zip" anchor.exe)
+            (cd out && 7z a -tzip "../anchor-$VERSION-${{ matrix.rid }}.zip" anchor.exe)
           else
             tar -czf "anchor-$VERSION-${{ matrix.rid }}.tar.gz" -C out anchor
           fi
@@ -77,13 +142,77 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
 
+      # The install scripts refuse an archive whose checksum doesn't match this file.
+      - name: Checksums
+        run: (cd artifacts && sha256sum anchor-* > SHA256SUMS && cat SHA256SUMS)
+
+      # Verify with: gh attestation verify <archive> --repo fuseraft/anchor
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-checksums: artifacts/SHA256SUMS
+
       - uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
           generate_release_notes: true
+
+      - name: Render package manifests
+        run: packaging/render.sh "${GITHUB_REF_NAME#v}" artifacts/SHA256SUMS manifests
+
+      # Pushes the formula to fuseraft/homebrew-tap and the manifest to fuseraft/scoop-bucket.
+      # Skipped until PACKAGING_TOKEN (contents: write on both repos) exists.
+      - name: Update Homebrew tap and Scoop bucket
+        env:
+          PACKAGING_TOKEN: ${{ secrets.PACKAGING_TOKEN }}
+        run: |
+          if [[ -z "$PACKAGING_TOKEN" ]]; then
+            echo "::warning::PACKAGING_TOKEN is not set; Homebrew and Scoop are not updated."
+            exit 0
+          fi
+          publish() { # repo, source, destination
+            dir="$RUNNER_TEMP/$1"
+            git clone --depth 1 "https://x-access-token:$PACKAGING_TOKEN@github.com/fuseraft/$1.git" "$dir"
+            mkdir -p "$(dirname "$dir/$3")"
+            cp "$2" "$dir/$3"
+            git -C "$dir" -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -am "anchor ${GITHUB_REF_NAME#v}" --allow-empty
+            git -C "$dir" push
+          }
+          publish homebrew-tap manifests/anchor.rb Formula/anchor.rb
+          publish scoop-bucket manifests/anchor.json bucket/anchor.json
+
+  winget:
+    name: winget
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - name: Check winget token
+        id: token
+        shell: bash
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          if [[ -z "$WINGET_TOKEN" ]]; then
+            echo "::warning::WINGET_TOKEN is not set; winget is not updated."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Opens a PR on microsoft/winget-pkgs. The first version has to be submitted by hand (see RELEASING.md).
+      - if: steps.token.outputs.enabled == 'true'
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: Fuseraft.Anchor
+          installers-regex: 'win-x64\.zip$'
+          token: ${{ secrets.WINGET_TOKEN }}

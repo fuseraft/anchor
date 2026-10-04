@@ -128,6 +128,28 @@ if ! "${FETCH_CMD[@]}" "$DOWNLOAD_URL" > "${TMP_DIR}/${ARCHIVE}"; then
   exit 1
 fi
 
+echo "Verifying checksum..."
+if command -v sha256sum >/dev/null 2>&1; then
+  SHA_CMD=(sha256sum)
+elif command -v shasum >/dev/null 2>&1; then
+  SHA_CMD=(shasum -a 256)
+else
+  echo "ERROR: sha256sum or shasum is required to verify the download." >&2
+  exit 1
+fi
+if ! "${FETCH_CMD[@]}" "https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS" > "${TMP_DIR}/SHA256SUMS"; then
+  echo "ERROR: Failed to download SHA256SUMS for ${TAG}, so the download can't be verified." >&2
+  exit 1
+fi
+EXPECTED="$(awk -v f="$ARCHIVE" '$2 == f || $2 == "*" f { print $1 }' "${TMP_DIR}/SHA256SUMS")"
+ACTUAL="$("${SHA_CMD[@]}" "${TMP_DIR}/${ARCHIVE}" | awk '{ print $1 }')"
+if [[ -z "$EXPECTED" || "$EXPECTED" != "$ACTUAL" ]]; then
+  echo "ERROR: Checksum mismatch for ${ARCHIVE}; refusing to install it." >&2
+  echo "       expected: ${EXPECTED:-<not listed in SHA256SUMS>}" >&2
+  echo "       actual:   ${ACTUAL}" >&2
+  exit 1
+fi
+
 echo "Extracting..."
 tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "$TMP_DIR"
 
