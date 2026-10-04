@@ -192,7 +192,7 @@ public class CompactorTests
         Assert.Equal(6_000, ((string)history[3].Contents.OfType<FunctionCallContent>().Single().Arguments!["content"]!).Length);
     }
 
-    static List<ChatMessage> LongTurn(int rounds, Func<int, string>? note = null, int first = 0)
+    static List<ChatMessage> LongTurn(int rounds, Func<int, string?>? note = null, int first = 0)
     {
         List<ChatMessage> history = [new(ChatRole.User, "go")];
         for (var i = first; i < first + rounds; i++)

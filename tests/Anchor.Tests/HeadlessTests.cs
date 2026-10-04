@@ -16,7 +16,7 @@ sealed class LineFeed : TextReader
 
     public void Send(string line) => _lines.Writer.TryWrite(line);
 
-    public void Close() => _lines.Writer.TryComplete();
+    public override void Close() => _lines.Writer.TryComplete();
 
     public override async Task<string?> ReadLineAsync()
     {
