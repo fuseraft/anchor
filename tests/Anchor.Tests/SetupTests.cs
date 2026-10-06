@@ -11,11 +11,20 @@ public class SetupTests : IDisposable
     readonly MemoryKeychain _keychain = new();
     readonly FakeServer _server = new();
 
+    // A key in the developer's own environment would skip the key prompts these tests script.
+    readonly string? _anthropicKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+
+    public SetupTests() => Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+
     string ConfigPath => Path.Combine(_home, "config.json");
 
     CredentialsFile Credentials => new(Path.Combine(_home, "credentials"));
 
-    public void Dispose() => Directory.Delete(_home, recursive: true);
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", _anthropicKey);
+        Directory.Delete(_home, recursive: true);
+    }
 
     [Fact]
     public async Task CustomServer_SavesTheProviderTheKeyAndTheChosenModel()
