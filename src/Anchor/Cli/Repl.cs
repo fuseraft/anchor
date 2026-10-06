@@ -6,10 +6,11 @@ namespace Anchor.Cli;
 
 public sealed record ReplOptions(ProviderSettings Provider, string SessionsDir, bool Yolo, bool Resumed, long ContextWindow,
     IReadOnlyList<Skill> Skills, IReadOnlyList<AgentDefinition> Agents, SessionUsage Usage, Anchor.Mcp.McpHub Mcp,
-    ModelSource Models, SubAgentRunner? SubAgents = null)
+    ModelSource Models, SubAgentRunner? SubAgents = null, string? SetUpModel = null)
 {
     public static ReplOptions From(Harness h, Options options) =>
-        new(h.Provider, h.SessionsDir, options.Yolo, options.Resume, h.ContextWindow, h.Skills, h.Agents, h.Usage, h.Mcp, h.Models, h.SubAgents);
+        new(h.Provider, h.SessionsDir, options.Yolo, options.Resume, h.ContextWindow, h.Skills, h.Agents, h.Usage, h.Mcp, h.Models, h.SubAgents,
+            options.SetUpModel);
 }
 
 /// <summary>
@@ -52,13 +53,35 @@ public sealed class Repl
 
     public async Task<int> RunAsync()
     {
-        renderer.Line($"{renderer.Bold("anchor")} {renderer.Dim($"· {_provider.Model} · {Workspace.Root}")}");
+        var model = $"· {_provider.Model} · ";
+        renderer.Line($"{renderer.Bold("anchor")} {renderer.Dim(model + Renderer.ShortPath(Workspace.Root, Renderer.Width() - 8 - model.Length))}");
         if (options.Yolo)
             renderer.Line(renderer.Yellow("--yolo: writes, commands and outside reads run without asking. Secret files and dangerous commands are still denied."));
         if (options.Resumed)
         {
             renderer.Line(renderer.Dim($"Resumed session {session.Id}."));
             renderer.Replay(agent.History, ReplayTurns);
+        }
+        else
+        {
+            var spaced = false;
+            if (options.SetUpModel is { } setUp)
+            {
+                renderer.Line("");
+                renderer.Line($"{renderer.Green("✓")} All set: anchor will use {setUp}.");
+                renderer.Line(renderer.Dim("  Run /setup to change it."));
+                spaced = true;
+            }
+            if (!options.Yolo && !SessionLog.Any(options.SessionsDir))
+            {
+                // The first session ever: say how approvals work before the first one appears.
+                renderer.Line("");
+                renderer.Line(renderer.Dim("Before anchor edits a file or runs a command, it shows you first."));
+                renderer.Line(renderer.Dim("Press y to allow, n to decline, or a (when offered) to always allow."));
+                spaced = true;
+            }
+            if (spaced)
+                renderer.Line("");
         }
         renderer.Line(renderer.Dim("/help for commands, Ctrl+D to exit"));
 
@@ -346,8 +369,8 @@ public sealed class Repl
             case "/setup":
                 try
                 {
-                    var setup = new Setup(screen.SetupIO, Anchor.Mcp.Keychain.Default(), new HttpClient { Timeout = TimeSpan.FromSeconds(30) },
-                        Path.Combine(Config.Home, "config.json"));
+                    var setup = new Setup(screen.SetupIO, Anchor.Mcp.Keychain.Default(), new CredentialsFile(AnchorHome.Credentials),
+                        new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, Path.Combine(Config.Home, "config.json"));
                     if (await setup.RunAsync() is { } model)
                         SwitchModel(model);
                 }

@@ -40,12 +40,16 @@ try
     if (options.Setup || !Console.IsInputRedirected && Setup.Needed(options, Config.Load()))
     {
         if (!options.Setup)
-            Console.WriteLine("No model is configured yet, and no ANTHROPIC_API_KEY or XAI_API_KEY is set. Let's set one up.");
+            Console.WriteLine("Welcome to anchor. First, let's connect it to a model.");
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-        var model = await new Setup(new ConsoleSetupIO(), Keychain.Default(), http, Path.Combine(Config.Home, "config.json")).RunAsync();
+        var model = await new Setup(new ConsoleSetupIO(), Keychain.Default(), new CredentialsFile(AnchorHome.Credentials), http,
+            Path.Combine(Config.Home, "config.json")).RunAsync();
         if (options.Setup || model is null)
             return model is null ? 1 : 0;
         Console.WriteLine();
+        // The full screen clears setup's output, so the session repeats how it ended.
+        if (!options.Plain && Tui.Supported)
+            return await Tui.RunAsync(options with { SetUpModel = model });
     }
 
     if (!options.Plain && Tui.Supported)

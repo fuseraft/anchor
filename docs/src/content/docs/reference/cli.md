@@ -60,7 +60,7 @@ anchor --json                                 # editor protocol
 
 A model on another OpenAI-compatible server reads its key from the variable named in
 `provider.apiKeyEnv`. When a key variable is unset, anchor uses the key `anchor setup` saved for it
-in the OS keychain, if there is one. MCP server configs can reference any variable as `${NAME}`.
+in the OS keychain, or in `~/.anchor/credentials` where there's no keychain. MCP server configs can reference any variable as `${NAME}`.
 
 ## Exit codes
 

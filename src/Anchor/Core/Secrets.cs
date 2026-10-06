@@ -21,11 +21,14 @@ public static partial class Secrets
     public static bool IsSecretPath(string path)
     {
         var name = Path.GetFileName(path.TrimEnd('/', '\\'));
-        return IsSecretName(name) || (name == "credentials" && Path.GetFileName(Path.GetDirectoryName(path)) == ".aws");
+        return IsSecretName(name)
+            || (name == "credentials" && Path.GetFileName(Path.GetDirectoryName(path)) is ".aws" or ".anchor")
+            || string.Equals(Path.GetFullPath(path), Path.GetFullPath(AnchorHome.Credentials),
+                OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Matches a secret file name appearing anywhere in free text such as a shell command.</summary>
-    [GeneratedRegex(@"(?<![\w.-])(\.env(\.[\w.-]+)?|id_(rsa|dsa|ecdsa|ed25519)|\.netrc|_netrc|\.pgpass|\.git-credentials|\.aws/credentials)(?![\w-])")]
+    [GeneratedRegex(@"(?<![\w.-])(\.env(\.[\w.-]+)?|id_(rsa|dsa|ecdsa|ed25519)|\.netrc|_netrc|\.pgpass|\.git-credentials|\.aws/credentials|\.anchor/credentials)(?![\w-])")]
     public static partial Regex MentionedFile();
 
     /// <summary>Replaces known secret values (secret-named env vars, contents of secret files) with <see cref="Placeholder"/>.</summary>
@@ -43,7 +46,7 @@ public static partial class Secrets
                 yield return v;
 
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var files = workspace.SecretFiles().Concat(HomeCredentialFiles.Select(f => Path.Combine(home, f)));
+        var files = workspace.SecretFiles().Concat(HomeCredentialFiles.Select(f => Path.Combine(home, f))).Append(AnchorHome.Credentials);
         foreach (var file in files)
             foreach (var value in FileValues(file))
                 yield return value;

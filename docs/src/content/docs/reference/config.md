@@ -34,7 +34,7 @@ optional. Keys are case-insensitive, and comments and trailing commas are allowe
 | `model`         | string | The model name, or `<provider>/<model>` for a [named provider](#providers). `--model` overrides it. |
 | `name`          | string | `anthropic` or `openai`. Inferred from the model name when omitted; `openai` for unknown names. |
 | `endpoint`      | string | The API base URL, for OpenAI-compatible servers other than OpenAI and xAI.                   |
-| `apiKeyEnv`     | string | The environment variable that holds the API key. When it's unset, a key saved for it by `anchor setup` is read from the OS keychain. |
+| `apiKeyEnv`     | string | The environment variable that holds the API key. When it's unset, a key saved for it by `anchor setup` is read from the OS keychain or `~/.anchor/credentials`. |
 | `contextWindow` | number | The model's context window in tokens.                                                        |
 
 A model name anchor doesn't recognize needs both `endpoint` and `apiKeyEnv`. Recognized prefixes and
@@ -59,7 +59,7 @@ is sent to that server as `<model>` (everything after the first `/`). This works
 | --------------- | ------ | ------------------------------------------------------------------------------------------- |
 | `endpoint`      | string | The API base URL. Required.                                                                 |
 | `type`          | string | `openai` (chat completions, the default) or `anthropic` (messages).                         |
-| `apiKeyEnv`     | string | The environment variable that holds the API key, or whose key `anchor setup` saved in the keychain. Omit it if the server needs no key. |
+| `apiKeyEnv`     | string | The environment variable that holds the API key, or whose key `anchor setup` saved. Omit it if the server needs no key. |
 | `headers`       | object | Extra request headers. `${NAME}` in a value is replaced with the environment variable.     |
 | `contextWindow` | number | The context window for this server's models. Defaults by model name: a name containing `claude-` gets 200,000 and one containing `grok-4` gets 256,000, so Bedrock ids like `anthropic.claude-sonnet-5` work. |
 

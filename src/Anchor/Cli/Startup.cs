@@ -26,7 +26,7 @@ public static class Startup
             usage.Observe(e);
             output.Emit(e);
         };
-        var models = new ModelSource(ModelSource.StoredKeys(keychain), Config.Load, m => emit(new Notice(m)));
+        var models = new ModelSource(ModelSource.StoredKeys(keychain, new CredentialsFile(AnchorHome.Credentials)), Config.Load, m => emit(new Notice(m)));
         var provider = Providers.Providers.Resolve(options.Model ?? config.Provider.Model, config.Provider.Name, config.Provider.Endpoint, config.Provider.ApiKeyEnv, config.Providers);
         var client = models.Create(provider);
         var window = Providers.Providers.ContextWindow(provider, config.Provider.ContextWindow);

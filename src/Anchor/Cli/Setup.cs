@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -17,21 +18,42 @@ public interface ISetupIO
     string? Select(string title, IReadOnlyList<string> choices, string? selected = null, bool allowTyped = false);
 
     void Line(string text = "");
+
+    /// <summary>How setup is going, set off from the questions: indented, and marked ✓ or ✗ when <paramref name="ok"/>
+    /// says it went well or badly. Each line of <paramref name="text"/> is printed as its own line.</summary>
+    void Note(string text, bool? ok = null)
+    {
+        foreach (var (mark, line) in NoteLines(text, ok))
+            Line(mark + line);
+    }
+
+    /// <summary>A note's lines with their indent and mark; lines after the first line up under the first one's text.</summary>
+    static IEnumerable<(string Mark, string Line)> NoteLines(string text, bool? ok)
+    {
+        var first = ok switch { true => "  ✓ ", false => "  ✗ ", null => "  " };
+        var rest = new string(' ', first.Length);
+        return text.Split('\n').Select((line, i) => (i == 0 ? first : rest, line));
+    }
 }
 
 /// <summary><c>anchor setup</c>: choose a provider, save its key, pick a model, and write config.json.</summary>
-public sealed class Setup(ISetupIO io, IKeychain keychain, HttpClient http, string configPath)
+public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile credentials, HttpClient http, string configPath)
 {
     const string AnotherServer = "Another server: LiteLLM, Ollama, vLLM or anything OpenAI-compatible";
 
-    sealed record Service(string Label, string Type, string Endpoint, string ApiKeyEnv, string[] Prefixes, string? DefaultModel);
+    sealed record Service(string Label, string Type, string Endpoint, string ApiKeyEnv, string[] Prefixes, string? DefaultModel, string KeyUrl);
 
     static readonly Service[] Services =
     [
-        new("Anthropic", "anthropic", "https://api.anthropic.com", "ANTHROPIC_API_KEY", ["claude-"], "claude-sonnet-5"),
-        new("OpenAI", "openai", "https://api.openai.com/v1", "OPENAI_API_KEY", ["gpt-", "o1", "o3", "o4"], null),
-        new("xAI", "openai", "https://api.x.ai/v1", "XAI_API_KEY", ["grok-"], "grok-4.5"),
+        new("Anthropic", "anthropic", "https://api.anthropic.com", "ANTHROPIC_API_KEY", ["claude-"], "claude-sonnet-5",
+            "https://platform.claude.com/settings/keys"),
+        new("OpenAI", "openai", "https://api.openai.com/v1", "OPENAI_API_KEY", ["gpt-", "o1", "o3", "o4"], null,
+            "https://platform.openai.com/api-keys"),
+        new("xAI", "openai", "https://api.x.ai/v1", "XAI_API_KEY", ["grok-"], "grok-4.5", "https://console.x.ai"),
     ];
+
+    /// <summary>A server's model list; <c>Rejected</c> when it refused the key, <c>Error</c> when it couldn't be read for another reason.</summary>
+    sealed record Listing(List<string>? Models, string? Rejected = null, string? Error = null);
 
     /// <summary>True when nothing names a model, so a first interactive run should offer setup.</summary>
     public static bool Needed(Options options, Config config) =>
@@ -40,29 +62,32 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, HttpClient http, stri
     /// <summary>Runs the wizard and saves the result. Returns the model to use, or null if the person stopped.</summary>
     public async Task<string?> RunAsync(CancellationToken ct = default)
     {
-        io.Line($"Sets up a provider and model in {configPath}.");
+        io.Line($"Your choices are saved in {Renderer.ShortPath(configPath)}.");
+        io.Line();
         string[] sources = [.. Services.Select(s => s.Label), AnotherServer];
         var choice = io.Select("Where do your models come from?", sources);
         if (choice is null)
             return null;
+        io.Line();
         var service = Services.FirstOrDefault(s => s.Label == choice);
         var model = service is not null ? await BuiltInAsync(service, ct) : await CustomAsync(ct);
         if (model is null)
             return null;
 
-        io.Line($"Saved {configPath}. Model: {model}");
+        io.Line();
+        io.Note($"All set: anchor will use {model}.\nRun anchor setup to change it.", ok: true);
         return model;
     }
 
     async Task<string?> BuiltInAsync(Service service, CancellationToken ct)
     {
-        var (ok, key) = await KeyAsync(service.ApiKeyEnv, required: true);
-        if (!ok)
+        var listing = await KeyAsync(service.ApiKeyEnv, service.KeyUrl, required: true,
+            key => ListAsync(service.Type, service.Endpoint, key, null, ct));
+        if (listing is null)
             return null;
 
-        var models = await ListAsync(service.Type, service.Endpoint, key, null, ct);
-        models = models?.Where(m => service.Prefixes.Any(p => m.StartsWith(p, StringComparison.OrdinalIgnoreCase))).ToList();
-        var model = PickModel(models, service.DefaultModel);
+        var models = listing.Models?.Where(m => service.Prefixes.Any(p => m.StartsWith(p, StringComparison.OrdinalIgnoreCase))).ToList();
+        var model = PickModel(listing with { Models = models }, service.DefaultModel);
         if (model is null)
             return null;
 
@@ -83,7 +108,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, HttpClient http, stri
         url = url.TrimEnd('/');
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
         {
-            io.Line($"'{url}' is not an http or https URL.");
+            io.Note($"'{url}' is not an http or https URL.", ok: false);
             return null;
         }
 
@@ -93,7 +118,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, HttpClient http, stri
             return null;
         if (name.Contains('/') || name.Any(char.IsWhiteSpace))
         {
-            io.Line("The name can't contain '/' or spaces.");
+            io.Note("The name can't contain '/' or spaces.", ok: false);
             return null;
         }
 
@@ -101,30 +126,32 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, HttpClient http, stri
         var type = entry?["type"]?.GetValue<string>() ?? "openai";
         var headers = entry?["headers"]?.Deserialize<Dictionary<string, string>>();
         var envDefault = entry?["apiKeyEnv"]?.GetValue<string>() ?? EnvName(name);
-        var env = Ask("Environment variable for its API key (none if it needs no key)", envDefault);
+        var env = Ask("Variable that holds its API key (none if it needs no key)", envDefault);
         if (env is null)
             return null;
         env = env.Equals("none", StringComparison.OrdinalIgnoreCase) ? null : env;
 
-        string? key = null;
-        if (env is not null)
+        // An OpenAI-compatible server given without /v1 usually has its API there.
+        async Task<Listing> List(string? key)
         {
-            (var ok, key) = await KeyAsync(env, required: false);
-            if (!ok)
-                return null;
+            var listing = await ListAsync(type, url, key, headers, ct);
+            if (listing.Models is null && listing.Rejected is null && type == "openai" && !url.EndsWith("/v1", StringComparison.Ordinal))
+            {
+                var v1 = await ListAsync(type, url + "/v1", key, headers, ct);
+                if (v1.Error is null)
+                {
+                    url += "/v1";
+                    return v1;
+                }
+            }
+            return listing;
         }
 
-        var models = await ListAsync(type, url, key, headers, ct, quiet: true);
-        if (models is null && type == "openai" && !url.EndsWith("/v1", StringComparison.Ordinal))
-        {
-            models = await ListAsync(type, url + "/v1", key, headers, ct, quiet: true);
-            if (models is not null)
-                url += "/v1";
-        }
-        if (models is null)
-            await ListAsync(type, url, key, headers, ct);
+        var listing = env is null ? await List(null) : await KeyAsync(env, null, required: false, List);
+        if (listing is null)
+            return null;
 
-        var model = PickModel(models, null);
+        var model = PickModel(listing, null);
         if (model is null)
             return null;
 
@@ -146,80 +173,126 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, HttpClient http, stri
         return reference;
     }
 
-    /// <summary>Finds the key in the environment or keychain, or asks for one and stores it in the keychain.</summary>
-    async Task<(bool Ok, string? Key)> KeyAsync(string env, bool required)
+    /// <summary>Finds the key in the environment, the keychain or the credentials file, or asks for one, and tries it by
+    /// listing the server's models. A key the server rejects is asked for again, and a pasted key is saved only once it
+    /// isn't rejected. Returns the listing, or null if the person stopped.</summary>
+    async Task<Listing?> KeyAsync(string env, string? keyUrl, bool required, Func<string?, Task<Listing>> list)
     {
         if (Environment.GetEnvironmentVariable(env) is { Length: > 0 } fromEnv)
         {
-            io.Line($"Using ${env} from your environment.");
-            return (true, fromEnv);
+            io.Note($"Using ${env} from your environment.", ok: true);
+            var listing = await list(fromEnv);
+            if (listing.Rejected is null)
+                return listing;
+            io.Note($"The key in ${env} was rejected ({listing.Rejected}).\nFix or unset ${env}, then run anchor setup again.", ok: false);
+            return null;
         }
 
-        var account = Providers.Providers.KeychainAccount(env);
-        var stored = await TryGetAsync(account);
-        if (stored is not null)
+        if (await StoredAsync(env) is { } stored)
         {
-            var keep = io.Select($"A key for {env} is already saved in the keychain.", ["Keep it", "Replace it"]);
+            var keep = io.Select($"A key for {env} is already saved.", ["Keep it", "Replace it"]);
             if (keep is null)
-                return (false, null);
+                return null;
             if (keep == "Keep it")
-                return (true, stored);
+            {
+                var listing = await list(stored);
+                if (listing.Rejected is null)
+                    return listing;
+                io.Note($"The saved key was rejected ({listing.Rejected}).", ok: false);
+            }
         }
 
-        var pasted = io.AskSecret($"Paste the API key to save it in the OS keychain{(required ? "" : " (blank if the server needs none)")}: ");
-        if (pasted is null)
-            return (false, null);
-        pasted = pasted.Trim();
-        if (pasted.Length == 0)
+        if (keyUrl is not null)
+            io.Note($"You can create a key at {keyUrl}");
+        while (true)
         {
-            if (required)
-                io.Line($"No key saved. Set ${env} before starting anchor.");
-            return (true, null);
-        }
+            var pasted = io.AskSecret(required ? "Paste your API key: " : "Paste the API key (blank if the server needs none): ")?.Trim();
+            if (pasted is null)
+                return null;
+            if (pasted.Length == 0)
+            {
+                if (!required)
+                    return await list(null);
+                io.Note($"No key entered. Run anchor setup again when you have one,\nor set ${env}.");
+                return null;
+            }
 
-        try
-        {
-            await keychain.SetAsync(account, pasted);
-            io.Line($"Saved in the keychain. ${env} still takes precedence when it's set.");
+            var listing = await list(pasted);
+            if (listing.Rejected is not null)
+            {
+                io.Note($"That key was rejected ({listing.Rejected}).\nPaste it again, or leave it blank to stop.", ok: false);
+                continue;
+            }
+            await SaveKeyAsync(env, pasted);
+            return listing;
         }
-        catch (InvalidOperationException e)
-        {
-            io.Line($"Couldn't save to the keychain: {e.Message} Set ${env} instead.");
-        }
-        return (true, pasted);
     }
 
-    async Task<string?> TryGetAsync(string account)
+    async Task<string?> StoredAsync(string env)
     {
         try
         {
-            return await keychain.GetAsync(account);
+            if (await keychain.GetAsync(Providers.Providers.KeychainAccount(env)) is { } key)
+                return key;
         }
-        catch (Exception e) when (e is InvalidOperationException or OperationCanceledException)
+        catch (Exception e) when (e is InvalidOperationException or OperationCanceledException) { }
+        try
+        {
+            return credentials.Get(env);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return null;
         }
     }
 
-    async Task<List<string>?> ListAsync(string type, string endpoint, string? key, IReadOnlyDictionary<string, string>? headers,
-        CancellationToken ct, bool quiet = false)
+    /// <summary>Saves to the OS keychain, or to the credentials file where there is none.</summary>
+    async Task SaveKeyAsync(string env, string key)
     {
         try
         {
-            return await Providers.Providers.ListModelsAsync(http, type, endpoint, key, headers, ct);
+            await keychain.SetAsync(Providers.Providers.KeychainAccount(env), key);
+            io.Note("Saved the key in your OS keychain.", ok: true);
+            return;
+        }
+        catch (InvalidOperationException) { }
+        try
+        {
+            credentials.Set(env, key);
+            io.Note($"Saved the key in {Renderer.ShortPath(credentials.Path)}, which only you can read.\n" +
+                "There's no OS keychain here to keep it in.", ok: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            io.Note($"Couldn't save the key: {e.Message}\nSet ${env} before starting anchor.", ok: false);
+        }
+    }
+
+    async Task<Listing> ListAsync(string type, string endpoint, string? key, IReadOnlyDictionary<string, string>? headers, CancellationToken ct)
+    {
+        try
+        {
+            return new(await Providers.Providers.ListModelsAsync(http, type, endpoint, key, headers, ct));
+        }
+        catch (HttpRequestException e) when (e.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            return new(null, Rejected: $"{(int)e.StatusCode} {e.StatusCode}");
         }
         catch (Exception e) when (e is HttpRequestException or InvalidOperationException or JsonException or TaskCanceledException)
         {
-            if (!quiet)
-                io.Line($"Couldn't list models: {e.Message} You can type a model name instead.");
-            return null;
+            return new(null, Error: e.Message);
         }
     }
 
-    string? PickModel(List<string>? models, string? fallback)
+    string? PickModel(Listing listing, string? fallback)
     {
-        if (models is not { Count: > 0 })
+        io.Line();
+        if (listing.Models is not { Count: > 0 } models)
+        {
+            if (listing.Error is not null)
+                io.Note($"Couldn't list models: {listing.Error}\nYou can type a model name instead.", ok: false);
             return Ask("Model", fallback);
+        }
         var preferred = fallback is not null && models.Contains(fallback) ? fallback : null;
         return io.Select($"Model ({models.Count} available)", models, preferred, allowTyped: true);
     }
@@ -257,7 +330,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, HttpClient http, stri
             if (text.Contains("//") || text.Contains("/*"))
             {
                 File.Copy(configPath, configPath + ".bak", overwrite: true);
-                io.Line($"Your config's comments can't be kept; the original is saved as {configPath}.bak.");
+                io.Note($"Your config's comments can't be kept, so the original is saved\nas {Renderer.ShortPath(configPath)}.bak.");
             }
         }
         edit(root);
@@ -295,6 +368,8 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, HttpClient http, stri
 /// <summary>The terminal side of the wizard; a pasted key is echoed as dots.</summary>
 public sealed class ConsoleSetupIO : ISetupIO
 {
+    readonly Renderer _renderer = Renderer.ForConsole();
+
     public string? Ask(string prompt)
     {
         Console.Write(prompt);
@@ -341,4 +416,16 @@ public sealed class ConsoleSetupIO : ISetupIO
         Picker.Choose(title, choices, selected, allowTyped);
 
     public void Line(string text = "") => Console.WriteLine(text);
+
+    public void Note(string text, bool? ok = null) => SetupNotes.Write(_renderer, Line, text, ok);
+}
+
+/// <summary>Notes in color: a green ✓, a red ✗, or dim text when the note is neither.</summary>
+static class SetupNotes
+{
+    public static void Write(Renderer renderer, Action<string> line, string text, bool? ok)
+    {
+        foreach (var (mark, part) in ISetupIO.NoteLines(text, ok))
+            line(ok switch { true => renderer.Green(mark) + part, false => renderer.Red(mark) + part, null => mark + renderer.Dim(part) });
+    }
 }

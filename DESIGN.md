@@ -114,7 +114,12 @@ tests/Anchor.Tests/
 - Tokens live in the OS keychain (Keychain, `secret-tool`, Credential Manager), never in a
   plaintext file. Without a keychain, tokens are kept in memory only.
 - API keys saved by `anchor setup` also live in the keychain, under the name of the variable they
-  stand in for. The variable wins when it's set.
+  stand in for. The variable wins when it's set. Where there's no keychain (headless Linux, SSH,
+  containers), setup saves the key in `~/.anchor/credentials` instead, as `NAME=value` lines in a
+  file only the user can read. That file is a secret file to every tool, and its values are
+  masked in output.
+- Setup tries a key by listing the server's models before saving it. A key the server rejects
+  (401 or 403) is asked for again and never saved.
 - `/mcp login <server>` and `/mcp logout <server>` manage sign-ins.
 - HTTP servers get 5 minutes to connect, so there's time to sign in; stdio servers get 60 seconds.
   With `-p --timeout`, startup as a whole gets that limit instead.

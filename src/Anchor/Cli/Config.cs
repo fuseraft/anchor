@@ -13,10 +13,7 @@ public sealed class Config
 
     public Dictionary<string, Anchor.Mcp.McpServerConfig>? McpServers { get; set; }
 
-    public static string Home =>
-        Environment.GetEnvironmentVariable("ANCHOR_HOME") is { Length: > 0 } home
-            ? home
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".anchor");
+    public static string Home => Anchor.Core.AnchorHome.Dir;
 
     public static Config Load()
     {

@@ -436,6 +436,8 @@ public sealed class Tui : IReplScreen, IApprover
         }
 
         public void Line(string text = "") => tui.Renderer.Line(text);
+
+        public void Note(string text, bool? ok = null) => SetupNotes.Write(tui.Renderer, Line, text, ok);
     }
 }
 

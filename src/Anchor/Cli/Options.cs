@@ -2,7 +2,8 @@ namespace Anchor.Cli;
 
 /// <summary>Command-line options. <see cref="Parse"/> returns an exit code instead when it handled the request itself.</summary>
 public sealed record Options(string? Model, bool Yolo, bool Resume, string? ResumeId, bool Print, string? Prompt, bool Json, string? Until = null,
-    IReadOnlyList<string>? Allow = null, int? MaxRounds = null, int? Timeout = null, bool Setup = false, bool Plain = false)
+    IReadOnlyList<string>? Allow = null, int? MaxRounds = null, int? Timeout = null, bool Setup = false, bool Plain = false,
+    string? SetUpModel = null)
 {
     public const string Usage = """
         usage: anchor setup

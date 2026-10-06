@@ -55,7 +55,7 @@ public static class Providers
     {
         model ??= Fallbacks.FirstOrDefault(f => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(f.Env))).Model
             ?? throw new InvalidOperationException(
-                "No model configured. Pass --model, set provider.model in ~/.anchor/config.json, or set ANTHROPIC_API_KEY or XAI_API_KEY.");
+                "No model is set up yet. Run anchor setup, or set ANTHROPIC_API_KEY or XAI_API_KEY, or pass --model.");
 
         // Only the first slash separates the provider, since proxies use names like "work/anthropic/claude-sonnet-5".
         var slash = model.IndexOf('/');
@@ -151,7 +151,7 @@ public static class Providers
 
         using var response = await http.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"{url} answered {(int)response.StatusCode} {response.ReasonPhrase}.");
+            throw new HttpRequestException($"{url} answered {(int)response.StatusCode} {response.ReasonPhrase}.", null, response.StatusCode);
         using var json = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         if (!json.RootElement.TryGetProperty("data", out var data) || data.ValueKind != System.Text.Json.JsonValueKind.Array)
             throw new InvalidOperationException($"{url} did not return a model list.");

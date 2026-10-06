@@ -13,6 +13,8 @@ public class SetupTests : IDisposable
 
     string ConfigPath => Path.Combine(_home, "config.json");
 
+    CredentialsFile Credentials => new(Path.Combine(_home, "credentials"));
+
     public void Dispose() => Directory.Delete(_home, recursive: true);
 
     [Fact]
@@ -110,13 +112,88 @@ public class SetupTests : IDisposable
     }
 
     [Fact]
-    public async Task BrokenKeychain_StillFinishes_AndSaysToSetTheVariable()
+    public async Task BrokenKeychain_SavesTheKeyInAFileOnlyTheUserCanRead()
     {
         _keychain.Broken = true;
-        var io = new ScriptedIO("4", "https://proxy.example/v1", "work", "ANCHOR_TEST_SETUP_KEY2", "sk", "m");
+        var io = new ScriptedIO("4", "https://proxy.example/v1", "work", "ANCHOR_TEST_SETUP_KEY2", "sk-file", "m");
 
         Assert.Equal("work/m", await Run(io));
-        Assert.Contains(io.Output, l => l.Contains("Set $ANCHOR_TEST_SETUP_KEY2 instead"));
+        Assert.Equal("sk-file", Credentials.Get("ANCHOR_TEST_SETUP_KEY2"));
+        Assert.Contains(io.Output, l => l.Contains("Saved the key in") && l.Contains(Renderer.ShortPath(Credentials.Path)));
+        Assert.Contains(io.Output, l => l.Contains("no OS keychain"));
+        if (!OperatingSystem.IsWindows())
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(Credentials.Path));
+    }
+
+    [Fact]
+    public async Task RejectedKey_IsAskedForAgain_AndNeverSaved()
+    {
+        _server.Models["https://api.anthropic.com/v1/models"] = ["claude-sonnet-5", "claude-opus-5-5"];
+        _server.RejectedKeys.Add("sk-typo");
+        var io = new ScriptedIO("1", "sk-typo", "sk-good", "");
+
+        Assert.Equal("claude-sonnet-5", await Run(io));
+        Assert.Contains("  You can create a key at https://platform.claude.com/settings/keys", io.Output);
+        Assert.Contains("  ✗ That key was rejected (401 Unauthorized).", io.Output);
+        Assert.Equal("sk-good", Assert.Single(_keychain.Items).Value);
+    }
+
+    [Fact]
+    public async Task RejectedKey_ThenBlank_StopsWithoutWriting()
+    {
+        _server.RejectedKeys.Add("sk-typo");
+        var io = new ScriptedIO("1", "sk-typo", "");
+
+        Assert.Null(await Run(io));
+        Assert.False(File.Exists(ConfigPath));
+        Assert.Empty(_keychain.Items);
+        Assert.Contains(io.Output, l => l.Contains("No key entered"));
+    }
+
+    [Fact]
+    public async Task RejectedEnvironmentKey_SaysToFixTheVariable()
+    {
+        var before = Environment.GetEnvironmentVariable("XAI_API_KEY");
+        Environment.SetEnvironmentVariable("XAI_API_KEY", "xai-revoked");
+        try
+        {
+            _server.RejectedKeys.Add("xai-revoked");
+
+            var io = new ScriptedIO("3");
+
+            Assert.Null(await Run(io));
+            Assert.Contains(io.Output, l => l.Contains("The key in $XAI_API_KEY was rejected"));
+            Assert.False(File.Exists(ConfigPath));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("XAI_API_KEY", before);
+        }
+    }
+
+    [Fact]
+    public async Task KeyInTheCredentialsFile_IsOfferedToKeep()
+    {
+        Credentials.Set("ANTHROPIC_API_KEY", "sk-saved");
+        _server.Models["https://api.anthropic.com/v1/models"] = ["claude-sonnet-5"];
+        var io = new ScriptedIO("1", "1", "");
+
+        Assert.Equal("claude-sonnet-5", await Run(io));
+        Assert.Contains(io.Output, l => l.Contains("A key for ANTHROPIC_API_KEY is already saved"));
+        Assert.Equal("sk-saved", _server.ApiKey);
+    }
+
+    [Fact]
+    public void CredentialsFile_ReplacesAKeyAndKeepsTheOthers()
+    {
+        Credentials.Set("A_KEY", "one");
+        Credentials.Set("B_KEY", "two");
+        Credentials.Set("A_KEY", "three");
+
+        Assert.Equal("three", Credentials.Get("A_KEY"));
+        Assert.Equal("two", Credentials.Get("B_KEY"));
+        Assert.Null(Credentials.Get("C_KEY"));
+        Assert.Throws<ArgumentException>(() => Credentials.Set("A_KEY", "x\nB_KEY=evil"));
     }
 
     [Fact]
@@ -130,12 +207,40 @@ public class SetupTests : IDisposable
     }
 
     [Fact]
+    public void Notes_AreIndented_AndLongOnesLineUpUnderTheirText()
+    {
+        var io = new ScriptedIO();
+        ISetupIO setup = io;
+
+        setup.Note("Saved.\nSecond line.", ok: true);
+        setup.Note("Failed.", ok: false);
+        setup.Note("Plain.\nMore.");
+
+        Assert.Equal(["  ✓ Saved.", "    Second line.", "  ✗ Failed.", "  Plain.", "  More."], io.Output);
+    }
+
+    [Theory]
+    [InlineData("/srv/work/project", 100, "/srv/work/project")]
+    [InlineData("/srv/a-very-long-folder-name/another-long-one/project", 30, "…/another-long-one/project")]
+    [InlineData("/srv/a-very-long-folder-name/another-long-one/project", 12, "…/project")]
+    public void ShortPath_KeepsTheTrailingFoldersThatFit(string path, int max, string expected) =>
+        Assert.Equal(expected.Replace('/', Path.DirectorySeparatorChar), Renderer.ShortPath(path.Replace('/', Path.DirectorySeparatorChar), max));
+
+    [Fact]
+    public void ShortPath_WritesTheHomeDirectoryAsTilde()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        Assert.Equal(Path.Combine("~", "code", "app"), Renderer.ShortPath(Path.Combine(home, "code", "app")));
+    }
+
+    [Fact]
     public void ParsesTheSetupCommand()
     {
         Assert.True(Options.Parse(["setup"], TextWriter.Null, TextWriter.Null).Options!.Setup);
     }
 
-    Task<string?> Run(ScriptedIO io) => new Setup(io, _keychain, new HttpClient(_server), ConfigPath).RunAsync();
+    Task<string?> Run(ScriptedIO io) => new Setup(io, _keychain, Credentials, new HttpClient(_server), ConfigPath).RunAsync();
 
     JsonNode ReadConfig() => JsonNode.Parse(File.ReadAllText(ConfigPath))!;
 
@@ -174,11 +279,19 @@ public class SetupTests : IDisposable
 
         public string? Authorization { get; private set; }
 
+        public string? ApiKey { get; private set; }
+
+        /// <summary>Keys answered with 401, in either the Bearer or the x-api-key header.</summary>
+        public HashSet<string> RejectedKeys { get; } = [];
+
         public Dictionary<string, string> Headers { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Authorization = request.Headers.Authorization?.ToString();
+            ApiKey = request.Headers.TryGetValues("x-api-key", out var k) ? k.First() : null;
+            if (RejectedKeys.Contains(request.Headers.Authorization?.Parameter ?? "") || RejectedKeys.Contains(ApiKey ?? ""))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
             foreach (var h in request.Headers)
                 Headers[h.Key] = string.Join(",", h.Value);
             var url = request.RequestUri!.GetLeftPart(UriPartial.Path);

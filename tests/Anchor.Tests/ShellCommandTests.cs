@@ -73,11 +73,20 @@ public class ShellCommandTests
     [InlineData("source .env && echo $KEY")]
     [InlineData("cat ~/.ssh/id_ed25519")]
     [InlineData("cat ~/.aws/credentials")]
+    [InlineData("cat ~/.anchor/credentials")]
     [InlineData("grep KEY < .env")]
     [InlineData("cp .env /tmp/x")]
     [InlineData("cat backend/.env*")]
     public void SecretFileReferences_AreDenied(string command) =>
         Assert.Contains("secret", ShellCommand.Danger(command));
+
+    [Fact]
+    public void AnchorsOwnKeyFile_IsASecretFile()
+    {
+        Assert.True(Secrets.IsSecretPath(Path.Combine(Path.GetTempPath(), "u", ".anchor", "credentials")));
+        Assert.True(Secrets.IsSecretPath(AnchorHome.Credentials));
+        Assert.False(Secrets.IsSecretPath(Path.Combine(Path.GetTempPath(), "project", "credentials")));
+    }
 
     [Theory]
     [InlineData("cat .e*")]

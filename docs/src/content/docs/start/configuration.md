@@ -23,9 +23,12 @@ The file accepts comments and trailing commas. The full schema is in the
 1. **Where your models come from:** Anthropic, OpenAI, xAI, or another server such as LiteLLM. For
    another server, it asks for the URL, a short name to use as `<name>/<model>`, and the name of
    the environment variable for its key.
-2. **The API key:** if the variable is already set, anchor uses it. Otherwise you can paste the key
-   and anchor saves it in the OS keychain (Keychain on macOS, `secret-tool` on Linux, Credential
-   Manager on Windows), never in a file.
+2. **The API key:** if the variable is already set, anchor uses it. Otherwise it links to the
+   provider's key page and you paste the key. anchor tries it before saving it, and asks again if
+   the provider rejects it. It's saved in the OS keychain (Keychain on macOS, `secret-tool` on
+   Linux, Credential Manager on Windows). Where there's no keychain, such as over SSH or in a
+   container, it goes in `~/.anchor/credentials` instead, a file only you can read. anchor's
+   tools can't read that file, and its values are masked in command output.
 3. **The model:** picked from the server's `/models` list, or typed if the server has no list.
    Move with ↑/↓ and press Enter; typing filters the list, and a name that matches nothing is
    used as typed.

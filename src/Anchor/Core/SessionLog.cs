@@ -105,6 +105,9 @@ public sealed class SessionLog
         return message;
     }
 
+    /// <summary>True once any session has been saved; a session's file is written with its first message.</summary>
+    public static bool Any(string dir) => Files(dir).Any();
+
     static IEnumerable<string> Files(string dir) =>
         Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "*.jsonl") : [];
 

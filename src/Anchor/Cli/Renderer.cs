@@ -165,6 +165,36 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
 
     string Paint(string code, string s) => color ? $"\e[{code}m{s}\e[0m" : s;
 
+    /// <summary>A path as people write it: ~ for the home directory, and the start cut to "…/" when it's longer than
+    /// <paramref name="max"/>, keeping as many trailing folders as fit.</summary>
+    public static string ShortPath(string path, int max = int.MaxValue)
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (home.Length > 0 && (path == home || path.StartsWith(home + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
+            path = "~" + path[home.Length..];
+        if (path.Length <= max)
+            return path;
+        var sep = Path.DirectorySeparatorChar;
+        var parts = path.Split(sep);
+        var tail = parts[^1];
+        for (var i = parts.Length - 2; i > 0 && 2 + parts[i].Length + 1 + tail.Length <= max; i--)
+            tail = parts[i] + sep + tail;
+        return "…" + sep + tail;
+    }
+
+    /// <summary>The terminal's width, or 80 when there's no terminal to ask.</summary>
+    public static int Width()
+    {
+        try
+        {
+            return Console.WindowWidth > 0 ? Console.WindowWidth : 80;
+        }
+        catch (IOException)
+        {
+            return 80;
+        }
+    }
+
     static string FirstLine(string s)
     {
         var line = s.Split('\n', 2)[0];

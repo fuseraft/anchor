@@ -12,8 +12,9 @@ public sealed class ModelSource(Func<string, string?> storedKey, Func<Config> co
 
     public IChatClient Create(ProviderSettings settings) => Providers.Providers.Create(settings, storedKey, onRetry);
 
-    /// <summary>Keys saved by anchor setup, looked up at most once per variable; a missing keychain just means none.</summary>
-    public static Func<string, string?> StoredKeys(IKeychain keychain)
+    /// <summary>Keys saved by anchor setup, in the keychain or else the credentials file. A key found is remembered, so the
+    /// keychain is asked once; a missing one is looked for again, since /setup may have just saved it.</summary>
+    public static Func<string, string?> StoredKeys(IKeychain keychain, CredentialsFile credentials)
     {
         var cache = new Dictionary<string, string?>();
         return env =>
@@ -30,7 +31,13 @@ public sealed class ModelSource(Func<string, string?> storedKey, Func<Config> co
                     {
                         key = null;
                     }
-                    cache[env] = key;
+                    try
+                    {
+                        key ??= credentials.Get(env);
+                    }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+                    if (key is not null)
+                        cache[env] = key;
                 }
                 return key;
             }
