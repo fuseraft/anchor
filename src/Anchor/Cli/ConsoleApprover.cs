@@ -11,8 +11,7 @@ public sealed class ConsoleApprover(Renderer renderer) : IApprover
         if (!string.IsNullOrEmpty(request.Detail))
             renderer.Diff(request.Detail);
 
-        var choices = request.AlwaysLabel is null ? "[y]es [n]o" : $"[y]es [n]o [a]lways: {request.AlwaysLabel}";
-        Console.Write($"  Allow? {choices} › ");
+        Console.Write($"  {renderer.AllowPrompt(request.AlwaysLabel)} › ");
 
         var answer = char.ToLowerInvariant(await ReadKeyAsync(ct)) switch
         {
@@ -20,7 +19,7 @@ public sealed class ConsoleApprover(Renderer renderer) : IApprover
             'a' when request.AlwaysLabel is not null => Answer.Always,
             _ => Answer.No,
         };
-        Console.WriteLine(answer.ToString().ToLowerInvariant());
+        Console.WriteLine(answer == Answer.No ? renderer.Red("no") : renderer.Green(answer.ToString().ToLowerInvariant()));
         return answer;
     }
 

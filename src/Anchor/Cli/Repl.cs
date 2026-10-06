@@ -31,6 +31,9 @@ public sealed class Repl
     CancellationTokenSource? _turn;
     // The status line as of the last time the REPL drew it; sub-agent changes redraw it from their own threads.
     volatile string? _workingStatus;
+    // Context at the start of the running turn, and how much the last turn added; they predict when compaction is near.
+    long? _turnStart;
+    long _lastGrowth;
     ProviderSettings _provider;
     string? _until;
     string? _carried;
@@ -54,7 +57,7 @@ public sealed class Repl
     public async Task<int> RunAsync()
     {
         var model = $"· {_provider.Model} · ";
-        renderer.Line($"{renderer.Bold("anchor")} {renderer.Dim(model + Renderer.ShortPath(Workspace.Root, Renderer.Width() - 8 - model.Length))}");
+        renderer.Line($"{renderer.Bold(renderer.Accent("anchor"))} {renderer.Dim(model + Renderer.ShortPath(Workspace.Root, Renderer.Width() - 8 - model.Length))}");
         if (options.Yolo)
             renderer.Line(renderer.Yellow("--yolo: writes, commands and outside reads run without asking. Secret files and dangerous commands are still denied."));
         if (options.Resumed)
@@ -96,7 +99,7 @@ public sealed class Repl
                     break;
                 line = line.Trim();
                 if (line.Length > 0)
-                    screen.Echo(renderer.Bold("› ") + line);
+                    screen.Echo(renderer.Prompt + line);
             }
             if (line.Length == 0)
                 continue;
@@ -158,12 +161,12 @@ public sealed class Repl
                 if (line.StartsWith('!') || (line.StartsWith('/') && !line.Contains('\n')))
                 {
                     _queued.Enqueue(line);
-                    screen.Echo(renderer.Bold("› ") + line + renderer.Dim("  (runs when this turn ends)"));
+                    screen.Echo(renderer.Prompt + line + renderer.Dim("  (runs when this turn ends)"));
                 }
                 else
                 {
                     agent.Interject(line);
-                    screen.Echo(renderer.Bold("› ") + line);
+                    screen.Echo(renderer.Prompt + line);
                 }
             }
             _exit = true;
@@ -230,11 +233,36 @@ public sealed class Repl
 
     void Status(bool working)
     {
-        var percent = 100.0 * agent.ContextTokens / options.ContextWindow;
-        var status = $"{_provider.Model} · {percent:0}% context" + (_until is null ? "" : $" · until {_until}");
+        var tokens = agent.ContextTokens;
+        if (working)
+            _turnStart = tokens;
+        else if (_turnStart is { } start)
+        {
+            _lastGrowth = Math.Max(0, tokens - start);
+            _turnStart = null;
+        }
+        var used = $"{100.0 * tokens / options.ContextWindow:0}% context";
+        if (agent.Compactor is { } c)
+            used = ContextLevelOf(tokens, _lastGrowth, c.TriggerTokens) switch
+            {
+                ContextLevel.Compacting => renderer.Red(used),
+                ContextLevel.Near => renderer.Yellow(used),
+                _ => renderer.Green(used),
+            };
+        var status = $"{renderer.Accent(_provider.Model)} · {used}" + (_until is null ? "" : $" · until {_until}");
         _workingStatus = working ? status : null;
         screen.Status(status, working);
     }
+
+    public enum ContextLevel { Clear, Near, Compacting }
+
+    /// <summary>
+    /// How close the context is to compaction, which starts past <paramref name="trigger"/> tokens: Compacting when
+    /// it's already past, so the next request compacts first; Near when a turn that adds as much as the last one
+    /// (<paramref name="lastGrowth"/>) would get there; Clear otherwise.
+    /// </summary>
+    public static ContextLevel ContextLevelOf(long tokens, long lastGrowth, long trigger) =>
+        tokens > trigger ? ContextLevel.Compacting : tokens + lastGrowth > trigger ? ContextLevel.Near : ContextLevel.Clear;
 
     /// <summary>The running sub-agents for the status line, such as " · agent-1: 7 calls, 12k tokens"; empty when none run.</summary>
     public static string SubAgentStatus(IReadOnlyList<SubAgentStats> running) =>
@@ -281,6 +309,8 @@ public sealed class Repl
                 var tokens = agent.ContextTokens;
                 renderer.Line($"~{tokens:N0} of {options.ContextWindow:N0} tokens ({100.0 * tokens / options.ContextWindow:0}%), {agent.History.Count} messages" +
                               (agent.LastContextTokens is null ? renderer.Dim(" (estimated)") : ""));
+                if (agent.Compactor is { } compactor)
+                    renderer.Line(renderer.Dim($"Past ~{compactor.TriggerTokens:N0} tokens, anchor summarizes older turns before its next request (it trims old tool output, then drops the oldest steps, if that isn't enough)."));
                 var u = options.Usage;
                 renderer.Line(renderer.Dim($"Session so far, including sub-agents: in {u.Input:N0} · out {u.Output:N0} · cached {u.Cached:N0}"));
                 break;

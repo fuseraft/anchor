@@ -25,8 +25,8 @@ key and pick a model. The session switches to the chosen model and keeps the con
 
 ### /context
 
-Shows how full the context window is, the number of messages, and token totals for the whole
-session, sub-agents included.
+Shows how full the context window is, the number of messages, token totals for the whole
+session (sub-agents included), and the size past which anchor compacts on its own.
 
 ### /compact
 

@@ -63,6 +63,11 @@ Looking at the failing target first.
 
 Typing `/` offers to complete a slash command.
 
+The context percentage in the status line says how close anchor is to compacting the
+conversation, which happens on its own once the context passes 80% of the model's window. It's
+green while that's out of reach, yellow when a turn as big as the last one would get there, and
+red once it's past, meaning anchor compacts before its next request. `/context` shows the numbers.
+
 When you exit, the conversation is printed to the terminal, so it stays in your scrollback.
 `anchor --plain` runs the older line-by-line REPL instead, and anchor uses it on its own when
 stdin or stdout isn't a terminal.

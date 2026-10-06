@@ -47,6 +47,9 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     /// <summary>Size of the last request plus its reply, as reported by the provider; null when unknown.</summary>
     public long? LastContextTokens { get; private set; }
 
+    /// <summary>What shrinks the history as it fills up; null when nothing does.</summary>
+    public Compactor? Compactor => compactor;
+
     public long ContextTokens => LastContextTokens ?? Messages.EstimateTokens(Context()) + 1_000;
 
     /// <summary>Tokens the current (or last) turn has used so far, input and output, as the provider reported them.</summary>

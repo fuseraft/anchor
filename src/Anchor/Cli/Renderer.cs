@@ -27,7 +27,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
                 _midLine = !t.Text.EndsWith('\n');
                 break;
             case ToolStarted t:
-                Line(Dim($"  ↳ {t.Name} {t.Summary}".TrimEnd()));
+                Line("  " + Tool(t.Name, t.Summary));
                 break;
             case ToolFinished { Ok: false } t:
                 Line(Red($"    {FirstLine(t.Result)}"));
@@ -82,26 +82,26 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     // A sub-agent's activity, indented under the agent call; its streamed text stays out of the way.
     void Nested(string agent, AgentEvent e)
     {
-        var tag = $"    [{agent}]";
+        var tag = "    " + Magenta($"[{agent}]");
         switch (e)
         {
             case ToolStarted t:
-                Line(Dim($"{tag} ↳ {t.Name} {t.Summary}".TrimEnd()));
+                Line($"{tag} {Tool(t.Name, t.Summary)}");
                 break;
             case ToolFinished { Ok: false } t:
                 Line(Red($"{tag}   {FirstLine(t.Result)}"));
                 break;
             case FileChanged f:
-                Line(Dim($"{tag} ✎ {f.Path} ") + Green($"+{f.Added}") + " " + Red($"-{f.Removed}"));
+                Line(tag + Dim($" ✎ {f.Path} ") + Green($"+{f.Added}") + " " + Red($"-{f.Removed}"));
                 break;
             case UsageReport u when u.Input + u.Output > 0:
-                Line(Dim($"{tag} in {u.Input:N0} · out {u.Output:N0}"));
+                Line(tag + Dim($" in {u.Input:N0} · out {u.Output:N0}"));
                 break;
             case TurnEnded { Reason: not TurnEnd.Completed } t:
                 Line(Yellow($"{tag} stopped: {t.Detail ?? t.Reason.ToString()}"));
                 break;
             case LoopWarning or Notice or Compacted or Trimmed or RoundsDropped:
-                Line(Dim($"{tag} {e switch { LoopWarning w => w.Message, Notice n => n.Message, _ => "reduced its context" }}"));
+                Line(tag + Dim($" {e switch { LoopWarning w => w.Message, Notice n => n.Message, _ => "reduced its context" }}"));
                 break;
         }
     }
@@ -118,7 +118,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
             output.WriteLine(text);
             _midLine = false;
             if (AtPrompt)
-                output.Write("› ");
+                output.Write(Prompt);
             output.Flush();
         }
     }
@@ -136,7 +136,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
             var calls = turn.SelectMany(m => m.Contents).OfType<Microsoft.Extensions.AI.FunctionCallContent>().Count();
             var answer = turn.LastOrDefault(m => m.Role == Microsoft.Extensions.AI.ChatRole.Assistant && m.Text.Length > 0)?.Text ?? "";
             Line("");
-            Line(Bold("› ") + FirstLine(turn[0].Text));
+            Line(Prompt + FirstLine(turn[0].Text));
             if (calls > 0)
                 Line(Dim($"  ↳ {calls} tool call{(calls == 1 ? "" : "s")}"));
             if (answer.Length > 0)
@@ -153,7 +153,30 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
             Line(Dim($"    ... {lines.Length - maxLines} more lines"));
     }
 
+    /// <summary>The caret before what the user sends, in the accent color.</summary>
+    public string Prompt => Bold(Accent("›")) + " ";
+
+    /// <summary>anchor's own color, for the caret, the title and the spinner.</summary>
+    public string Accent(string s) => Paint("36", s);
+
+    /// <summary>The question an approval asks, with the keys that answer it picked out.</summary>
+    public string AllowPrompt(string? alwaysLabel) =>
+        Yellow("Allow?") + " " + Key('y', "es") + " " + Key('n', "o") + (alwaysLabel is null ? "" : " " + Key('a', "lways") + Dim(": " + alwaysLabel));
+
+    /// <summary>How an approval was answered, for the transcript.</summary>
+    public string Answered(Answer answer) =>
+        Dim("  Allow? ") + (answer == Answer.No ? Red("no") : Green(answer.ToString().ToLowerInvariant()));
+
+    string Key(char key, string rest) => Bold($"[{key}]") + rest;
+
+    // A tool call: its name stands out, what it was given doesn't.
+    string Tool(string name, string summary) => Blue("↳ " + name) + (summary.Length == 0 ? "" : Dim(" " + summary));
+
     public string Green(string s) => Paint("32", s);
+
+    public string Blue(string s) => Paint("34", s);
+
+    public string Magenta(string s) => Paint("35", s);
 
     public string Dim(string s) => Paint("2", s);
 

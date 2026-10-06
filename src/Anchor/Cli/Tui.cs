@@ -68,6 +68,7 @@ public sealed class Tui : IReplScreen, IApprover
         _view = new TranscriptView(_transcript) { X = 0, Y = 0, Width = Dim.Fill() };
         _rule = new RuleView { X = 0, Width = Dim.Fill(), Height = 1 };
         _caret = new Label { X = 0, Text = "›", Width = 2, Height = 1 };
+        _caret.SetScheme(new Scheme(Styled.Accent));
         _prompt = new PromptView { X = 2, Width = Dim.Fill() };
         _panel = new PanelView { X = 0, Width = Dim.Fill(), Visible = false };
         _status = new StatusView { X = 0, Width = Dim.Fill(), Height = 1, Y = Pos.AnchorEnd(1) };
@@ -194,8 +195,7 @@ public sealed class Tui : IReplScreen, IApprover
     {
         Renderer.Line(Renderer.Yellow($"  ? {request.Title}"));
         var hideDiff = string.IsNullOrEmpty(request.Detail) ? null : _transcript.Section(() => Renderer.Diff(request.Detail));
-        var choices = request.AlwaysLabel is null ? "[y]es [n]o" : $"[y]es [n]o [a]lways: {request.AlwaysLabel}";
-        var key = await KeyAsync($"Allow? {choices}", request.AlwaysLabel is null ? "yn" : "yna", ct);
+        var key = await KeyAsync(Renderer.AllowPrompt(request.AlwaysLabel), request.AlwaysLabel is null ? "yn" : "yna", ct);
         var answer = char.ToLowerInvariant(key) switch
         {
             'y' => Answer.Yes,
@@ -205,7 +205,7 @@ public sealed class Tui : IReplScreen, IApprover
         // An allowed change is summed up by the ✎ line that follows; a refused one stays, to say what was refused.
         if (answer != Answer.No)
             hideDiff?.Invoke();
-        Renderer.Line(Renderer.Dim($"  Allow? {answer.ToString().ToLowerInvariant()}"));
+        Renderer.Line(Renderer.Answered(answer));
         return answer;
     }
 
@@ -221,10 +221,11 @@ public sealed class Tui : IReplScreen, IApprover
     }
 
     // One of a few keys, for approvals; anything else is ignored, so a stray key never answers. Esc counts as no.
+    // The prompt brings its own colors.
     Task<char> KeyAsync(string prompt, string keys, CancellationToken ct) =>
         PanelAsync<char>(ct, (panel, done) =>
         {
-            panel.Show([(prompt, true)]);
+            panel.Show([(prompt, false)]);
             panel.OnKey = key =>
             {
                 if (key == Key.Esc)
@@ -505,7 +506,7 @@ sealed class TranscriptView(Transcript transcript) : View
             if (_top + i < _rows.Count)
                 foreach (var span in _rows[_top + i])
                 {
-                    SetAttribute(AttributeOf(span.Style));
+                    SetAttribute(Styled.Of(span.Style, Styled.Plain));
                     AddStr(span.Text);
                     used += span.Text.GetColumns();
                 }
@@ -546,9 +547,59 @@ sealed class TranscriptView(Transcript transcript) : View
         }
         _lines = from + lines.Count;
     }
+}
 
-    static Attribute AttributeOf(Style style)
+/// <summary>Draws the Renderer's ANSI-styled text in a view, for the lines outside the transcript.</summary>
+static class Styled
+{
+    public static readonly Attribute Plain = new(Color.None, Color.None);
+
+    public static readonly Attribute Accent = new(new Color(ColorName16.Cyan), Color.None, TextStyle.Bold);
+
+    public static List<Span> Parse(string ansi)
     {
+        var transcript = new Transcript();
+        transcript.Write(ansi);
+        return transcript.Lines()[0];
+    }
+
+    /// <summary>One row of styled text, cut to the view's width with "…"; unstyled text is drawn in <paramref name="plain"/>.</summary>
+    public static void Draw(View view, int row, List<Span> spans, Attribute plain)
+    {
+        var width = view.Viewport.Width;
+        var overflow = spans.Sum(s => s.Text.GetColumns()) > width;
+        var room = overflow ? width - 1 : width;
+        var used = 0;
+        view.Move(0, row);
+        foreach (var span in spans)
+        {
+            var fits = new System.Text.StringBuilder();
+            foreach (var rune in span.Text.EnumerateRunes())
+            {
+                var columns = Math.Max(0, rune.GetColumns());
+                if (used + columns > room)
+                    break;
+                fits.Append(rune.ToString());
+                used += columns;
+            }
+            view.SetAttribute(Of(span.Style, plain));
+            view.AddStr(fits.ToString());
+            if (used >= room)
+                break;
+        }
+        view.SetAttribute(plain);
+        if (overflow && width > 0)
+        {
+            view.AddStr("…");
+            used++;
+        }
+        view.AddStr(new string(' ', Math.Max(0, width - used)));
+    }
+
+    public static Attribute Of(Style style, Attribute plain)
+    {
+        if (style == default)
+            return plain;
         var fg = style.Color switch
         {
             31 => new Color(ColorName16.Red),
@@ -713,10 +764,8 @@ sealed class PanelView : View
     {
         for (var i = 0; i < Viewport.Height; i++)
         {
-            Move(0, i);
             var (text, highlighted) = i < _content.Count ? _content[i] : ("", false);
-            SetAttribute(highlighted ? new Attribute(new Color(ColorName16.Cyan), Color.None, TextStyle.Bold) : new Attribute(Color.None, Color.None));
-            AddStr(text.Length > Viewport.Width ? text[..Math.Max(0, Viewport.Width - 1)] + "…" : text.PadRight(Viewport.Width));
+            Styled.Draw(this, i, Styled.Parse(text), highlighted ? Styled.Accent : Styled.Plain);
         }
         return true;
     }
@@ -787,12 +836,12 @@ sealed class StatusView : View
 
     protected override bool OnDrawingContent(DrawContext? context)
     {
-        var left = _flash ?? (_working ? $"{Spinner[_frame % Spinner.Length]} working · {_text}" : _text);
+        List<Span> left = _flash is not null ? [new(_flash, new Style(33, false, false))]
+            : _working ? [new(Spinner[_frame % Spinner.Length], new Style(36, true, false)), new(" working · ", default), .. Styled.Parse(_text)]
+            : Styled.Parse(_text);
         var right = _working ? "Enter adds to the turn · Ctrl+C cancel" : "Enter send · Alt+Enter newline · PgUp/PgDn scroll";
-        var gap = Viewport.Width - left.GetColumns() - right.GetColumns();
-        Move(0, 0);
-        SetAttribute(new Attribute(_flash is null ? new Color(ColorName16.DarkGray) : new Color(ColorName16.Yellow), Color.None));
-        AddStr(gap >= 2 ? left + new string(' ', gap) + right : left.PadRight(Viewport.Width));
+        var gap = Viewport.Width - left.Sum(s => s.Text.GetColumns()) - right.GetColumns();
+        Styled.Draw(this, 0, gap >= 2 ? [.. left, new(new string(' ', gap) + right, default)] : left, new Attribute(new Color(ColorName16.DarkGray), Color.None));
         return true;
     }
 }

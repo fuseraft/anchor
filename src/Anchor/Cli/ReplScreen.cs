@@ -61,7 +61,7 @@ public sealed class LineScreen : IReplScreen
     // Reads one line, plus the rest of a multi-line paste, so a paste becomes one message instead of one turn per line.
     public async Task<string?> ReadAsync(CancellationToken ct)
     {
-        Console.Write("\n› ");
+        Console.Write("\n" + _renderer.Prompt);
         _renderer.AtPrompt = true;
         try
         {
@@ -112,6 +112,6 @@ public sealed class LineScreen : IReplScreen
             Environment.Exit(0);
         }
         _lastIdleInterrupt = DateTime.UtcNow;
-        Console.Write("\n(press Ctrl+C again or Ctrl+D to exit)\n› ");
+        Console.Write("\n(press Ctrl+C again or Ctrl+D to exit)\n" + _renderer.Prompt);
     }
 }
