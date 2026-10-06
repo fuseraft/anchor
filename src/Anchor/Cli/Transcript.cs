@@ -190,6 +190,7 @@ public sealed class Transcript : TextWriter
                 2 => _style with { Dim = true },
                 22 => _style with { Bold = false, Dim = false },
                 >= 30 and <= 37 and var color => _style with { Color = color },
+                >= 90 and <= 97 and var bright => _style with { Color = bright },
                 39 => _style with { Color = 0 },
                 _ => _style,
             };

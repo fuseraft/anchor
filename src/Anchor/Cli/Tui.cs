@@ -606,6 +606,7 @@ static class Styled
             32 => new Color(ColorName16.Green),
             33 => new Color(ColorName16.Yellow),
             34 => new Color(ColorName16.Blue),
+            94 => new Color(ColorName16.BrightBlue),
             35 => new Color(ColorName16.Magenta),
             36 => new Color(ColorName16.Cyan),
             37 => new Color(ColorName16.Gray),

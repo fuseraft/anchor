@@ -174,7 +174,8 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
 
     public string Green(string s) => Paint("32", s);
 
-    public string Blue(string s) => Paint("34", s);
+    // Bright blue: plain blue (34) is too dark to read on most dark terminal themes.
+    public string Blue(string s) => Paint("94", s);
 
     public string Magenta(string s) => Paint("35", s);
 

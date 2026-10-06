@@ -6,7 +6,7 @@ namespace Anchor.Tests;
 public class RendererTests
 {
     static readonly Style Dim = new(0, false, true);
-    static readonly Style Blue = new(34, false, false);
+    static readonly Style Blue = new(94, false, false);
     static readonly Style Magenta = new(35, false, false);
 
     [Fact]
