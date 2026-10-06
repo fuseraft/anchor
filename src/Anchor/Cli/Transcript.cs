@@ -79,6 +79,38 @@ public sealed class Transcript : TextWriter
         }
     }
 
+    /// <summary>Bumped when lines are removed, so a view knows to rebuild its wrapped copy instead of extending it.</summary>
+    public int Removals { get; private set; }
+
+    /// <summary>
+    /// Runs <paramref name="write"/>, which must write whole lines, and returns an action that takes those lines back
+    /// out. The Renderer's lock is held throughout, so no other output lands among them.
+    /// </summary>
+    public Action Section(Action write)
+    {
+        HashSet<List<Span>> written;
+        lock (this)
+        {
+            int from;
+            lock (_lines)
+                from = _lines.Count - 1;
+            write();
+            lock (_lines)
+                written = new(_lines.Skip(from).Take(_lines.Count - 1 - from), ReferenceEqualityComparer.Instance);
+        }
+        return () =>
+        {
+            lock (_lines)
+            {
+                if (_lines.RemoveAll(written.Contains) == 0)
+                    return;
+                Version++;
+                Removals++;
+            }
+            Changed?.Invoke();
+        };
+    }
+
     /// <summary>A copy of lines <paramref name="from"/> onward, safe to use while writes continue.</summary>
     public List<List<Span>> Lines(int from = 0)
     {

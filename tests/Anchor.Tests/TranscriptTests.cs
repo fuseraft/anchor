@@ -50,6 +50,21 @@ public class TranscriptTests
     }
 
     [Fact]
+    public void Section_RemovesOnlyItsOwnLines()
+    {
+        var t = new Transcript();
+        t.Write("? Edit a.cs\n");
+        var hide = t.Section(() => t.Write("+new\n-old\n"));
+        t.Write("Allow? yes\n");
+        var removals = t.Removals;
+
+        hide();
+
+        Assert.Equal(["? Edit a.cs", "Allow? yes", ""], t.Lines().Select(Text));
+        Assert.Equal(removals + 1, t.Removals);
+    }
+
+    [Fact]
     public void Wrap_BreaksAtSpacesAndKeepsStyles()
     {
         var rows = Transcript.Wrap([new Span("one two ", Plain), new Span("three", Dim)], 9);

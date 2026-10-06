@@ -193,8 +193,7 @@ public sealed class Tui : IReplScreen, IApprover
     public async Task<Answer> ApproveAsync(ApprovalRequest request, CancellationToken ct)
     {
         Renderer.Line(Renderer.Yellow($"  ? {request.Title}"));
-        if (!string.IsNullOrEmpty(request.Detail))
-            Renderer.Diff(request.Detail);
+        var hideDiff = string.IsNullOrEmpty(request.Detail) ? null : _transcript.Section(() => Renderer.Diff(request.Detail));
         var choices = request.AlwaysLabel is null ? "[y]es [n]o" : $"[y]es [n]o [a]lways: {request.AlwaysLabel}";
         var key = await KeyAsync($"Allow? {choices}", request.AlwaysLabel is null ? "yn" : "yna", ct);
         var answer = char.ToLowerInvariant(key) switch
@@ -203,6 +202,9 @@ public sealed class Tui : IReplScreen, IApprover
             'a' when request.AlwaysLabel is not null => Answer.Always,
             _ => Answer.No,
         };
+        // An allowed change is summed up by the ✎ line that follows; a refused one stays, to say what was refused.
+        if (answer != Answer.No)
+            hideDiff?.Invoke();
         Renderer.Line(Renderer.Dim($"  Allow? {answer.ToString().ToLowerInvariant()}"));
         return answer;
     }
@@ -447,11 +449,14 @@ sealed class TranscriptView(Transcript transcript) : View
     readonly List<List<Span>> _rows = [];
     int _width = -1;
     int _version = -1;
+    int _removals;
     int _lines;
     int _tailStart;
     int _top;
     bool _follow = true;
+    int _reported;
 
+    /// <summary>Raised when <see cref="Below"/> changes: on a scroll, or when output arrives or goes while scrolled up.</summary>
     public Action? Scrolled { get; set; }
 
     /// <summary>Rows below the bottom of the view, when the user has scrolled up.</summary>
@@ -491,8 +496,8 @@ sealed class TranscriptView(Transcript transcript) : View
     {
         Sync();
         var height = Viewport.Height;
-        if (_follow)
-            _top = Math.Max(0, _rows.Count - height);
+        // Following, or the transcript shrank (a hidden diff) under where the user had scrolled to.
+        _top = _follow ? Math.Max(0, _rows.Count - height) : Math.Min(_top, Math.Max(0, _rows.Count - height));
         for (var i = 0; i < height; i++)
         {
             Move(0, i);
@@ -508,6 +513,11 @@ sealed class TranscriptView(Transcript transcript) : View
             if (used < Viewport.Width)
                 AddStr(new string(' ', Viewport.Width - used));
         }
+        if (Below != _reported)
+        {
+            _reported = Below;
+            Scrolled?.Invoke();
+        }
         return true;
     }
 
@@ -518,9 +528,10 @@ sealed class TranscriptView(Transcript transcript) : View
         if (width == _width && transcript.Version == _version)
             return;
         _version = transcript.Version;
-        if (width != _width)
+        if (width != _width || transcript.Removals != _removals)
         {
             _width = width;
+            _removals = transcript.Removals;
             _rows.Clear();
             _lines = 0;
             _tailStart = 0;
