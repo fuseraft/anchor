@@ -26,7 +26,7 @@ mkdir -p "$out"
 cat > "$out/anchor.rb" <<RUBY
 class Anchor < Formula
   desc "${desc}"
-  homepage "https://fuseraft.github.io/anchor/"
+  homepage "https://fuseraft.ai/anchor/"
   version "${version}"
   license "MIT"
 
@@ -66,7 +66,7 @@ cat > "$out/anchor.json" <<JSON
 {
   "version": "${version}",
   "description": "${desc}",
-  "homepage": "https://fuseraft.github.io/anchor/",
+  "homepage": "https://fuseraft.ai/anchor/",
   "license": "MIT",
   "architecture": {
     "64bit": {

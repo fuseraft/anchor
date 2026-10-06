@@ -3,7 +3,7 @@
 A small coding agent for the terminal. One model works in one directory through a handful of
 tools, and a deterministic harness decides what it may touch.
 
-**Documentation: [fuseraft.github.io/anchor](https://fuseraft.github.io/anchor/)**
+**Documentation: [fuseraft.ai/anchor](https://fuseraft.ai/anchor/)**
 
 ![anchor in a terminal, summarizing this repo](docs/src/assets/screenshot.png)
 

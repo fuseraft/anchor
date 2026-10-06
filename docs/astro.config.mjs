@@ -3,7 +3,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-	site: 'https://fuseraft.github.io',
+	site: 'https://fuseraft.ai',
 	base: '/anchor',
 	integrations: [
 		starlight({
