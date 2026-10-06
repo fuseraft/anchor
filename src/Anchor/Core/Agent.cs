@@ -12,6 +12,9 @@ public interface IBackground
 
     /// <summary>Stops whatever is still running and waits for it to end.</summary>
     Task StopAsync();
+
+    /// <summary>Raised whenever <see cref="Busy"/> may have changed, so a turn waiting for the work wakes to look.</summary>
+    event Action? Changed;
 }
 
 /// <summary>Runs turns: stream a response, execute its tool calls through the gate, repeat until the model answers in text.</summary>
@@ -23,7 +26,9 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     readonly Limits _limits = limits ?? new Limits();
     readonly ConcurrentQueue<string> _interjections = new();
     readonly ConcurrentQueue<string> _notes = new();
-    readonly SemaphoreSlim _wake = new(0);
+    // A signal, not a count: a waiting turn rechecks everything when it wakes, so one pending wake is enough.
+    readonly SemaphoreSlim _wake = new(0, 1);
+    IBackground? _background;
     bool _warnedFull;
     int _rounds;
     long _turnTokens;
@@ -48,20 +53,45 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     public long TurnTokens => Interlocked.Read(ref _turnTokens);
 
     /// <summary>Work this agent's turns start in the background (sub-agents); a turn doesn't end while it runs.</summary>
-    public IBackground? Background { get; set; }
+    /// <remarks>A turn waiting for it wakes on <see cref="IBackground.Changed"/> too: a sub-agent stops being busy after its
+    /// report is handed over, and that report may already have been read.</remarks>
+    public IBackground? Background
+    {
+        get => _background;
+        set
+        {
+            if (_background is not null)
+                _background.Changed -= Wake;
+            _background = value;
+            if (value is not null)
+                value.Changed += Wake;
+        }
+    }
 
     /// <summary>Adds a message the user typed while the turn runs; the model reads it after the current step's tool results.</summary>
     public void Interject(string text)
     {
         _interjections.Enqueue(text);
-        _wake.Release();
+        Wake();
     }
 
     /// <summary>Adds a note from anchor, such as a background sub-agent's report; the model reads it like an interjection.</summary>
     public void Notify(string text)
     {
         _notes.Enqueue(text);
-        _wake.Release();
+        Wake();
+    }
+
+    void Wake()
+    {
+        try
+        {
+            _wake.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // A wake is already pending.
+        }
     }
 
     /// <summary>Takes the interjections not read yet, as one message; null when there are none.</summary>
@@ -232,6 +262,8 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     {
         while (true)
         {
+            // Cancelling the turn stops its sub-agents, which wakes this loop; the cancel must win over "nothing is busy".
+            ct.ThrowIfCancellationRequested();
             // Busy is read first: a sub-agent leaves its report before it stops being busy, so none is missed.
             var busy = Background?.Busy == true;
             if (!_notes.IsEmpty || (busy && !_interjections.IsEmpty))

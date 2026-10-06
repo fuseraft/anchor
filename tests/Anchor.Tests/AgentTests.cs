@@ -436,4 +436,43 @@ public class AgentTests
         Assert.Equal(["go", "done"], agent.History.Select(m => m.Text));
         Assert.Equal("one\n\ntwo", agent.TakeInterjections());
     }
+
+    /// <summary>Busy until the test finishes it. Finishing raises Changed and leaves no report, as a sub-agent does once
+    /// its report has been read.</summary>
+    sealed class HeldBackground : IBackground
+    {
+        volatile bool _busy = true;
+
+        public bool Busy => _busy;
+
+        public event Action? Changed;
+
+        public void Finish()
+        {
+            _busy = false;
+            Changed?.Invoke();
+        }
+
+        public Task StopAsync()
+        {
+            _busy = false;
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task Background_GoingIdleWithoutAReport_StillEndsTheTurn()
+    {
+        var background = new HeldBackground();
+        var agent = NewAgent(new FakeChatClient().Text("done"));
+        agent.Background = background;
+
+        var turn = agent.RunTurnAsync("go", default);
+        // Let the turn reach its wait for the background; finishing first would end it without waiting.
+        await Task.Delay(200);
+        Assert.False(turn.IsCompleted);
+        background.Finish();
+
+        Assert.Equal(TurnEnd.Completed, await turn.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
 }
