@@ -261,3 +261,6 @@ plugin registry. Any of these can be added later as a tool behind the gate.
 8. Claude on the official SDK (the old one failed every request), retries for both providers,
    native libraries bundled into the binary, and checksummed, attested releases on Homebrew
    and Scoop; then the v0.3.1 release.
+9. A first run that checks each key and saves it to a private file when there's no OS keychain,
+   color in the REPL and TUI, and turns that wake when their sub-agents go idle; then the
+   v0.4.0 release.
