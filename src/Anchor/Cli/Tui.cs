@@ -448,11 +448,10 @@ public sealed class Tui : IReplScreen, IApprover
 sealed class TranscriptView(Transcript transcript) : View
 {
     readonly List<List<Span>> _rows = [];
+    readonly List<int> _starts = []; // the row each transcript line starts on
     int _width = -1;
     int _version = -1;
     int _removals;
-    int _lines;
-    int _tailStart;
     int _top;
     bool _follow = true;
     int _reported;
@@ -522,30 +521,32 @@ sealed class TranscriptView(Transcript transcript) : View
         return true;
     }
 
-    // Rewraps everything when the width changes; otherwise only the last line (which may have grown) and new ones.
+    // Rewraps everything when the width changes or lines were taken out; otherwise only from the first line that may
+    // have changed: the last one (which may have grown), or the start of a streamed message that was redrawn.
     void Sync()
     {
         var width = Viewport.Width;
-        if (width == _width && transcript.Version == _version)
+        if (width == _width && transcript.Version == _version && transcript.Removals == _removals)
             return;
-        _version = transcript.Version;
         if (width != _width || transcript.Removals != _removals)
         {
             _width = width;
             _removals = transcript.Removals;
             _rows.Clear();
-            _lines = 0;
-            _tailStart = 0;
+            _starts.Clear();
         }
-        var from = Math.Max(0, _lines - 1);
-        _rows.RemoveRange(_tailStart, _rows.Count - _tailStart);
-        var lines = transcript.Lines(from);
+        var (version, from, lines) = transcript.Since(_starts.Count);
+        _version = version;
+        if (from < _starts.Count)
+        {
+            _rows.RemoveRange(_starts[from], _rows.Count - _starts[from]);
+            _starts.RemoveRange(from, _starts.Count - from);
+        }
         foreach (var line in lines)
         {
-            _tailStart = _rows.Count;
+            _starts.Add(_rows.Count);
             _rows.AddRange(Transcript.Wrap(line, width));
         }
-        _lines = from + lines.Count;
     }
 }
 
@@ -613,7 +614,8 @@ static class Styled
             30 => new Color(ColorName16.Black),
             _ => Color.None,
         };
-        var text = (style.Bold ? TextStyle.Bold : TextStyle.None) | (style.Dim ? TextStyle.Faint : TextStyle.None);
+        var text = (style.Bold ? TextStyle.Bold : TextStyle.None) | (style.Dim ? TextStyle.Faint : TextStyle.None)
+            | (style.Italic ? TextStyle.Italic : TextStyle.None) | (style.Underline ? TextStyle.Underline : TextStyle.None);
         return new Attribute(fg, Color.None, text);
     }
 }

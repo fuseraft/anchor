@@ -2,10 +2,15 @@ using Anchor.Core;
 
 namespace Anchor.Cli;
 
-/// <summary>Draws agent events on a terminal.</summary>
+/// <summary>
+/// Draws agent events on a terminal. In the TUI the model's Markdown is styled as it streams, the message redrawn as it
+/// grows; a plain terminal can't take back what it printed, so it shows the Markdown as written.
+/// </summary>
 public sealed class Renderer(TextWriter output, bool color, bool streamText = true)
 {
+    readonly Transcript? _styled = color ? output as Transcript : null; // the TUI's, where Markdown is styled
     bool _midLine;
+    Markdown? _message; // the model's message being streamed into it, while it's being redrawn
 
     public static Renderer ForConsole() =>
         new(Console.Out, !Console.IsOutputRedirected && Environment.GetEnvironmentVariable("NO_COLOR") is null);
@@ -18,9 +23,23 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
 
     void Draw(AgentEvent e)
     {
+        // Anything else the agent does ends its message; a sub-agent's lines go above it instead (see Line).
+        if (e is not (TextDelta or SubAgentEvent))
+            EndMessage();
         switch (e)
         {
             case TextDelta when !streamText:
+                break;
+            case TextDelta t when _styled is not null:
+                if (_message is null)
+                {
+                    if (_midLine)
+                        output.WriteLine();
+                    _message = new Markdown(Width());
+                }
+                var (settled, open) = _message.Add(t.Text);
+                _styled.Stream(settled, open);
+                _midLine = open.Length > 0 && !open.EndsWith('\n');
                 break;
             case TextDelta t:
                 output.Write(t.Text);
@@ -109,10 +128,23 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     /// <summary>Set while the REPL waits for input, so background messages (MCP sign-in, failures) don't land on the prompt line.</summary>
     public bool AtPrompt { get; set; }
 
+    void EndMessage()
+    {
+        if (_message is null)
+            return;
+        _message = null;
+        _styled?.EndStream();
+    }
+
     public void Line(string text)
     {
         lock (output)
         {
+            if (_styled is not null && _message is not null)
+            {
+                _styled.WriteLineAbove(text);
+                return;
+            }
             if (_midLine || AtPrompt)
                 output.WriteLine();
             output.WriteLine(text);
@@ -140,7 +172,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
             if (calls > 0)
                 Line(Dim($"  ↳ {calls} tool call{(calls == 1 ? "" : "s")}"));
             if (answer.Length > 0)
-                Line(answer.Trim());
+                Line(_styled is null ? answer.Trim() : Markdown.Render(answer.Trim(), Width()));
         }
     }
 

@@ -192,8 +192,14 @@ The REPL is full screen (`Cli/Tui.cs`, on Terminal.Gui and its Editor view for t
 is the controller and talks to an `IReplScreen`; `--plain`, or a stdin or stdout that isn't a
 terminal, gets the line-based `LineScreen` instead. The Renderer is unchanged: in the TUI it writes
 its ANSI text into a `Transcript`, which reads the styles back, so commands and events look the
-same in both. Approvals, `ask_user` and setup questions take the prompt's place and ignore keys
-until typing stops, so typed text can't answer them.
+same in both. The one difference is the model's text: in the TUI, `Cli/Markdown.cs` styles it as it
+streams, and the Renderer hands it to `Transcript.Stream`, which redraws the open part of the
+message (the line being written, or a table, which is held until it ends) while settled lines stay
+put. Code blocks are colored by `Cli/Highlighter.cs`, with the TextMate grammars that Terminal.Gui
+already brings, mapped onto the 16 terminal colors rather than a theme's. Anything else the agent
+does ends the message; a sub-agent's lines go above it. A plain terminal can't take text back, so
+`LineScreen` shows the Markdown as written. Approvals, `ask_user` and setup questions take the
+prompt's place and ignore keys until typing stops, so typed text can't answer them.
 
 The user can type while a turn runs. A sent message is queued on the agent and added as a user
 message after the current step's tool results, so a call is never separated from its result;

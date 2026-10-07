@@ -3,8 +3,8 @@ using Terminal.Gui.Text;
 
 namespace Anchor.Cli;
 
-/// <summary>How a run of transcript text looks: an SGR foreground (31-37, or 0 for the default), bold, dim.</summary>
-public readonly record struct Style(int Color, bool Bold, bool Dim);
+/// <summary>How a run of transcript text looks: an SGR foreground (31-37, or 0 for the default), bold, dim, italic, underline.</summary>
+public readonly record struct Style(int Color, bool Bold, bool Dim, bool Italic = false, bool Underline = false);
 
 public readonly record struct Span(string Text, Style Style);
 
@@ -18,6 +18,8 @@ public sealed class Transcript : TextWriter
     readonly StringBuilder _escape = new();
     Style _style;
     bool _inEscape;
+    int? _live; // the first line of the message being streamed, which is rewritten as it grows
+    int _editedFrom = int.MaxValue; // the first line changed in place since the view last looked
 
     public override Encoding Encoding => Encoding.UTF8;
 
@@ -42,32 +44,70 @@ public sealed class Transcript : TextWriter
         return sb.ToString();
     }
 
+    /// <summary>One line of spans as ANSI text.</summary>
+    public static string Ansi(List<Span> line) =>
+        string.Concat(line.Select(span => span.Style == default ? span.Text : $"{Sgr(span.Style)}{span.Text}\e[0m"));
+
     static string Sgr(Style style) =>
-        "\e[" + string.Join(';', new[] { style.Bold ? "1" : null, style.Dim ? "2" : null, style.Color > 0 ? style.Color.ToString() : null }.OfType<string>()) + "m";
+        "\e[" + string.Join(';', new[] { style.Bold ? "1" : null, style.Dim ? "2" : null, style.Italic ? "3" : null, style.Underline ? "4" : null, style.Color > 0 ? style.Color.ToString() : null }.OfType<string>()) + "m";
 
     /// <summary>
-    /// Writes a whole line above the one still being streamed, if any, so what the user sent mid-sentence doesn't
-    /// split the model's sentence in two.
+    /// Writes a whole line above what's still being streamed (the open line, or the whole message while
+    /// <see cref="Stream"/> is redrawing it), so what the user sent mid-sentence doesn't split the model's sentence in two.
     /// </summary>
     public void WriteLineAbove(string text)
     {
         lock (_lines)
         {
-            var open = _lines[^1];
-            if (open.Count == 0)
-            {
-                WriteLine(text);
-                return;
-            }
+            var from = _live ?? _lines.Count - 1;
+            List<List<Span>> held = _live is null && _lines[^1].Count == 0 ? [] : _lines[from..];
+            _lines.RemoveRange(_lines.Count - held.Count, held.Count);
+            if (held.Count > 0)
+                _lines.Add([]);
             var style = _style;
-            _lines[^1] = [];
             _style = default;
-            WriteLine(text);
-            _lines.RemoveAt(_lines.Count - 1);
-            _lines.Add(open);
-            _style = style;
+            Parse(text + "\n");
+            if (held.Count > 0)
+            {
+                _lines.RemoveAt(_lines.Count - 1);
+                if (_live is not null)
+                    _live = _lines.Count;
+                _lines.AddRange(held);
+                _style = style;
+                _editedFrom = Math.Min(_editedFrom, from);
+            }
+            Version++;
         }
         Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Redraws the message being streamed: <paramref name="settled"/> (whole lines) won't change again, and
+    /// <paramref name="open"/> replaces whatever was open before. The first call starts the message on the open line.
+    /// </summary>
+    public void Stream(string settled, string open)
+    {
+        lock (_lines)
+        {
+            var from = _live ??= _lines.Count - 1;
+            _lines.RemoveRange(from, _lines.Count - from);
+            _lines.Add([]);
+            _style = default;
+            Parse(settled);
+            _live = _lines.Count - 1;
+            Parse(open);
+            _style = default;
+            _editedFrom = Math.Min(_editedFrom, from);
+            Version++;
+        }
+        Changed?.Invoke();
+    }
+
+    /// <summary>Ends the message <see cref="Stream"/> was redrawing; what it showed last stays.</summary>
+    public void EndStream()
+    {
+        lock (_lines)
+            _live = null;
     }
 
     public int Count
@@ -93,22 +133,39 @@ public sealed class Transcript : TextWriter
         {
             int from;
             lock (_lines)
-                from = _lines.Count - 1;
+                from = _live ?? _lines.Count - 1;
             write();
             lock (_lines)
-                written = new(_lines.Skip(from).Take(_lines.Count - 1 - from), ReferenceEqualityComparer.Instance);
+                written = new(_lines[from..(_live ?? _lines.Count - 1)], ReferenceEqualityComparer.Instance);
         }
         return () =>
         {
             lock (_lines)
             {
+                var live = _live is int l ? _lines[l] : null;
                 if (_lines.RemoveAll(written.Contains) == 0)
                     return;
+                if (live is not null)
+                    _live = _lines.IndexOf(live);
                 Version++;
                 Removals++;
             }
             Changed?.Invoke();
         };
+    }
+
+    /// <summary>
+    /// What a view that has seen <paramref name="seen"/> lines needs to catch up: the first line that may have changed (the
+    /// last one it saw, or earlier when the message being streamed was redrawn) and copies of the lines from there on.
+    /// </summary>
+    public (int Version, int From, List<List<Span>> Lines) Since(int seen)
+    {
+        lock (_lines)
+        {
+            var from = Math.Min(Math.Max(0, seen - 1), _editedFrom);
+            _editedFrom = int.MaxValue;
+            return (Version, from, Lines(from));
+        }
     }
 
     /// <summary>A copy of lines <paramref name="from"/> onward, safe to use while writes continue.</summary>
@@ -126,45 +183,50 @@ public sealed class Transcript : TextWriter
             return;
         lock (_lines)
         {
-            var text = new StringBuilder();
-            foreach (var c in value)
-            {
-                if (_inEscape)
-                {
-                    _escape.Append(c);
-                    if (c is >= '@' and <= '~' && _escape.Length > 1)
-                    {
-                        _inEscape = false;
-                        if (c == 'm')
-                            Apply(_escape.ToString(1, _escape.Length - 2));
-                    }
-                    continue;
-                }
-                switch (c)
-                {
-                    case '\e':
-                        Flush(text);
-                        _inEscape = true;
-                        _escape.Clear();
-                        break;
-                    case '\n':
-                        Flush(text);
-                        _lines.Add([]);
-                        break;
-                    case '\r':
-                        break;
-                    default:
-                        text.Append(c);
-                        break;
-                }
-            }
-            Flush(text);
+            Parse(value);
             Version++;
         }
         Changed?.Invoke();
     }
 
     public override void WriteLine(string? value) => Write(value + "\n");
+
+    void Parse(string value)
+    {
+        var text = new StringBuilder();
+        foreach (var c in value)
+        {
+            if (_inEscape)
+            {
+                _escape.Append(c);
+                if (c is >= '@' and <= '~' && _escape.Length > 1)
+                {
+                    _inEscape = false;
+                    if (c == 'm')
+                        Apply(_escape.ToString(1, _escape.Length - 2));
+                }
+                continue;
+            }
+            switch (c)
+            {
+                case '\e':
+                    Flush(text);
+                    _inEscape = true;
+                    _escape.Clear();
+                    break;
+                case '\n':
+                    Flush(text);
+                    _lines.Add([]);
+                    break;
+                case '\r':
+                    break;
+                default:
+                    text.Append(c);
+                    break;
+            }
+        }
+        Flush(text);
+    }
 
     void Flush(StringBuilder text)
     {
@@ -178,7 +240,7 @@ public sealed class Transcript : TextWriter
         text.Clear();
     }
 
-    // The subset of SGR the Renderer and Picker use: reset, bold, dim, normal intensity, and the 8 foreground colors.
+    // The subset of SGR the Renderer, Markdown and Picker use: reset, bold, dim, italic, underline, their resets, and the foreground colors.
     void Apply(string parameters)
     {
         foreach (var p in parameters.Split(';'))
@@ -188,7 +250,11 @@ public sealed class Transcript : TextWriter
                 0 => default,
                 1 => _style with { Bold = true },
                 2 => _style with { Dim = true },
+                3 => _style with { Italic = true },
+                4 => _style with { Underline = true },
                 22 => _style with { Bold = false, Dim = false },
+                23 => _style with { Italic = false },
+                24 => _style with { Underline = false },
                 >= 30 and <= 37 and var color => _style with { Color = color },
                 >= 90 and <= 97 and var bright => _style with { Color = bright },
                 39 => _style with { Color = 0 },

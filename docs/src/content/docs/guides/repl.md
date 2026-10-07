@@ -63,6 +63,12 @@ Looking at the failing target first.
 
 Typing `/` offers to complete a slash command.
 
+anchor's replies are Markdown, and the screen styles them as they arrive: headings, **bold**,
+*italic*, `code`, lists, task lists, quotes and links. Code blocks are syntax highlighted in the
+terminal's own colors, for the languages VS Code knows. Tables are lined up into columns, and a
+table wider than the screen wraps its widest columns. A line can still change until the model
+finishes it, and a table's columns can shift until its last row is in.
+
 The context percentage in the status line says how close anchor is to compacting the
 conversation, which happens on its own once the context passes 80% of the model's window. It's
 green while that's out of reach, yellow when a turn as big as the last one would get there, and
@@ -70,7 +76,8 @@ red once it's past, meaning anchor compacts before its next request. `/context` 
 
 When you exit, the conversation is printed to the terminal, so it stays in your scrollback.
 `anchor --plain` runs the older line-by-line REPL instead, and anchor uses it on its own when
-stdin or stdout isn't a terminal.
+stdin or stdout isn't a terminal. It can't change text once it's printed, so it shows replies as
+plain Markdown.
 
 ## Typing while anchor works
 

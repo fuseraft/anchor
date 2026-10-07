@@ -29,6 +29,47 @@ public class RendererTests
     }
 
     [Fact]
+    public void InTheTui_TextIsStyledAsItStreams()
+    {
+        var t = new Transcript();
+        var renderer = new Renderer(t, color: true);
+        renderer.Render(new TextDelta("Use **bo"));
+
+        Assert.Equal("Use **bo", Text(t.Lines()[^1]));
+
+        renderer.Render(new TextDelta("ld**\n- item"));
+        renderer.Render(new ToolStarted("1", "grep", "x"));
+        renderer.Render(new TextDelta("Found `it`"));
+        renderer.Render(new TurnEnded(TurnEnd.Completed));
+
+        Assert.Equal(["Use bold", "• item", "  ↳ grep x", "Found it", ""], t.Lines().Select(Text));
+    }
+
+    [Fact]
+    public void InTheTui_ASubAgentsLinesGoAboveTheStreamingMessage()
+    {
+        var t = new Transcript();
+        var renderer = new Renderer(t, color: true);
+        renderer.Render(new TextDelta("| a |\n"));
+        renderer.Render(new SubAgentEvent("explorer", new ToolStarted("1", "grep", "x")));
+        renderer.Render(new TextDelta("| bbb |\n\nok"));
+        renderer.Render(new TurnEnded(TurnEnd.Completed));
+
+        Assert.Equal(["    [explorer] ↳ grep x", "a", "bbb", "", "ok", ""], t.Lines().Select(Text));
+    }
+
+    [Fact]
+    public void OnAPlainTerminal_MarkdownIsShownAsWritten()
+    {
+        var output = new StringWriter();
+        var renderer = new Renderer(output, color: true);
+        renderer.Render(new TextDelta("Use **bold**\n- item"));
+        renderer.Render(new TurnEnded(TurnEnd.Completed));
+
+        Assert.Equal("Use **bold**\n- item\n", output.ToString().ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
     public void WithoutColor_LinesReadAsBefore()
     {
         var output = new StringWriter();
@@ -52,4 +93,6 @@ public class RendererTests
         Assert.Contains("\e[31mno", renderer.Answered(Answer.No));
         Assert.Contains("\e[32myes", renderer.Answered(Answer.Yes));
     }
+
+    static string Text(List<Span> spans) => string.Concat(spans.Select(s => s.Text));
 }

@@ -94,5 +94,58 @@ public class TranscriptTests
         Assert.Equal("a red\n", t.Ansi(color: false));
     }
 
+    [Fact]
+    public void Stream_RedrawsTheOpenPartOfTheMessage()
+    {
+        var t = new Transcript();
+        t.Write("before\n");
+        t.Stream("", "| a |");
+        t.Stream("", "| a |\n| bb |");
+        t.Stream("| a  |\n| bb |\n", "Done");
+        t.EndStream();
+        t.Write("\nafter\n");
+
+        Assert.Equal(["before", "| a  |", "| bb |", "Done", "after", ""], t.Lines().Select(Text));
+    }
+
+    [Fact]
+    public void Since_StartsFromTheRedrawnMessage()
+    {
+        var t = new Transcript();
+        t.Write("one\ntwo\n");
+        t.Stream("", "x");
+        var seen = t.Lines().Count;
+        t.Since(seen);
+        t.Stream("", "x\ny\nz");
+
+        var (_, from, lines) = t.Since(seen);
+
+        Assert.Equal(2, from);
+        Assert.Equal(["x", "y", "z"], lines.Select(Text));
+    }
+
+    [Fact]
+    public void WriteLineAbove_GoesBeforeWhatsStillOpenInTheMessage()
+    {
+        var t = new Transcript();
+        t.Stream("Para one\n", "Para");
+        t.WriteLineAbove("› also this");
+        t.Stream("Para two\n", "");
+
+        Assert.Equal(["Para one", "› also this", "Para two", ""], t.Lines().Select(Text));
+    }
+
+    [Fact]
+    public void Section_WhileStreaming_RemovesOnlyItsOwnLines()
+    {
+        var t = new Transcript();
+        t.Stream("", "Looking");
+        var hide = t.Section(() => t.WriteLineAbove("+new"));
+        hide();
+        t.Stream("Looking at it\n", "");
+
+        Assert.Equal(["Looking at it", ""], t.Lines().Select(Text));
+    }
+
     static string Text(List<Span> spans) => string.Concat(spans.Select(s => s.Text));
 }
