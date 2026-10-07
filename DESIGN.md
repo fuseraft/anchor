@@ -270,3 +270,5 @@ plugin registry. Any of these can be added later as a tool behind the gate.
 9. A first run that checks each key and saves it to a private file when there's no OS keychain,
    color in the REPL and TUI, and turns that wake when their sub-agents go idle; then the
    v0.4.0 release.
+10. Replies styled as Markdown while they stream in the TUI, with syntax-highlighted code blocks
+    and tables that fit the screen; then the v0.5.0 release.
