@@ -14,6 +14,9 @@ tools, and a deterministic harness decides what it may touch.
 - **Remembers your "always".** Answering "always" to a command or MCP tool is saved for that
   directory (in your own `~/.anchor`, never the repo), so later sessions and `-p` don't ask again.
   File writes and interpreters like `python3` are only ever allowed for the session.
+- **Full-screen terminal UI.** Replies are styled Markdown as they stream, with syntax-highlighted
+  code and tables that fit the screen. Keep typing while anchor works, and watch background
+  sub-agents in the status line. `--plain` gives a line-by-line REPL instead.
 - **Long sessions.** Context is kept under the model's window by summarizing older turns,
   trimming old tool output, and as a last resort dropping the oldest steps of a long turn.
   Sessions are saved and can be resumed. `/undo` reverts the last turn's file changes.

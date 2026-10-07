@@ -37,8 +37,9 @@ turn that is going in circles:
 
 ## The screen
 
-The REPL fills the terminal: the conversation on top, the prompt below a rule, and a status line
-at the bottom showing the model, how full the context is, and a spinner while a turn runs.
+The REPL is a full-screen terminal UI (TUI): the conversation on top, the prompt below a rule,
+and a status line at the bottom showing the model, how full the context is, and a spinner while a
+turn runs.
 
 ```
 anchor · claude-sonnet-5 · /home/you/my-project
