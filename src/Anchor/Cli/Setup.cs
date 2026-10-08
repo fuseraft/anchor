@@ -81,6 +81,38 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
         return model;
     }
 
+    /// <summary>
+    /// /model's picker: the models on the server <paramref name="current"/> comes from, with it chosen, using the key
+    /// anchor already has. The pick is saved as the default. Returns it as /model takes it (<c>name/model</c> on a named
+    /// server), or null if the person stopped.
+    /// </summary>
+    public async Task<string?> PickModelAsync(ProviderSettings current, CancellationToken ct = default)
+    {
+        var service = current.Via is null
+            ? Services.FirstOrDefault(s => s.ApiKeyEnv == current.ApiKeyEnv && (current.Endpoint is null || current.Endpoint == s.Endpoint))
+            : null;
+        var key = current.ApiKeyEnv is not { } env ? null
+            : Environment.GetEnvironmentVariable(env) is { Length: > 0 } fromEnv ? fromEnv
+            : await StoredAsync(env);
+        var listing = (current.Endpoint ?? service?.Endpoint) is { } endpoint
+            ? await ListAsync(current.Provider, endpoint, key, current.Headers, ct)
+            : new Listing(null);
+        if (listing.Rejected is not null)
+        {
+            io.Note($"The key for {current.ApiKeyEnv} was rejected ({listing.Rejected}).\nRun /setup to replace it.", ok: false);
+            return null;
+        }
+        if (service is not null)
+            listing = listing with { Models = listing.Models?.Where(m => service.Prefixes.Any(p => m.StartsWith(p, StringComparison.OrdinalIgnoreCase))).ToList() };
+
+        var model = PickModel(listing, current.Model);
+        if (model is null)
+            return null;
+        var reference = current.Via is null ? model : $"{current.Via}/{model}";
+        Save(root => ProviderObject(root)["model"] = reference);
+        return reference;
+    }
+
     // Comes after the model is saved, so stopping here only keeps the theme the config already names.
     void PickTheme()
     {

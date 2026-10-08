@@ -157,6 +157,51 @@ public class SetupTests : IDisposable
     }
 
     [Fact]
+    public async Task PickModel_ListsTheCurrentProvidersModels_AndSavesTheChoice()
+    {
+        File.WriteAllText(ConfigPath, """{ "provider": { "model": "claude-sonnet-5", "contextWindow": 500000 }, "theme": "light" }""");
+        _keychain.Items[Providers.Providers.KeychainAccount("ANTHROPIC_API_KEY")] = "sk-saved";
+        _server.Models["https://api.anthropic.com/v1/models"] = ["claude-opus-5-5", "claude-sonnet-5"];
+        var io = new ScriptedIO("1");
+
+        var model = await new Setup(io, _keychain, Credentials, new HttpClient(_server), ConfigPath)
+            .PickModelAsync(Providers.Providers.Resolve("claude-sonnet-5"));
+
+        Assert.Equal("claude-opus-5-5", model);
+        Assert.Equal("sk-saved", _server.ApiKey);
+        var config = ReadConfig();
+        Assert.Equal("claude-opus-5-5", (string?)config["provider"]!["model"]);
+        Assert.Equal(500000, (int)config["provider"]!["contextWindow"]!);
+        Assert.Equal("light", (string?)config["theme"]);
+    }
+
+    [Fact]
+    public async Task PickModel_OnANamedServer_KeepsItsName()
+    {
+        var providers = new Dictionary<string, CustomProvider> { ["work"] = new() { Endpoint = "https://litellm.corp.example/v1" } };
+        _server.Models["https://litellm.corp.example/v1/models"] = ["a", "b"];
+        var io = new ScriptedIO("2");
+
+        var model = await new Setup(io, _keychain, Credentials, new HttpClient(_server), ConfigPath)
+            .PickModelAsync(Providers.Providers.Resolve("work/a", custom: providers));
+
+        Assert.Equal("work/b", model);
+        Assert.Equal("work/b", (string?)ReadConfig()["provider"]!["model"]);
+    }
+
+    [Fact]
+    public async Task PickModel_Cancelled_ChangesNothing()
+    {
+        _server.Models["https://api.x.ai/v1/models"] = ["grok-4.5"];
+
+        var model = await new Setup(new ScriptedIO(), _keychain, Credentials, new HttpClient(_server), ConfigPath)
+            .PickModelAsync(Providers.Providers.Resolve("grok-4.5"));
+
+        Assert.Null(model);
+        Assert.False(File.Exists(ConfigPath));
+    }
+
+    [Fact]
     public async Task EndOfInput_StopsWithoutWriting()
     {
         Assert.Null(await Run(new ScriptedIO("4")));

@@ -11,12 +11,18 @@ Type these at the `›` prompt. Anything else is a message to the model, except 
 ### /model
 
 ```
-/model                   show the current model and provider
-/model claude-opus-5-5   switch models
+/model                   pick a model and save it as the default
+/model claude-opus-5-5   switch models for this session
 ```
 
-The conversation carries over to the new model. The model name follows the same rules as
-`--model`; see [Configuration](/anchor/start/configuration/#choosing-a-model).
+Without a name, `/model` lists the models on the server the current one comes from, with the
+current one chosen, as the [setup wizard](/anchor/start/configuration/#the-setup-wizard) does. The
+pick becomes `provider.model` in the config, so later sessions start with it; Esc changes nothing.
+To use another provider, run [`/setup`](#setup).
+
+With a name, the switch lasts for the session. Either way the conversation carries over to the new
+model. The model name follows the same rules as `--model`; see
+[Configuration](/anchor/start/configuration/#choosing-a-model).
 
 ### /setup
 

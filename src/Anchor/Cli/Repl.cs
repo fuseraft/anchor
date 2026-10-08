@@ -284,6 +284,9 @@ public sealed class Repl
         renderer.Line(renderer.Muted($"Model: {next.Model}"));
     }
 
+    Setup NewSetup() => new(screen.SetupIO, Anchor.Mcp.Keychain.Default(), new CredentialsFile(AnchorHome.Credentials),
+        new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, Path.Combine(Config.Home, "config.json"));
+
     async Task<bool> CommandAsync(string line)
     {
         var parts = line.Split(' ', 2, StringSplitOptions.TrimEntries);
@@ -384,7 +387,18 @@ public sealed class Repl
                 renderer.Line(renderer.Muted($"After each turn anchor runs `{_until}` and keeps working until it exits 0 (at most {Until.MaxRounds} rounds, or until a round changes no files)."));
                 break;
             case "/model" when parts.Length == 1:
-                renderer.Line($"{_provider.Model} {renderer.Muted($"({_provider.Via ?? _provider.Provider})")}");
+                try
+                {
+                    if (await NewSetup().PickModelAsync(_provider) is { } picked)
+                    {
+                        SwitchModel(picked);
+                        renderer.Line(renderer.Muted("Saved as the default model."));
+                    }
+                }
+                catch (InvalidOperationException e)
+                {
+                    renderer.Line(renderer.Error(e.Message));
+                }
                 break;
             case "/model":
                 try
@@ -410,9 +424,7 @@ public sealed class Repl
             case "/setup":
                 try
                 {
-                    var setup = new Setup(screen.SetupIO, Anchor.Mcp.Keychain.Default(), new CredentialsFile(AnchorHome.Credentials),
-                        new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, Path.Combine(Config.Home, "config.json"));
-                    if (await setup.RunAsync() is { } model)
+                    if (await NewSetup().RunAsync() is { } model)
                     {
                         SwitchModel(model);
                         Theme.Current = Theme.Of(Config.Load());
@@ -438,7 +450,7 @@ public sealed class Repl
                 break;
             case "/help":
                 renderer.Line("""
-                    /model [name]   show or switch the model
+                    /model [name]   pick a model and save it as the default, or switch to one for this session
                     /setup          choose a provider, save its key and pick a model
                     /theme [name]   list color themes, or switch to one for this session
                     /context        how full the context window is, and session token usage
