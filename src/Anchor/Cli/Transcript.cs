@@ -110,6 +110,24 @@ public sealed class Transcript : TextWriter
             _live = null;
     }
 
+    /// <summary>Takes every line out, for /clear. The Renderer's lock is held, so no output is cut in half.</summary>
+    public void Clear()
+    {
+        lock (this)
+        lock (_lines)
+        {
+            _lines.Clear();
+            _lines.Add([]);
+            _style = default;
+            _inEscape = false;
+            _live = null;
+            _editedFrom = int.MaxValue;
+            Version++;
+            Removals++;
+        }
+        Changed?.Invoke();
+    }
+
     public int Count
     {
         get

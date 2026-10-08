@@ -19,6 +19,20 @@ public class TranscriptTests
     }
 
     [Fact]
+    public void Clear_StartsOver_AndTellsTheViewToRebuild()
+    {
+        var t = new Transcript();
+        t.Write("one\n\e[31mtwo");
+        var removals = t.Removals;
+
+        t.Clear();
+        t.Write("after");
+
+        Assert.Equal([new Span("after", Plain)], Assert.Single(t.Lines()));
+        Assert.Equal(removals + 1, t.Removals);
+    }
+
+    [Fact]
     public void Write_JoinsStreamedChunksOfTheSameStyle()
     {
         var t = new Transcript();

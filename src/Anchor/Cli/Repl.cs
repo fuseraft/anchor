@@ -296,6 +296,7 @@ public sealed class Repl
                 return false;
             case "/clear":
                 agent.History.Clear();
+                screen.Clear();
                 renderer.Line(renderer.Muted("History cleared."));
                 break;
             case "/compact":

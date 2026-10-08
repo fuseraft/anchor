@@ -51,7 +51,8 @@ as it is. If there's nothing old enough to summarize, it says so.
 
 ### /clear
 
-Forgets the conversation. The model starts fresh; your files are untouched.
+Forgets the conversation. The model starts fresh, and the full-screen view is emptied; your files are
+untouched. With `--plain`, what was printed stays in the terminal's scrollback.
 
 ## Work
 

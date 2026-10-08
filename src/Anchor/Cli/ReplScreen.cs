@@ -17,6 +17,9 @@ public interface IReplScreen
     /// <summary>Shows a line the user sent in the transcript; a plain terminal already shows what was typed.</summary>
     void Echo(string text);
 
+    /// <summary>Empties the transcript, for /clear. A plain terminal's scrollback is the terminal's, so it stays.</summary>
+    void Clear() { }
+
     /// <summary>Shows where things stand: the model, how full the context is, and whether a turn is running.</summary>
     void Status(string text, bool working);
 

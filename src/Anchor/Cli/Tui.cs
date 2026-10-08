@@ -165,6 +165,12 @@ public sealed class Tui : IReplScreen, IApprover
         _status.Set(text, working);
     });
 
+    public void Clear()
+    {
+        _transcript.Clear();
+        Ui(_view.Follow);
+    }
+
     // While a turn streams, what the user sent goes above the line being written; otherwise it simply comes next.
     public void Echo(string text)
     {
