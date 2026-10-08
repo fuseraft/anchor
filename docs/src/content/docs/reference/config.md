@@ -107,8 +107,9 @@ replaced with the environment variable's value, or an empty string when it isn't
 
 ## theme and colors
 
-`theme` names a built-in theme, and `colors` changes single roles on top of it. `--theme` and
-`/theme` override `theme`. `NO_COLOR` still turns color off entirely.
+`theme` names a built-in theme, and `colors` changes single roles on top of it. The
+[setup wizard](/anchor/start/configuration/#the-setup-wizard) saves `theme` for you. `--theme` and
+`/theme` override it. `NO_COLOR` still turns color off entirely.
 
 | Theme     | Description                                                                 |
 | --------- | --------------------------------------------------------------------------- |

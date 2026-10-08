@@ -18,7 +18,7 @@ The file accepts comments and trailing commas. The full schema is in the
 
 ## The setup wizard
 
-`anchor setup`, or `/setup` in a session, asks three things and writes the answers to the config:
+`anchor setup`, or `/setup` in a session, asks four things and writes the answers to the config:
 
 1. **Where your models come from:** Anthropic, OpenAI, xAI, or another server such as LiteLLM. For
    another server, it asks for the URL, a short name to use as `<name>/<model>`, and the name of
@@ -32,6 +32,8 @@ The file accepts comments and trailing commas. The full schema is in the
 3. **The model:** picked from the server's `/models` list, or typed if the server has no list.
    Move with ↑/↓ and press Enter; typing filters the list, and a name that matches nothing is
    used as typed.
+4. **The colors:** one of the [themes](/anchor/reference/config/#theme-and-colors), such as `light`
+   for a light terminal background. Esc keeps the one you have.
 
 anchor offers the wizard when you start it interactively with no model configured and no API key
 set. Running it again replaces the whole `provider` section with the new `model` (so a

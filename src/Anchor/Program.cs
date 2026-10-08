@@ -10,7 +10,7 @@ try
 {
     // Set before anything is drawn; Startup reports what in it couldn't be read.
     var config = Config.Load();
-    Theme.Current = Theme.From(options.Theme ?? config.Theme, config.Colors).Theme;
+    Theme.Current = Theme.Of(config, options.Theme);
 
     if (options.Print)
     {
@@ -50,6 +50,7 @@ try
             Path.Combine(Config.Home, "config.json")).RunAsync();
         if (options.Setup || model is null)
             return model is null ? 1 : 0;
+        Theme.Current = Theme.Of(Config.Load(), options.Theme);
         Console.WriteLine();
         // The full screen clears setup's output, so the session repeats how it ended.
         if (!options.Plain && Tui.Supported)

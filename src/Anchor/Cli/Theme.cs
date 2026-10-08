@@ -8,6 +8,8 @@ public sealed record Theme
 {
     public string Name { get; init; } = "default";
 
+    public string Description { get; init; } = "anchor's usual colors";
+
     /// <summary>anchor's own color: the caret, the title, the spinner, the picker's choice.</summary>
     public string Accent { get; init; } = "36";
 
@@ -57,22 +59,28 @@ public sealed record Theme
         // For terminals whose normal colors are too dark: the bright variants, and nothing dim.
         new()
         {
-            Name = "bright", Accent = "96", Tool = "94", Agent = "95", Success = "92", Warning = "93", Error = "91",
+            Name = "bright", Description = "bright colors, for dark terminals whose normal colors are too dark",
+            Accent = "96", Tool = "94", Agent = "95", Success = "92", Warning = "93", Error = "91",
             Muted = "37", Code = "96", Comment = "37", String = "92", Constant = "93", Keyword = "95", Function = "94", Type = "96",
         },
         // For light backgrounds: no yellow and no bright variants, which wash out on white. Warnings are magenta instead.
         new()
         {
-            Name = "light", Accent = "34", Tool = "34", Agent = "36", Success = "32", Warning = "35", Error = "31",
+            Name = "light", Description = "for light backgrounds: no yellow or bright colors",
+            Accent = "34", Tool = "34", Agent = "36", Success = "32", Warning = "35", Error = "31",
             Code = "34", Comment = "2", String = "32", Constant = "31", Keyword = "35", Function = "34", Type = "36",
         },
         // No colors at all, only bold, dim and underline.
         new()
         {
-            Name = "mono", Accent = "1", Tool = "1", Agent = "1", Success = "", Warning = "1", Error = "1", Border = "2",
+            Name = "mono", Description = "no colors, only bold, dim and underline",
+            Accent = "1", Tool = "1", Agent = "1", Success = "", Warning = "1", Error = "1", Border = "2",
             Code = "", Comment = "2", String = "", Constant = "", Keyword = "1", Function = "", Type = "",
         },
     ];
+
+    /// <summary>The theme a config names, with its colors; <paramref name="name"/> (from --theme) overrides it.</summary>
+    public static Theme Of(Config config, string? name = null) => From(name ?? config.Theme, config.Colors).Theme;
 
     public static Theme? Named(string name) => BuiltIn.FirstOrDefault(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 

@@ -27,7 +27,7 @@ public class ThemeTests
     public void TheLightTheme_UsesNoYellowOrBrightColors()
     {
         var light = Theme.Named("light")!;
-        var codes = typeof(Theme).GetProperties().Where(p => p.PropertyType == typeof(string) && p.Name != nameof(Theme.Name) && p.Name != nameof(Theme.Border))
+        var codes = typeof(Theme).GetProperties().Where(p => p.PropertyType == typeof(string) && p.Name is not (nameof(Theme.Name) or nameof(Theme.Description) or nameof(Theme.Border)))
             .SelectMany(p => ((string)p.GetValue(light)!).Split(';'));
 
         Assert.DoesNotContain(codes, c => c == "33" || c.StartsWith('9'));

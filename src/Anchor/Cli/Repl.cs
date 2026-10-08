@@ -398,11 +398,11 @@ public sealed class Repl
                 break;
             case "/theme" when parts.Length == 1:
                 foreach (var theme in Theme.BuiltIn)
-                    renderer.Line((theme.Name == Theme.Current.Name ? renderer.Accent("› ") : "  ") + theme.Name);
+                    renderer.Line((theme.Name == Theme.Current.Name ? renderer.Accent("› ") : "  ") + theme.Name.PadRight(8) + renderer.Muted(theme.Description));
                 break;
             case "/theme" when Theme.Named(parts[1]) is { } named:
                 Theme.Current = named;
-                renderer.Line(renderer.Muted($"Theme: {named.Name}, for this session. To keep it, set \"theme\": \"{named.Name}\" in {Renderer.ShortPath(Path.Combine(Config.Home, "config.json"))}."));
+                renderer.Line(renderer.Muted($"Theme: {named.Name}, for this session. To keep a theme, pick it in /setup."));
                 break;
             case "/theme":
                 renderer.Line(renderer.Error($"Unknown theme {parts[1]}. Themes: {string.Join(", ", Theme.BuiltIn.Select(t => t.Name))}."));
@@ -413,7 +413,10 @@ public sealed class Repl
                     var setup = new Setup(screen.SetupIO, Anchor.Mcp.Keychain.Default(), new CredentialsFile(AnchorHome.Credentials),
                         new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, Path.Combine(Config.Home, "config.json"));
                     if (await setup.RunAsync() is { } model)
+                    {
                         SwitchModel(model);
+                        Theme.Current = Theme.Of(Config.Load());
+                    }
                 }
                 catch (InvalidOperationException e)
                 {

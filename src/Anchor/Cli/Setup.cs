@@ -75,8 +75,23 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
             return null;
 
         io.Line();
+        PickTheme();
+        io.Line();
         io.Note($"All set: anchor will use {model}.\nRun anchor setup to change it.", ok: true);
         return model;
+    }
+
+    // Comes after the model is saved, so stopping here only keeps the theme the config already names.
+    void PickTheme()
+    {
+        var key = Load().Select(p => p.Key).FirstOrDefault(k => k.Equals("theme", StringComparison.OrdinalIgnoreCase)) ?? "theme";
+        var current = Theme.Named(Load()[key]?.GetValue<string>() ?? "") ?? Theme.BuiltIn[0];
+        var width = Theme.BuiltIn.Max(t => t.Name.Length) + 2;
+        var labels = Theme.BuiltIn.ToDictionary(t => t.Name.PadRight(width) + t.Description);
+        var choice = io.Select("Which colors? (Esc keeps the current ones)", [.. labels.Keys], current.Name.PadRight(width) + current.Description);
+        if (choice is null || !labels.TryGetValue(choice, out var theme) || theme == current)
+            return;
+        Save(root => root[key] = theme.Name);
     }
 
     async Task<string?> BuiltInAsync(Service service, CancellationToken ct)

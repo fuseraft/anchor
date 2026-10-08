@@ -113,6 +113,49 @@ public class SetupTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData("3", "light")] // the third theme
+    [InlineData("1", null)]    // the default, which needs no setting
+    [InlineData(null, null)]   // Esc
+    public async Task Theme_IsAskedAfterTheModel_AndSavedWhenItChanges(string? answer, string? saved)
+    {
+        var before = Environment.GetEnvironmentVariable("XAI_API_KEY");
+        Environment.SetEnvironmentVariable("XAI_API_KEY", "xai-test");
+        try
+        {
+            _server.Models["https://api.x.ai/v1/models"] = ["grok-4.5"];
+            var io = new ScriptedIO(answer is null ? ["3", ""] : ["3", "", answer]);
+
+            Assert.Equal("grok-4.5", await Run(io));
+            Assert.Contains(io.Output, l => l.StartsWith("light") && l.Contains("light backgrounds"));
+            Assert.Equal(saved, (string?)ReadConfig()["theme"]);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("XAI_API_KEY", before);
+        }
+    }
+
+    [Fact]
+    public async Task Theme_ShowsTheSavedOneAsChosen()
+    {
+        File.WriteAllText(ConfigPath, """{ "Theme": "mono" }""");
+        var before = Environment.GetEnvironmentVariable("XAI_API_KEY");
+        Environment.SetEnvironmentVariable("XAI_API_KEY", "xai-test");
+        try
+        {
+            _server.Models["https://api.x.ai/v1/models"] = ["grok-4.5"];
+
+            await Run(new ScriptedIO("3", "", ""));
+
+            Assert.Equal("mono", (string?)ReadConfig()["Theme"]);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("XAI_API_KEY", before);
+        }
+    }
+
     [Fact]
     public async Task EndOfInput_StopsWithoutWriting()
     {

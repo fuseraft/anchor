@@ -30,8 +30,8 @@ key and pick a model. The session switches to the chosen model and keeps the con
 /theme mono     switch themes
 ```
 
-The switch lasts for the session and applies to what's drawn from then on. To keep a theme, set
-[`theme`](/anchor/reference/config/#theme-and-colors) in the config.
+The switch lasts for the session and applies to what's drawn from then on. To keep a theme, pick it
+in [`/setup`](#setup), or set [`theme`](/anchor/reference/config/#theme-and-colors) in the config.
 
 ### /context
 
