@@ -23,6 +23,16 @@ The conversation carries over to the new model. The model name follows the same 
 Runs the [setup wizard](/anchor/start/configuration/#the-setup-wizard): choose a provider, save its
 key and pick a model. The session switches to the chosen model and keeps the conversation.
 
+### /theme
+
+```
+/theme          list the color themes, the current one marked
+/theme mono     switch themes
+```
+
+The switch lasts for the session and applies to what's drawn from then on. To keep a theme, set
+[`theme`](/anchor/reference/config/#theme-and-colors) in the config.
+
 ### /context
 
 Shows how full the context window is, the number of messages, token totals for the whole

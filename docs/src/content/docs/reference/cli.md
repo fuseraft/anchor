@@ -6,7 +6,7 @@ description: Every anchor command-line option, environment variable and exit cod
 ```
 anchor setup
 anchor [--model <name>] [--yolo] [--allow <rule>]... [--resume [id]] [-p [prompt]] [--until <check>]
-       [--max-rounds <n>] [--timeout <seconds>] [--json] [--plain]
+       [--max-rounds <n>] [--timeout <seconds>] [--json] [--plain] [--theme <name>]
 ```
 
 With no options, anchor starts an [interactive session](/anchor/guides/repl/) in the current
@@ -27,6 +27,7 @@ exits.
 | `--timeout <seconds>`  | With `-p`: stop after this many seconds (exit code 124). |
 | `--json`               | Write events as JSON lines. Without `-p`, also read requests from stdin. [More](/anchor/reference/json/) |
 | `--plain`              | Use the line-by-line REPL instead of the full-screen one. It's also used when stdin or stdout isn't a terminal. |
+| `--theme <name>`       | Use a color theme for this run: `default`, `bright`, `light` or `mono`. Overrides [`theme`](/anchor/reference/config/#theme-and-colors) in the config. |
 | `--version`            | Print the version.                                                                                      |
 | `-h`, `--help`         | Print usage.                                                                                            |
 

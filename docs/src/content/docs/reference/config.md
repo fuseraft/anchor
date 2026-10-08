@@ -23,7 +23,10 @@ optional. Keys are case-insensitive, and comments and trailing commas are allowe
   // MCP servers available in every project.
   "mcpServers": {
     "files": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }
-  }
+  },
+  // Colors.
+  "theme": "default",
+  "colors": { "accent": "bold magenta" }
 }
 ```
 
@@ -101,3 +104,45 @@ Only needed when a server doesn't support dynamic client registration.
 
 `${NAME}` in `command`, `args`, `env` values, `cwd`, `url`, `headers` values and `clientSecret` is
 replaced with the environment variable's value, or an empty string when it isn't set.
+
+## theme and colors
+
+`theme` names a built-in theme, and `colors` changes single roles on top of it. `--theme` and
+`/theme` override `theme`. `NO_COLOR` still turns color off entirely.
+
+| Theme     | Description                                                                 |
+| --------- | --------------------------------------------------------------------------- |
+| `default` | anchor's usual colors.                                                      |
+| `bright`  | The bright variants and no dim text, for dark terminals whose normal colors are too dark. |
+| `light`   | For light backgrounds: no yellow or bright colors, which wash out on white. Warnings are magenta. |
+| `mono`    | No colors, only bold, dim and underline.                                    |
+
+Themes use the terminal's own 16 colors, so they follow its palette and read on light and dark
+backgrounds alike; `light` is for palettes where yellow is hard to read on white. A color in `colors` is one or more of these words, separated by spaces:
+`black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `gray`, `bright-red`,
+`bright-green`, `bright-yellow`, `bright-blue`, `bright-magenta`, `bright-cyan`, `bright-white`,
+`bold`, `dim`, `italic`, `underline`, or `none` for plain text.
+
+```json
+{
+  "theme": "bright",
+  "colors": { "accent": "bold magenta", "comment": "gray italic" }
+}
+```
+
+| Role       | Used for                                                          |
+| ---------- | ----------------------------------------------------------------- |
+| `accent`   | The prompt caret, the title, the spinner and the picker's choice. |
+| `tool`     | A tool call's name.                                               |
+| `agent`    | A sub-agent's tag.                                                |
+| `success`  | Passed checks, added lines in a diff.                             |
+| `warning`  | Notices, approval questions.                                      |
+| `error`    | Errors, removed lines in a diff.                                  |
+| `muted`    | Tool arguments, token counts, hints, table and quote borders.     |
+| `border`   | The line above the prompt and the status line.                    |
+| `heading`  | Markdown headings.                                                |
+| `link`     | Markdown links.                                                   |
+| `code`     | Inline code, and code blocks in a language anchor can't highlight. |
+| `comment`, `string`, `constant`, `keyword`, `function`, `type` | Syntax highlighting in code blocks. |
+
+An unknown theme, role or color word is reported when anchor starts, and the rest still applies.

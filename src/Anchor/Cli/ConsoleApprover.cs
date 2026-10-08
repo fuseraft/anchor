@@ -7,7 +7,7 @@ public sealed class ConsoleApprover(Renderer renderer) : IApprover
 {
     public async Task<Answer> ApproveAsync(ApprovalRequest request, CancellationToken ct)
     {
-        renderer.Line(renderer.Yellow($"  ? {request.Title}"));
+        renderer.Line(renderer.Warning($"  ? {request.Title}"));
         if (!string.IsNullOrEmpty(request.Detail))
             renderer.Diff(request.Detail);
 
@@ -19,7 +19,7 @@ public sealed class ConsoleApprover(Renderer renderer) : IApprover
             'a' when request.AlwaysLabel is not null => Answer.Always,
             _ => Answer.No,
         };
-        Console.WriteLine(answer == Answer.No ? renderer.Red("no") : renderer.Green(answer.ToString().ToLowerInvariant()));
+        Console.WriteLine(answer == Answer.No ? renderer.Error("no") : renderer.Success(answer.ToString().ToLowerInvariant()));
         return answer;
     }
 
@@ -27,7 +27,7 @@ public sealed class ConsoleApprover(Renderer renderer) : IApprover
 
     public Task<string?> AskAsync(Question question, CancellationToken ct)
     {
-        renderer.Line(renderer.Yellow($"  ? {question.Text}"));
+        renderer.Line(renderer.Warning($"  ? {question.Text}"));
         const string other = "Something else (type an answer)";
         var answer = Picker.Choose(null, question.AllowOther ? [.. question.Options, other] : question.Options);
         if (answer == other)

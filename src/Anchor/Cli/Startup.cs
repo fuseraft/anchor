@@ -35,7 +35,8 @@ public static class Startup
 
         var (skills, skillWarnings) = Definitions.LoadSkills([Path.Combine(workspace.Root, ".agents", "skills"), Path.Combine(Config.Home, "skills")]);
         var (agents, agentWarnings) = Definitions.LoadAgents([Path.Combine(workspace.Root, ".agents", "agents"), Path.Combine(Config.Home, "agents")]);
-        foreach (var warning in skillWarnings.Concat(agentWarnings))
+        var themeWarnings = Theme.From(options.Theme ?? config.Theme, config.Colors).Warnings;
+        foreach (var warning in themeWarnings.Concat(skillWarnings).Concat(agentWarnings))
             output.Warn(warning);
 
         // Background sub-agents can need the user at the same time as the main agent; they take turns.

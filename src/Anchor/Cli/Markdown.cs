@@ -11,7 +11,9 @@ namespace Anchor.Cli;
 /// </summary>
 public sealed partial class Markdown(int width = int.MaxValue)
 {
-    const string Code = "36", Bold = "1", Dim = "2", Italic = "3", Underline = "4";
+    const string Bold = "1", Dim = "2", Italic = "3", Underline = "4";
+
+    static Theme T => Theme.Current;
 
     readonly StringBuilder _pending = new();
     readonly List<string> _table = [];
@@ -81,14 +83,14 @@ public sealed partial class Markdown(int width = int.MaxValue)
                 return null;
             }
             line = line.Replace("\t", "    ");
-            return "  " + (_code is null ? Paint(Code, line) : _code.Line(line, settle));
+            return "  " + (_code is null ? Paint(T.Code, line) : _code.Line(line, settle));
         }
         if (FenceOpen().Match(line) is { Success: true } f)
         {
             var language = f.Groups[2].Value;
             if (settle)
                 (_fence, _code) = (f.Groups[1].Value, Highlighter.For(language));
-            return language.Length > 0 ? Paint(Dim, "  " + language) : null;
+            return language.Length > 0 ? Paint(T.Muted, "  " + language) : null;
         }
         return Block(line, "");
     }
@@ -97,15 +99,15 @@ public sealed partial class Markdown(int width = int.MaxValue)
     string Block(string line, string style)
     {
         if (Heading().Match(line) is { Success: true } h)
-            return Inline(h.Groups[2].Value, With(style, h.Groups[1].Length == 1 ? $"{Bold};{Underline}" : Bold));
+            return Inline(h.Groups[2].Value, With(style, h.Groups[1].Length == 1 ? With(T.Heading, Underline) : T.Heading));
         if (Rule().IsMatch(line))
-            return Paint(With(style, Dim), new string('─', Math.Min(40, width)));
+            return Paint(With(style, T.Muted), new string('─', Math.Min(40, width)));
         if (Task().Match(line) is { Success: true } t)
             return t.Groups[1].Value + Paint(style, t.Groups[2].Value == " " ? "☐ " : "☑ ") + Inline(t.Groups[3].Value, style);
         if (Bullet().Match(line) is { Success: true } b)
             return b.Groups[1].Value + Paint(style, "• ") + Inline(b.Groups[2].Value, style);
         if (Quote().Match(line) is { Success: true } q)
-            return Paint(Dim, "│ ") + Block(q.Groups[1].Value, With(style, Dim));
+            return Paint(T.Muted, "│ ") + Block(q.Groups[1].Value, With(style, T.Muted));
         return Inline(line, style);
     }
 
@@ -128,7 +130,7 @@ public sealed partial class Markdown(int width = int.MaxValue)
         {
             if (i == divider)
             {
-                sb.Append(Paint(Dim, string.Join("─┼─", widths.Select(w => new string('─', w))))).Append('\n');
+                sb.Append(Paint(T.Muted, string.Join("─┼─", widths.Select(w => new string('─', w))))).Append('\n');
                 continue;
             }
             var wrapped = Enumerable.Range(0, columns).Select(c => c < cells[i].Count ? cells[i][c].SelectMany(part => Wrap(part, widths[c])).ToList() : []).ToList();
@@ -139,7 +141,7 @@ public sealed partial class Markdown(int width = int.MaxValue)
                     var cell = row < wrapped[c].Count ? wrapped[c][row] : "";
                     var pad = new string(' ', Math.Max(0, widths[c] - Width(cell)));
                     if (c > 0)
-                        sb.Append(Paint(Dim, " │ "));
+                        sb.Append(Paint(T.Muted, " │ "));
                     sb.Append(c < right.Count && right[c] ? pad + cell : c == columns - 1 ? cell : cell + pad);
                 }
                 sb.Append('\n');
@@ -196,15 +198,15 @@ public sealed partial class Markdown(int width = int.MaxValue)
                 var code = m.Groups["code"].Value;
                 if (code.Length > 2 && code[0] == ' ' && code[^1] == ' ')
                     code = code[1..^1];
-                sb.Append(Paint(With(style, Code), code));
+                sb.Append(Paint(With(style, T.Code), code));
             }
             else if (m.Groups["text"].Success)
             {
                 var (label, url) = (m.Groups["text"].Value, m.Groups["url"].Value);
-                sb.Append(label == url ? Paint(With(style, Underline), url) : Inline(label, With(style, Underline)) + Paint(Dim, $" ({url})"));
+                sb.Append(label == url ? Paint(With(style, T.Link), url) : Inline(label, With(style, T.Link)) + Paint(T.Muted, $" ({url})"));
             }
             else if (m.Groups["auto"].Success)
-                sb.Append(Paint(With(style, Underline), m.Groups["auto"].Value));
+                sb.Append(Paint(With(style, T.Link), m.Groups["auto"].Value));
             else if (m.Groups["bold"].Success)
                 sb.Append(Inline(m.Groups["bold"].Value, With(style, Bold)));
             else if (m.Groups["italic"].Success)
@@ -218,7 +220,7 @@ public sealed partial class Markdown(int width = int.MaxValue)
         return sb.ToString();
     }
 
-    static string With(string style, string code) => style.Length == 0 ? code : style + ";" + code;
+    static string With(string style, string code) => style.Length == 0 ? code : code.Length == 0 ? style : style + ";" + code;
 
     static string Paint(string style, string s) => style.Length == 0 || s.Length == 0 ? s : $"\e[{style}m{s}\e[0m";
 

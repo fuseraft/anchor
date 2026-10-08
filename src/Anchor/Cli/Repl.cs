@@ -57,12 +57,12 @@ public sealed class Repl
     public async Task<int> RunAsync()
     {
         var model = $"· {_provider.Model} · ";
-        renderer.Line($"{renderer.Bold(renderer.Accent("anchor"))} {renderer.Dim(model + Renderer.ShortPath(Workspace.Root, Renderer.Width() - 8 - model.Length))}");
+        renderer.Line($"{renderer.Bold(renderer.Accent("anchor"))} {renderer.Muted(model + Renderer.ShortPath(Workspace.Root, Renderer.Width() - 8 - model.Length))}");
         if (options.Yolo)
-            renderer.Line(renderer.Yellow("--yolo: writes, commands and outside reads run without asking. Secret files and dangerous commands are still denied."));
+            renderer.Line(renderer.Warning("--yolo: writes, commands and outside reads run without asking. Secret files and dangerous commands are still denied."));
         if (options.Resumed)
         {
-            renderer.Line(renderer.Dim($"Resumed session {session.Id}."));
+            renderer.Line(renderer.Muted($"Resumed session {session.Id}."));
             renderer.Replay(agent.History, ReplayTurns);
         }
         else
@@ -71,22 +71,22 @@ public sealed class Repl
             if (options.SetUpModel is { } setUp)
             {
                 renderer.Line("");
-                renderer.Line($"{renderer.Green("✓")} All set: anchor will use {setUp}.");
-                renderer.Line(renderer.Dim("  Run /setup to change it."));
+                renderer.Line($"{renderer.Success("✓")} All set: anchor will use {setUp}.");
+                renderer.Line(renderer.Muted("  Run /setup to change it."));
                 spaced = true;
             }
             if (!options.Yolo && !SessionLog.Any(options.SessionsDir))
             {
                 // The first session ever: say how approvals work before the first one appears.
                 renderer.Line("");
-                renderer.Line(renderer.Dim("Before anchor edits a file or runs a command, it shows you first."));
-                renderer.Line(renderer.Dim("Press y to allow, n to decline, or a (when offered) to always allow."));
+                renderer.Line(renderer.Muted("Before anchor edits a file or runs a command, it shows you first."));
+                renderer.Line(renderer.Muted("Press y to allow, n to decline, or a (when offered) to always allow."));
                 spaced = true;
             }
             if (spaced)
                 renderer.Line("");
         }
-        renderer.Line(renderer.Dim("/help for commands, Ctrl+D to exit"));
+        renderer.Line(renderer.Muted("/help for commands, Ctrl+D to exit"));
 
         while (!_exit)
         {
@@ -136,7 +136,7 @@ public sealed class Repl
                 completed = await CancellableAsync(async ct =>
                 {
                     if ((await Until.RunAsync(agent, gate, _until, line, ct)).Check is { } check and not CheckEnd.Passed)
-                        renderer.Line(renderer.Yellow($"  {Until.Describe(check, _until)}"));
+                        renderer.Line(renderer.Warning($"  {Until.Describe(check, _until)}"));
                 });
         }
         finally
@@ -161,7 +161,7 @@ public sealed class Repl
                 if (line.StartsWith('!') || (line.StartsWith('/') && !line.Contains('\n')))
                 {
                     _queued.Enqueue(line);
-                    screen.Echo(renderer.Prompt + line + renderer.Dim("  (runs when this turn ends)"));
+                    screen.Echo(renderer.Prompt + line + renderer.Muted("  (runs when this turn ends)"));
                 }
                 else
                 {
@@ -188,7 +188,7 @@ public sealed class Repl
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            renderer.Line(renderer.Yellow("  (cancelled)"));
+            renderer.Line(renderer.Warning("  (cancelled)"));
         }
         finally
         {
@@ -217,7 +217,7 @@ public sealed class Repl
         var dropped = (unread is null ? 0 : 1) + _queued.Count;
         _queued.Clear();
         if (dropped > 0 && !_exit)
-            renderer.Line(renderer.Dim("  (what you sent during the turn was dropped)"));
+            renderer.Line(renderer.Muted("  (what you sent during the turn was dropped)"));
     }
 
     string? NextQueued()
@@ -225,7 +225,7 @@ public sealed class Repl
         if (_carried is { } carried)
         {
             _carried = null;
-            renderer.Line(renderer.Dim("  (the turn ended before reading your message, so it starts the next one)"));
+            renderer.Line(renderer.Muted("  (the turn ended before reading your message, so it starts the next one)"));
             return carried;
         }
         return _queued.TryDequeue(out var queued) ? queued : null;
@@ -245,9 +245,9 @@ public sealed class Repl
         if (agent.Compactor is { } c)
             used = ContextLevelOf(tokens, _lastGrowth, c.TriggerTokens) switch
             {
-                ContextLevel.Compacting => renderer.Red(used),
-                ContextLevel.Near => renderer.Yellow(used),
-                _ => renderer.Green(used),
+                ContextLevel.Compacting => renderer.Error(used),
+                ContextLevel.Near => renderer.Warning(used),
+                _ => renderer.Success(used),
             };
         var status = $"{renderer.Accent(_provider.Model)} · {used}" + (_until is null ? "" : $" · until {_until}");
         _workingStatus = working ? status : null;
@@ -281,7 +281,7 @@ public sealed class Repl
         var next = options.Models.Resolve(name);
         agent.Use(options.Models.Create(next), Providers.Providers.Options(next));
         _provider = next;
-        renderer.Line(renderer.Dim($"Model: {next.Model}"));
+        renderer.Line(renderer.Muted($"Model: {next.Model}"));
     }
 
     async Task<bool> CommandAsync(string line)
@@ -293,63 +293,63 @@ public sealed class Repl
                 return false;
             case "/clear":
                 agent.History.Clear();
-                renderer.Line(renderer.Dim("History cleared."));
+                renderer.Line(renderer.Muted("History cleared."));
                 break;
             case "/compact":
                 await CancellableAsync(async ct =>
                 {
                     var result = await agent.CompactAsync(ct);
                     if (result?.Outcome == CompactOutcome.NothingToCompact)
-                        renderer.Line(renderer.Dim("Nothing to compact yet: the recent turns are kept as they are."));
+                        renderer.Line(renderer.Muted("Nothing to compact yet: the recent turns are kept as they are."));
                     else if (result?.Outcome == CompactOutcome.Rejected)
-                        renderer.Line(renderer.Yellow("The summary wasn't smaller than the conversation; history is unchanged."));
+                        renderer.Line(renderer.Warning("The summary wasn't smaller than the conversation; history is unchanged."));
                 });
                 break;
             case "/context":
                 var tokens = agent.ContextTokens;
                 renderer.Line($"~{tokens:N0} of {options.ContextWindow:N0} tokens ({100.0 * tokens / options.ContextWindow:0}%), {agent.History.Count} messages" +
-                              (agent.LastContextTokens is null ? renderer.Dim(" (estimated)") : ""));
+                              (agent.LastContextTokens is null ? renderer.Muted(" (estimated)") : ""));
                 if (agent.Compactor is { } compactor)
-                    renderer.Line(renderer.Dim($"Past ~{compactor.TriggerTokens:N0} tokens, anchor summarizes older turns before its next request (it trims old tool output, then drops the oldest steps, if that isn't enough)."));
+                    renderer.Line(renderer.Muted($"Past ~{compactor.TriggerTokens:N0} tokens, anchor summarizes older turns before its next request (it trims old tool output, then drops the oldest steps, if that isn't enough)."));
                 var u = options.Usage;
-                renderer.Line(renderer.Dim($"Session so far, including sub-agents: in {u.Input:N0} · out {u.Output:N0} · cached {u.Cached:N0}"));
+                renderer.Line(renderer.Muted($"Session so far, including sub-agents: in {u.Input:N0} · out {u.Output:N0} · cached {u.Cached:N0}"));
                 break;
             case "/agents":
-                renderer.Line($"agent (default)  {renderer.Dim("read-only: " + string.Join(", ", SubAgentRunner.ReadOnlyTools))}" +
-                              renderer.Dim($"; up to {SubAgentRunner.MaxRunning} run at once, in the background"));
+                renderer.Line($"agent (default)  {renderer.Muted("read-only: " + string.Join(", ", SubAgentRunner.ReadOnlyTools))}" +
+                              renderer.Muted($"; up to {SubAgentRunner.MaxRunning} run at once, in the background"));
                 foreach (var a in options.Agents)
-                    renderer.Line($"{a.Name}  {renderer.Dim(a.Description)}" +
-                                  renderer.Dim($" [tools: {(a.Tools is null ? "read-only" : string.Join(", ", a.Tools))}{(a.Model is null ? "" : $"; model: {a.Model}")}]"));
-                renderer.Line(renderer.Dim("Define more in .agents/agents/<name>.md or ~/.anchor/agents/<name>.md."));
+                    renderer.Line($"{a.Name}  {renderer.Muted(a.Description)}" +
+                                  renderer.Muted($" [tools: {(a.Tools is null ? "read-only" : string.Join(", ", a.Tools))}{(a.Model is null ? "" : $"; model: {a.Model}")}]"));
+                renderer.Line(renderer.Muted("Define more in .agents/agents/<name>.md or ~/.anchor/agents/<name>.md."));
                 break;
             case "/skills":
                 if (options.Skills.Count == 0)
-                    renderer.Line(renderer.Dim("No skills. Add one as .agents/skills/<name>/SKILL.md or ~/.anchor/skills/<name>/SKILL.md."));
+                    renderer.Line(renderer.Muted("No skills. Add one as .agents/skills/<name>/SKILL.md or ~/.anchor/skills/<name>/SKILL.md."));
                 foreach (var s in options.Skills)
-                    renderer.Line($"{s.Name}  {renderer.Dim(s.Description)}");
+                    renderer.Line($"{s.Name}  {renderer.Muted(s.Description)}");
                 break;
             case "/undo":
                 var (restored, skipped) = gate.Undo();
                 if (restored.Count == 0 && skipped.Count == 0)
-                    renderer.Line(renderer.Dim("Nothing to undo."));
+                    renderer.Line(renderer.Muted("Nothing to undo."));
                 foreach (var path in restored)
-                    renderer.Line(renderer.Dim($"  restored {path}"));
+                    renderer.Line(renderer.Muted($"  restored {path}"));
                 foreach (var path in skipped)
-                    renderer.Line(renderer.Yellow($"  skipped {path}: it changed after anchor wrote it"));
+                    renderer.Line(renderer.Warning($"  skipped {path}: it changed after anchor wrote it"));
                 if (restored.Count > 0)
                     agent.History.Add(Messages.Create(MessageKind.Note,
                         $"[anchor] The user undid your file changes. These files are back to their earlier content: {string.Join(", ", restored)}."));
                 break;
             case "/sessions":
                 foreach (var s in SessionLog.List(options.SessionsDir, Workspace.Root).Take(10))
-                    renderer.Line($"{(s.Id == session.Id ? "*" : " ")} {s.Id}  {renderer.Dim(s.Updated.ToString("g"))}  {Truncate(s.Title, 60)}");
-                renderer.Line(renderer.Dim("Resume one with: anchor --resume <id>"));
+                    renderer.Line($"{(s.Id == session.Id ? "*" : " ")} {s.Id}  {renderer.Muted(s.Updated.ToString("g"))}  {Truncate(s.Title, 60)}");
+                renderer.Line(renderer.Muted("Resume one with: anchor --resume <id>"));
                 break;
             case "/mcp" when parts.Length == 1:
                 if (options.Mcp.Status.Count == 0)
-                    renderer.Line(renderer.Dim("No MCP servers. Add them under mcpServers in ~/.anchor/config.json or in the project's .mcp.json."));
+                    renderer.Line(renderer.Muted("No MCP servers. Add them under mcpServers in ~/.anchor/config.json or in the project's .mcp.json."));
                 foreach (var s in options.Mcp.Status)
-                    renderer.Line($"{s.Name}  {s.State}{(s.Tools > 0 ? $", {s.Tools} tools" : "")}" + (s.Detail is null ? "" : renderer.Dim($"  {s.Detail}")));
+                    renderer.Line($"{s.Name}  {s.State}{(s.Tools > 0 ? $", {s.Tools} tools" : "")}" + (s.Detail is null ? "" : renderer.Muted($"  {s.Detail}")));
                 break;
             case "/mcp":
                 var mcp = parts[1].Split(' ', 2, StringSplitOptions.TrimEntries);
@@ -360,31 +360,31 @@ public sealed class Repl
                     else if (mcp is ["logout", var name2])
                     {
                         await options.Mcp.LogoutAsync(name2);
-                        renderer.Line(renderer.Dim($"Signed out of {name2}."));
+                        renderer.Line(renderer.Muted($"Signed out of {name2}."));
                     }
                     else
-                        renderer.Line(renderer.Red("Usage: /mcp, /mcp login <server>, /mcp logout <server>"));
+                        renderer.Line(renderer.Error("Usage: /mcp, /mcp login <server>, /mcp logout <server>"));
                 }
                 catch (InvalidOperationException e)
                 {
-                    renderer.Line(renderer.Red(e.Message));
+                    renderer.Line(renderer.Error(e.Message));
                 }
                 break;
             case "/until" when parts.Length == 1:
                 renderer.Line(_until is null
-                    ? renderer.Dim("No check. /until <command> keeps each turn going until the command exits 0.")
-                    : $"Check: {_until} {renderer.Dim("(/until off to clear)")}");
+                    ? renderer.Muted("No check. /until <command> keeps each turn going until the command exits 0.")
+                    : $"Check: {_until} {renderer.Muted("(/until off to clear)")}");
                 break;
             case "/until" when parts[1] == "off":
                 _until = null;
-                renderer.Line(renderer.Dim("Check cleared."));
+                renderer.Line(renderer.Muted("Check cleared."));
                 break;
             case "/until":
                 _until = parts[1];
-                renderer.Line(renderer.Dim($"After each turn anchor runs `{_until}` and keeps working until it exits 0 (at most {Until.MaxRounds} rounds, or until a round changes no files)."));
+                renderer.Line(renderer.Muted($"After each turn anchor runs `{_until}` and keeps working until it exits 0 (at most {Until.MaxRounds} rounds, or until a round changes no files)."));
                 break;
             case "/model" when parts.Length == 1:
-                renderer.Line($"{_provider.Model} {renderer.Dim($"({_provider.Via ?? _provider.Provider})")}");
+                renderer.Line($"{_provider.Model} {renderer.Muted($"({_provider.Via ?? _provider.Provider})")}");
                 break;
             case "/model":
                 try
@@ -393,8 +393,19 @@ public sealed class Repl
                 }
                 catch (InvalidOperationException e)
                 {
-                    renderer.Line(renderer.Red(e.Message));
+                    renderer.Line(renderer.Error(e.Message));
                 }
+                break;
+            case "/theme" when parts.Length == 1:
+                foreach (var theme in Theme.BuiltIn)
+                    renderer.Line((theme.Name == Theme.Current.Name ? renderer.Accent("› ") : "  ") + theme.Name);
+                break;
+            case "/theme" when Theme.Named(parts[1]) is { } named:
+                Theme.Current = named;
+                renderer.Line(renderer.Muted($"Theme: {named.Name}, for this session. To keep it, set \"theme\": \"{named.Name}\" in {Renderer.ShortPath(Path.Combine(Config.Home, "config.json"))}."));
+                break;
+            case "/theme":
+                renderer.Line(renderer.Error($"Unknown theme {parts[1]}. Themes: {string.Join(", ", Theme.BuiltIn.Select(t => t.Name))}."));
                 break;
             case "/setup":
                 try
@@ -406,13 +417,13 @@ public sealed class Repl
                 }
                 catch (InvalidOperationException e)
                 {
-                    renderer.Line(renderer.Red(e.Message));
+                    renderer.Line(renderer.Error(e.Message));
                 }
                 break;
             case "/approvals" when parts.Length == 1:
                 var saved = gate.SavedApprovals;
                 if (saved.Programs.Count + saved.Tools.Count == 0)
-                    renderer.Line(renderer.Dim("No approvals saved for this directory. Answer [a]lways to a command or MCP tool to save one."));
+                    renderer.Line(renderer.Muted("No approvals saved for this directory. Answer [a]lways to a command or MCP tool to save one."));
                 foreach (var program in saved.Programs)
                     renderer.Line($"  command  {program}");
                 foreach (var tool in saved.Tools)
@@ -420,12 +431,13 @@ public sealed class Repl
                 break;
             case "/approvals" when parts[1] == "clear":
                 gate.ForgetApprovals();
-                renderer.Line(renderer.Dim("Forgot every \"always\" answer for this directory, saved or from this session."));
+                renderer.Line(renderer.Muted("Forgot every \"always\" answer for this directory, saved or from this session."));
                 break;
             case "/help":
                 renderer.Line("""
                     /model [name]   show or switch the model
                     /setup          choose a provider, save its key and pick a model
+                    /theme [name]   list color themes, or switch to one for this session
                     /context        how full the context window is, and session token usage
                     /agents         list sub-agents
                     /skills         list skills
@@ -445,7 +457,7 @@ public sealed class Repl
                     """);
                 break;
             default:
-                renderer.Line(renderer.Red($"Unknown command {parts[0]}. Try /help."));
+                renderer.Line(renderer.Error($"Unknown command {parts[0]}. Try /help."));
                 break;
         }
         return true;
@@ -460,11 +472,11 @@ public sealed class Repl
             try
             {
                 if (await screen.ShellAsync(command, Workspace.Root, ct) is var code and not 0)
-                    renderer.Line(renderer.Dim($"exit {code}"));
+                    renderer.Line(renderer.Muted($"exit {code}"));
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
-                renderer.Line(renderer.Red(e.Message));
+                renderer.Line(renderer.Error(e.Message));
             }
         });
     }

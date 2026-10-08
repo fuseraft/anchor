@@ -28,7 +28,7 @@ public sealed class Tui : IReplScreen, IApprover
     static readonly TimeSpan Quiet = TimeSpan.FromMilliseconds(400);
 
     internal static readonly string[] Commands =
-        ["/help", "/model", "/setup", "/context", "/agents", "/skills", "/mcp", "/until", "/approvals", "/compact", "/undo", "/sessions", "/clear", "/exit"];
+        ["/help", "/model", "/setup", "/theme", "/context", "/agents", "/skills", "/mcp", "/until", "/approvals", "/compact", "/undo", "/sessions", "/clear", "/exit"];
 
     readonly IApplication _app;
     readonly Transcript _transcript = new();
@@ -42,6 +42,7 @@ public sealed class Tui : IReplScreen, IApprover
     readonly PanelView _panel;
     readonly StatusView _status;
     DateTime _lastInterrupt;
+    Theme _theme = Theme.Current; // what the views were last drawn in
     int _redrawQueued;
 
     public static bool Supported => !Console.IsInputRedirected && !Console.IsOutputRedirected;
@@ -143,7 +144,7 @@ public sealed class Tui : IReplScreen, IApprover
 
     async Task<int> RunReplAsync(Options options)
     {
-        var h = await Startup.BuildAsync(options, new Output(Renderer.Render, this, m => Renderer.Line(Renderer.Yellow(m)), Interactive: true));
+        var h = await Startup.BuildAsync(options, new Output(Renderer.Render, this, m => Renderer.Line(Renderer.Warning(m)), Interactive: true));
         await using var _ = h.Mcp;
         foreach (var message in h.Agent.History.Where(Messages.IsUserInput))
             Ui(() => _prompt.Remember(message.Text));
@@ -152,7 +153,17 @@ public sealed class Tui : IReplScreen, IApprover
 
     public async Task<string?> ReadAsync(CancellationToken ct) => await _sent.Reader.ReadAsync(ct);
 
-    public void Status(string text, bool working) => Ui(() => _status.Set(text, working));
+    public void Status(string text, bool working) => Ui(() =>
+    {
+        // After /theme, the views that draw in the theme's colors are drawn again.
+        if (_theme != Theme.Current)
+        {
+            _theme = Theme.Current;
+            _caret.SetScheme(new Scheme(Styled.Accent));
+            _top.SetNeedsDraw();
+        }
+        _status.Set(text, working);
+    });
 
     // While a turn streams, what the user sent goes above the line being written; otherwise it simply comes next.
     public void Echo(string text)
@@ -193,7 +204,7 @@ public sealed class Tui : IReplScreen, IApprover
 
     public async Task<Answer> ApproveAsync(ApprovalRequest request, CancellationToken ct)
     {
-        Renderer.Line(Renderer.Yellow($"  ? {request.Title}"));
+        Renderer.Line(Renderer.Warning($"  ? {request.Title}"));
         var hideDiff = string.IsNullOrEmpty(request.Detail) ? null : _transcript.Section(() => Renderer.Diff(request.Detail));
         var key = await KeyAsync(Renderer.AllowPrompt(request.AlwaysLabel), request.AlwaysLabel is null ? "yn" : "yna", ct);
         var answer = char.ToLowerInvariant(key) switch
@@ -211,12 +222,12 @@ public sealed class Tui : IReplScreen, IApprover
 
     public async Task<string?> AskAsync(Question question, CancellationToken ct)
     {
-        Renderer.Line(Renderer.Yellow($"  ? {question.Text}"));
+        Renderer.Line(Renderer.Warning($"  ? {question.Text}"));
         const string other = "Something else (type an answer)";
         var answer = await ChooseAsync(null, question.AllowOther ? [.. question.Options, other] : question.Options, null, false, ct);
         if (answer == other)
             answer = await TextAsync("Your answer:", secret: false, ct);
-        Renderer.Line(Renderer.Dim($"  › {answer ?? "(dismissed)"}"));
+        Renderer.Line(Renderer.Muted($"  › {answer ?? "(dismissed)"}"));
         return answer;
     }
 
@@ -434,7 +445,7 @@ public sealed class Tui : IReplScreen, IApprover
         {
             tui.Renderer.Line(title);
             var answer = tui.ChooseAsync(null, choices, selected, allowTyped, CancellationToken.None).GetAwaiter().GetResult();
-            tui.Renderer.Line(tui.Renderer.Dim($"  › {answer ?? "(cancelled)"}"));
+            tui.Renderer.Line(tui.Renderer.Muted($"  › {answer ?? "(cancelled)"}"));
             return answer;
         }
 
@@ -555,7 +566,9 @@ static class Styled
 {
     public static readonly Attribute Plain = new(Color.None, Color.None);
 
-    public static readonly Attribute Accent = new(new Color(ColorName16.Cyan), Color.None, TextStyle.Bold);
+    public static Attribute Accent => Of(Theme.StyleOf(Theme.Current.Accent) with { Bold = true }, Plain);
+
+    public static Attribute Border => Of(Theme.StyleOf(Theme.Current.Border), Plain);
 
     public static List<Span> Parse(string ansi)
     {
@@ -603,15 +616,22 @@ static class Styled
             return plain;
         var fg = style.Color switch
         {
+            30 => new Color(ColorName16.Black),
             31 => new Color(ColorName16.Red),
             32 => new Color(ColorName16.Green),
             33 => new Color(ColorName16.Yellow),
             34 => new Color(ColorName16.Blue),
-            94 => new Color(ColorName16.BrightBlue),
             35 => new Color(ColorName16.Magenta),
             36 => new Color(ColorName16.Cyan),
             37 => new Color(ColorName16.Gray),
-            30 => new Color(ColorName16.Black),
+            90 => new Color(ColorName16.DarkGray),
+            91 => new Color(ColorName16.BrightRed),
+            92 => new Color(ColorName16.BrightGreen),
+            93 => new Color(ColorName16.BrightYellow),
+            94 => new Color(ColorName16.BrightBlue),
+            95 => new Color(ColorName16.BrightMagenta),
+            96 => new Color(ColorName16.BrightCyan),
+            97 => new Color(ColorName16.White),
             _ => Color.None,
         };
         var text = (style.Bold ? TextStyle.Bold : TextStyle.None) | (style.Dim ? TextStyle.Faint : TextStyle.None)
@@ -793,7 +813,7 @@ sealed class RuleView : View
     {
         var label = _below > 0 ? $" ↓ {_below} more line{(_below == 1 ? "" : "s")} · Ctrl+End to follow " : "";
         Move(0, 0);
-        SetAttribute(new Attribute(new Color(ColorName16.DarkGray), Color.None));
+        SetAttribute(Styled.Border);
         AddStr("──" + label + new string('─', Math.Max(0, Viewport.Width - 2 - label.Length)));
         return true;
     }
@@ -839,12 +859,12 @@ sealed class StatusView : View
 
     protected override bool OnDrawingContent(DrawContext? context)
     {
-        List<Span> left = _flash is not null ? [new(_flash, new Style(33, false, false))]
-            : _working ? [new(Spinner[_frame % Spinner.Length], new Style(36, true, false)), new(" working · ", default), .. Styled.Parse(_text)]
+        List<Span> left = _flash is not null ? [new(_flash, Theme.StyleOf(Theme.Current.Warning))]
+            : _working ? [new(Spinner[_frame % Spinner.Length], Theme.StyleOf(Theme.Current.Accent) with { Bold = true }), new(" working · ", default), .. Styled.Parse(_text)]
             : Styled.Parse(_text);
         var right = _working ? "Enter adds to the turn · Ctrl+C cancel" : "Enter send · Alt+Enter newline · PgUp/PgDn scroll";
         var gap = Viewport.Width - left.Sum(s => s.Text.GetColumns()) - right.GetColumns();
-        Styled.Draw(this, 0, gap >= 2 ? [.. left, new(new string(' ', gap) + right, default)] : left, new Attribute(new Color(ColorName16.DarkGray), Color.None));
+        Styled.Draw(this, 0, gap >= 2 ? [.. left, new(new string(' ', gap) + right, default)] : left, Styled.Border);
         return true;
     }
 }

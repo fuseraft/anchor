@@ -8,6 +8,10 @@ if (options is null)
 
 try
 {
+    // Set before anything is drawn; Startup reports what in it couldn't be read.
+    var config = Config.Load();
+    Theme.Current = Theme.From(options.Theme ?? config.Theme, config.Colors).Theme;
+
     if (options.Print)
     {
         var prompt = options.Prompt ?? "";
@@ -21,7 +25,7 @@ try
 
         var json = options.Json ? new JsonEvents(Console.Out) : null;
         var renderer = new Renderer(Console.Error, !Console.IsErrorRedirected && Environment.GetEnvironmentVariable("NO_COLOR") is null, streamText: false);
-        Action<string> warn = json is null ? m => renderer.Line(renderer.Yellow(m)) : m => json.Emit(new Notice(m));
+        Action<string> warn = json is null ? m => renderer.Line(renderer.Warning(m)) : m => json.Emit(new Notice(m));
         var output = new Output(json is null ? renderer.Render : json.Emit, new RefusingApprover(warn), warn, Interactive: false);
         var h = await Startup.BuildAsync(options, output);
         await using var _ = h.Mcp;
@@ -37,7 +41,7 @@ try
         return await new JsonMode(json, approver, Console.In).RunAsync(h);
     }
 
-    if (options.Setup || !Console.IsInputRedirected && Setup.Needed(options, Config.Load()))
+    if (options.Setup || !Console.IsInputRedirected && Setup.Needed(options, config))
     {
         if (!options.Setup)
             Console.WriteLine("Welcome to anchor. First, let's connect it to a model.");
@@ -57,7 +61,7 @@ try
 
     {
         var renderer = Renderer.ForConsole();
-        var h = await Startup.BuildAsync(options, new Output(renderer.Render, new ConsoleApprover(renderer), m => renderer.Line(renderer.Yellow(m)), Interactive: true));
+        var h = await Startup.BuildAsync(options, new Output(renderer.Render, new ConsoleApprover(renderer), m => renderer.Line(renderer.Warning(m)), Interactive: true));
         await using var _ = h.Mcp;
         var screen = new LineScreen(renderer, () => h.Session.Sync(h.Agent.History));
         return await new Repl(h.Agent, h.Gate, h.Session, renderer, screen, ReplOptions.From(h, options)).RunAsync();

@@ -13,6 +13,12 @@ public sealed class Config
 
     public Dictionary<string, Anchor.Mcp.McpServerConfig>? McpServers { get; set; }
 
+    /// <summary>A built-in theme's name; see <see cref="Cli.Theme"/>.</summary>
+    public string? Theme { get; set; }
+
+    /// <summary>Colors for single roles, on top of the theme: "accent": "bold magenta".</summary>
+    public Dictionary<string, string>? Colors { get; set; }
+
     public static string Home => Anchor.Core.AnchorHome.Dir;
 
     public static Config Load()

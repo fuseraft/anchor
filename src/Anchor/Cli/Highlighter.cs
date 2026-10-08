@@ -6,7 +6,7 @@ namespace Anchor.Cli;
 
 /// <summary>
 /// Colors the lines of a code block with VS Code's TextMate grammars (TextMateSharp, which Terminal.Gui already brings).
-/// Kinds of token map to the terminal's own colors, not a theme's, so code reads on light and dark backgrounds alike.
+/// Kinds of token map to anchor's theme, whose colors are the terminal's own, so code reads on light and dark backgrounds alike.
 /// </summary>
 public sealed class Highlighter
 {
@@ -21,27 +21,27 @@ public sealed class Highlighter
     };
 
     // The first rule a token's innermost scope starts with decides its color.
-    static readonly (string Scope, string Sgr)[] Colors =
+    static readonly (string Scope, Func<Theme, string> Sgr)[] Colors =
     [
-        ("comment", "2"),
-        ("string", "32"),
-        ("constant.character.escape", "33"),
-        ("constant", "33"),
-        ("keyword.operator", ""),
-        ("keyword", "35"),
-        ("storage", "35"),
-        ("entity.name.function", "94"),
-        ("support.function", "94"),
-        ("entity.name.tag", "94"),
-        ("entity.name.variable", ""),
-        ("entity.name", "36"),
-        ("support.type", "36"),
-        ("support.class", "36"),
-        ("entity.other.attribute-name", "36"),
-        ("markup.inserted", "32"),
-        ("markup.deleted", "31"),
-        ("meta.diff.header", "1"),
-        ("markup.heading", "1"),
+        ("comment", t => t.Comment),
+        ("string", t => t.String),
+        ("constant.character.escape", t => t.Constant),
+        ("constant", t => t.Constant),
+        ("keyword.operator", _ => ""),
+        ("keyword", t => t.Keyword),
+        ("storage", t => t.Keyword),
+        ("entity.name.function", t => t.Function),
+        ("support.function", t => t.Function),
+        ("entity.name.tag", t => t.Function),
+        ("entity.name.variable", _ => ""),
+        ("entity.name", t => t.Type),
+        ("support.type", t => t.Type),
+        ("support.class", t => t.Type),
+        ("entity.other.attribute-name", t => t.Type),
+        ("markup.inserted", t => t.Success),
+        ("markup.deleted", t => t.Error),
+        ("meta.diff.header", _ => "1"),
+        ("markup.heading", t => t.Heading),
     ];
 
     readonly IGrammar _grammar;
@@ -109,7 +109,7 @@ public sealed class Highlighter
         for (var i = scopes.Count - 1; i >= 0; i--)
             foreach (var (scope, sgr) in Colors)
                 if (scopes[i].StartsWith(scope, StringComparison.Ordinal))
-                    return sgr;
+                    return sgr(Theme.Current);
         return "";
     }
 }

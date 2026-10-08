@@ -187,7 +187,7 @@ public sealed class Picker
         foreach (var (text, highlighted) in lines)
         {
             var shown = text.Length > width ? text[..(width - 1)] + "…" : text;
-            Console.WriteLine(highlighted ? $"\x1b[36;1m{shown}\x1b[0m" : shown);
+            Console.WriteLine(highlighted ? $"\x1b[{Theme.Current.Accent};1m{shown}\x1b[0m" : shown);
         }
         return lines.Count;
     }

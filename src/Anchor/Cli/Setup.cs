@@ -426,6 +426,6 @@ static class SetupNotes
     public static void Write(Renderer renderer, Action<string> line, string text, bool? ok)
     {
         foreach (var (mark, part) in ISetupIO.NoteLines(text, ok))
-            line(ok switch { true => renderer.Green(mark) + part, false => renderer.Red(mark) + part, null => mark + renderer.Dim(part) });
+            line(ok switch { true => renderer.Success(mark) + part, false => renderer.Error(mark) + part, null => mark + renderer.Muted(part) });
     }
 }

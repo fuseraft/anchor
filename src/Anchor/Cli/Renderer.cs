@@ -49,34 +49,34 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
                 Line("  " + Tool(t.Name, t.Summary));
                 break;
             case ToolFinished { Ok: false } t:
-                Line(Red($"    {FirstLine(t.Result)}"));
+                Line(Error($"    {FirstLine(t.Result)}"));
                 break;
             case FileChanged f:
-                Line(Dim($"  ✎ {f.Path} ") + Green($"+{f.Added}") + " " + Red($"-{f.Removed}"));
+                Line(Muted($"  ✎ {f.Path} ") + Success($"+{f.Added}") + " " + Error($"-{f.Removed}"));
                 break;
             case Compacted c:
-                Line(Dim($"  ⟳ compacted older turns: ~{c.Before:N0} → ~{c.After:N0} tokens"));
+                Line(Muted($"  ⟳ compacted older turns: ~{c.Before:N0} → ~{c.After:N0} tokens"));
                 break;
             case Trimmed t:
-                Line(Dim($"  ⟳ trimmed {t.Items} large old tool input{(t.Items == 1 ? "" : "s")}/output{(t.Items == 1 ? "" : "s")}: ~{t.Before:N0} → ~{t.After:N0} tokens"));
+                Line(Muted($"  ⟳ trimmed {t.Items} large old tool input{(t.Items == 1 ? "" : "s")}/output{(t.Items == 1 ? "" : "s")}: ~{t.Before:N0} → ~{t.After:N0} tokens"));
                 break;
             case RoundsDropped d:
-                Line(Dim($"  ⟳ dropped the {d.Rounds} oldest step{(d.Rounds == 1 ? "" : "s")} of this turn: ~{d.Before:N0} → ~{d.After:N0} tokens"));
+                Line(Muted($"  ⟳ dropped the {d.Rounds} oldest step{(d.Rounds == 1 ? "" : "s")} of this turn: ~{d.Before:N0} → ~{d.After:N0} tokens"));
                 break;
             case Notice n:
-                Line(Yellow($"  {n.Message}"));
+                Line(Warning($"  {n.Message}"));
                 break;
             case CheckRan { Passed: true } c:
-                Line(Green($"  ✓ check passed: {c.Command}"));
+                Line(Success($"  ✓ check passed: {c.Command}"));
                 break;
             case CheckRan c:
-                Line(Yellow($"  ✗ check failed (round {c.Round} of {Until.MaxRounds}): {c.Command}"));
+                Line(Warning($"  ✗ check failed (round {c.Round} of {Until.MaxRounds}): {c.Command}"));
                 break;
             case LoopWarning w:
-                Line(Yellow($"  ! {w.Message}"));
+                Line(Warning($"  ! {w.Message}"));
                 break;
             case UsageReport u when u.Input + u.Output > 0:
-                Line(Dim($"  in {u.Input:N0} · out {u.Output:N0}" + (u.CachedInput > 0 ? $" · cached {u.CachedInput:N0}" : "")));
+                Line(Muted($"  in {u.Input:N0} · out {u.Output:N0}" + (u.CachedInput > 0 ? $" · cached {u.CachedInput:N0}" : "")));
                 break;
             case SubAgentEvent s:
                 Nested(s.Agent, s.Inner);
@@ -86,13 +86,13 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
                 _midLine = false;
                 break;
             case TurnEnded { Reason: TurnEnd.Cancelled }:
-                Line(Yellow("  (cancelled)"));
+                Line(Warning("  (cancelled)"));
                 break;
             case TurnEnded { Reason: TurnEnd.LoopStopped or TurnEnd.RoundLimit } t:
-                Line(Yellow($"  stopped: {t.Detail}"));
+                Line(Warning($"  stopped: {t.Detail}"));
                 break;
             case TurnEnded { Reason: TurnEnd.Error } t:
-                Line(Red($"  error: {t.Detail}"));
+                Line(Error($"  error: {t.Detail}"));
                 break;
         }
         output.Flush();
@@ -101,26 +101,26 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     // A sub-agent's activity, indented under the agent call; its streamed text stays out of the way.
     void Nested(string agent, AgentEvent e)
     {
-        var tag = "    " + Magenta($"[{agent}]");
+        var tag = "    " + AgentName($"[{agent}]");
         switch (e)
         {
             case ToolStarted t:
                 Line($"{tag} {Tool(t.Name, t.Summary)}");
                 break;
             case ToolFinished { Ok: false } t:
-                Line(Red($"{tag}   {FirstLine(t.Result)}"));
+                Line(Error($"{tag}   {FirstLine(t.Result)}"));
                 break;
             case FileChanged f:
-                Line(tag + Dim($" ✎ {f.Path} ") + Green($"+{f.Added}") + " " + Red($"-{f.Removed}"));
+                Line(tag + Muted($" ✎ {f.Path} ") + Success($"+{f.Added}") + " " + Error($"-{f.Removed}"));
                 break;
             case UsageReport u when u.Input + u.Output > 0:
-                Line(tag + Dim($" in {u.Input:N0} · out {u.Output:N0}"));
+                Line(tag + Muted($" in {u.Input:N0} · out {u.Output:N0}"));
                 break;
             case TurnEnded { Reason: not TurnEnd.Completed } t:
-                Line(Yellow($"{tag} stopped: {t.Detail ?? t.Reason.ToString()}"));
+                Line(Warning($"{tag} stopped: {t.Detail ?? t.Reason.ToString()}"));
                 break;
             case LoopWarning or Notice or Compacted or Trimmed or RoundsDropped:
-                Line(tag + Dim($" {e switch { LoopWarning w => w.Message, Notice n => n.Message, _ => "reduced its context" }}"));
+                Line(tag + Muted($" {e switch { LoopWarning w => w.Message, Notice n => n.Message, _ => "reduced its context" }}"));
                 break;
         }
     }
@@ -160,7 +160,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     {
         var starts = Enumerable.Range(0, history.Count).Where(i => Messages.IsUserInput(history[i])).ToList();
         if (history.Count > 0 && Messages.Kind(history[0]) == MessageKind.Summary && (starts.Count <= turns))
-            Line(Dim("  (earlier conversation summarized)"));
+            Line(Muted("  (earlier conversation summarized)"));
         foreach (var (start, n) in starts.Select((s, n) => (s, n)).TakeLast(turns))
         {
             var end = n + 1 < starts.Count ? starts[n + 1] : history.Count;
@@ -170,7 +170,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
             Line("");
             Line(Prompt + FirstLine(turn[0].Text));
             if (calls > 0)
-                Line(Dim($"  ↳ {calls} tool call{(calls == 1 ? "" : "s")}"));
+                Line(Muted($"  ↳ {calls} tool call{(calls == 1 ? "" : "s")}"));
             if (answer.Length > 0)
                 Line(_styled is null ? answer.Trim() : Markdown.Render(answer.Trim(), Width()));
         }
@@ -180,46 +180,45 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     {
         var lines = diff.TrimEnd('\n').Split('\n');
         foreach (var line in lines.Take(maxLines))
-            Line("    " + (line.StartsWith('+') ? Green(line) : line.StartsWith('-') ? Red(line) : line.StartsWith("@@") ? Dim(line) : line));
+            Line("    " + (line.StartsWith('+') ? Success(line) : line.StartsWith('-') ? Error(line) : line.StartsWith("@@") ? Muted(line) : line));
         if (lines.Length > maxLines)
-            Line(Dim($"    ... {lines.Length - maxLines} more lines"));
+            Line(Muted($"    ... {lines.Length - maxLines} more lines"));
     }
 
     /// <summary>The caret before what the user sends, in the accent color.</summary>
     public string Prompt => Bold(Accent("›")) + " ";
 
     /// <summary>anchor's own color, for the caret, the title and the spinner.</summary>
-    public string Accent(string s) => Paint("36", s);
+    public string Accent(string s) => Paint(Theme.Current.Accent, s);
 
     /// <summary>The question an approval asks, with the keys that answer it picked out.</summary>
     public string AllowPrompt(string? alwaysLabel) =>
-        Yellow("Allow?") + " " + Key('y', "es") + " " + Key('n', "o") + (alwaysLabel is null ? "" : " " + Key('a', "lways") + Dim(": " + alwaysLabel));
+        Warning("Allow?") + " " + Key('y', "es") + " " + Key('n', "o") + (alwaysLabel is null ? "" : " " + Key('a', "lways") + Muted(": " + alwaysLabel));
 
     /// <summary>How an approval was answered, for the transcript.</summary>
     public string Answered(Answer answer) =>
-        Dim("  Allow? ") + (answer == Answer.No ? Red("no") : Green(answer.ToString().ToLowerInvariant()));
+        Muted("  Allow? ") + (answer == Answer.No ? Error("no") : Success(answer.ToString().ToLowerInvariant()));
 
     string Key(char key, string rest) => Bold($"[{key}]") + rest;
 
     // A tool call: its name stands out, what it was given doesn't.
-    string Tool(string name, string summary) => Blue("↳ " + name) + (summary.Length == 0 ? "" : Dim(" " + summary));
+    string Tool(string name, string summary) => ToolName("↳ " + name) + (summary.Length == 0 ? "" : Muted(" " + summary));
 
-    public string Green(string s) => Paint("32", s);
+    string ToolName(string s) => Paint(Theme.Current.Tool, s);
 
-    // Bright blue: plain blue (34) is too dark to read on most dark terminal themes.
-    public string Blue(string s) => Paint("94", s);
+    string AgentName(string s) => Paint(Theme.Current.Agent, s);
 
-    public string Magenta(string s) => Paint("35", s);
+    public string Success(string s) => Paint(Theme.Current.Success, s);
 
-    public string Dim(string s) => Paint("2", s);
+    public string Warning(string s) => Paint(Theme.Current.Warning, s);
 
-    public string Red(string s) => Paint("31", s);
+    public string Error(string s) => Paint(Theme.Current.Error, s);
 
-    public string Yellow(string s) => Paint("33", s);
+    public string Muted(string s) => Paint(Theme.Current.Muted, s);
 
     public string Bold(string s) => Paint("1", s);
 
-    string Paint(string code, string s) => color ? $"\e[{code}m{s}\e[0m" : s;
+    string Paint(string code, string s) => color && code.Length > 0 ? $"\e[{code}m{s}\e[0m" : s;
 
     /// <summary>A path as people write it: ~ for the home directory, and the start cut to "…/" when it's longer than
     /// <paramref name="max"/>, keeping as many trailing folders as fit.</summary>
