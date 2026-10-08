@@ -272,3 +272,5 @@ plugin registry. Any of these can be added later as a tool behind the gate.
    v0.4.0 release.
 10. Replies styled as Markdown while they stream in the TUI, with syntax-highlighted code blocks
     and tables that fit the screen; then the v0.5.0 release.
+11. Color themes with per-role overrides, picked in `anchor setup`, a `/model` picker that saves
+    its choice, and `/clear` emptying the full-screen transcript; then the v0.6.0 release.
