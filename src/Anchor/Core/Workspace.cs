@@ -84,6 +84,9 @@ public sealed class Workspace
                 RedirectStandardError = true,
             };
             using var p = Process.Start(psi)!;
+            // Drained, though unused: a git that warns enough to fill the pipe would otherwise wait on it, and so would we.
+            p.ErrorDataReceived += (_, _) => { };
+            p.BeginErrorReadLine();
             var output = p.StandardOutput.ReadToEnd();
             p.WaitForExit();
             if (p.ExitCode != 0)
