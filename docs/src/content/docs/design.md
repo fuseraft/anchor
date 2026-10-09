@@ -30,7 +30,8 @@ policy (allow / ask / deny)  →  approval (if ask)  →  effect
 ```
 
 A test fails if any tool touches files or starts a process directly. Paths are checked where they
-really point, with symlinks resolved.
+really point, with symlinks resolved. A write shows its diff first, and a file that changes while
+you look at the diff is never overwritten.
 
 ### 3. Safe by default
 

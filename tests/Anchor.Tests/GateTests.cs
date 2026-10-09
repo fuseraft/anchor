@@ -29,8 +29,10 @@ public sealed class GateTests : IDisposable
     {
         File.WriteAllText(At("a.txt"), "one\ntwo\n");
         var approver = new FakeApprover(Answer.Yes);
+        var gate = NewGate(approver);
+        gate.MarkRead(At("a.txt"));
 
-        await NewGate(approver).WriteAsync(At("a.txt"), "one\ntwo\n", "one\nTWO\n", default);
+        await gate.WriteAsync(new FileEdit(At("a.txt"), "one\ntwo\n", "one\nTWO\n"), default);
 
         Assert.Equal("one\nTWO\n", File.ReadAllText(At("a.txt")));
         var request = Assert.Single(approver.Requests);
@@ -44,8 +46,10 @@ public sealed class GateTests : IDisposable
     public async Task Write_DeclinedLeavesFileUntouched()
     {
         File.WriteAllText(At("a.txt"), "keep");
+        var gate = NewGate(new FakeApprover(Answer.No));
+        gate.MarkRead(At("a.txt"));
 
-        var e = await Assert.ThrowsAsync<ToolException>(() => NewGate(new FakeApprover(Answer.No)).WriteAsync(At("a.txt"), "keep", "changed", default));
+        var e = await Assert.ThrowsAsync<ToolException>(() => gate.WriteAsync(new FileEdit(At("a.txt"), "keep", "changed"), default));
 
         Assert.Contains("declined", e.Message);
         Assert.Equal("keep", File.ReadAllText(At("a.txt")));
@@ -75,9 +79,9 @@ public sealed class GateTests : IDisposable
         var approver = new FakeApprover(Answer.Always);
         var gate = NewGate(approver);
 
-        await gate.WriteAsync(At("a.txt"), null, "1", default);
-        await gate.WriteAsync(At("b.txt"), null, "2", default);
-        await gate.WriteAsync(Path.Combine(_outside, "c.txt"), null, "3", default);
+        await gate.WriteAsync(new FileEdit(At("a.txt"), null, "1"), default);
+        await gate.WriteAsync(new FileEdit(At("b.txt"), null, "2"), default);
+        await gate.WriteAsync(new FileEdit(Path.Combine(_outside, "c.txt"), null, "3"), default);
 
         Assert.Equal(2, approver.Requests.Count);
         Assert.Null(approver.Requests[1].AlwaysLabel);
@@ -89,7 +93,7 @@ public sealed class GateTests : IDisposable
         var approver = new FakeApprover(Answer.Yes);
         var gate = NewGate(approver, yolo: true);
 
-        await gate.WriteAsync(At("a.txt"), null, "x", default);
+        await gate.WriteAsync(new FileEdit(At("a.txt"), null, "x"), default);
         Assert.Throws<ToolException>(() => gate.WritePath(".env"));
         await Assert.ThrowsAsync<ToolException>(() => gate.RunAsync("cat .env", TimeSpan.FromSeconds(5), default));
 
@@ -261,7 +265,7 @@ public sealed class GateTests : IDisposable
     {
         var approver = new FakeApprover(Answer.Always);
         var gate = NewGate(approver, saved: Store());
-        await gate.WriteAsync(At("a.txt"), null, "1", default);
+        await gate.WriteAsync(new FileEdit(At("a.txt"), null, "1"), default);
         await gate.RunAsync("python3 -c 'print(1)'", TimeSpan.FromSeconds(10), default);
         await gate.RunAsync("python3 -c 'print(2)'", TimeSpan.FromSeconds(10), default);
 
@@ -271,7 +275,7 @@ public sealed class GateTests : IDisposable
 
         var next = new FakeApprover(Answer.No);
         gate = NewGate(next, saved: Store());
-        await Assert.ThrowsAsync<ToolException>(() => gate.WriteAsync(At("b.txt"), null, "2", default));
+        await Assert.ThrowsAsync<ToolException>(() => gate.WriteAsync(new FileEdit(At("b.txt"), null, "2"), default));
         await Assert.ThrowsAsync<ToolException>(() => gate.RunAsync("python3 -c 'print(3)'", TimeSpan.FromSeconds(10), default));
         Assert.Equal(2, next.Requests.Count);
     }

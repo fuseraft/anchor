@@ -108,6 +108,52 @@ public sealed class EditToolsTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteFile_ReplacesAFileOnlyOnceItHasBeenRead()
+    {
+        var workspace = new Workspace(_root);
+        var gate = new Gate(workspace, new Policy(workspace), _approver, _ => { });
+        var tools = new EditTools(gate);
+        File.WriteAllText(At("a.txt"), "old\n");
+
+        var e = await Assert.ThrowsAsync<ToolException>(() => tools.WriteFile("a.txt", "new\n"));
+        Assert.Contains("Read it first", e.Message);
+
+        await new FileTools(gate).ReadFile("a.txt");
+        await tools.WriteFile("a.txt", "new\n");
+        Assert.Equal("new\n", File.ReadAllText(At("a.txt")));
+    }
+
+    [Fact]
+    public async Task EditFile_KeepsWhatTheUserChangedWhileApproving()
+    {
+        File.WriteAllText(At("a.txt"), "a\nb\nc\n");
+        var tools = ToolsWhere(_ => File.WriteAllText(At("a.txt"), "user\na\nb\nc\n"));
+
+        var result = await tools.EditFile("a.txt", "b", "B");
+
+        Assert.Equal("user\na\nB\nc\n", File.ReadAllText(At("a.txt")));
+        Assert.Contains("(+1 -1)", result);
+    }
+
+    [Fact]
+    public async Task EditFile_RefusesWhenTheUsersChangeMakesTheMatchAmbiguous()
+    {
+        File.WriteAllText(At("a.txt"), "a\nb\n");
+        var tools = ToolsWhere(_ => File.WriteAllText(At("a.txt"), "a\nb\nb\n"));
+
+        var e = await Assert.ThrowsAsync<ToolException>(() => tools.EditFile("a.txt", "b\n", "B\n"));
+
+        Assert.Contains("nothing was written", e.Message);
+        Assert.Equal("a\nb\nb\n", File.ReadAllText(At("a.txt")));
+    }
+
+    EditTools ToolsWhere(Action<ApprovalRequest> meanwhile)
+    {
+        var workspace = new Workspace(_root);
+        return new EditTools(new Gate(workspace, new Policy(workspace), new FakeApprover(Answer.Yes, meanwhile), _ => { }));
+    }
+
+    [Fact]
     public async Task EditFile_DeniesSecrets()
     {
         File.WriteAllText(At(".env"), "KEY=value");

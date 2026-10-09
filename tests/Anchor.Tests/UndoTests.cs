@@ -17,8 +17,11 @@ public sealed class UndoTests : IDisposable
 
     string At(string rel) => Path.Combine(_root, rel);
 
-    Task Write(string rel, string content) =>
-        _gate.WriteAsync(At(rel), File.Exists(At(rel)) ? File.ReadAllText(At(rel)) : null, content, default);
+    Task Write(string rel, string content)
+    {
+        _gate.MarkRead(At(rel));
+        return _gate.WriteAsync(new FileEdit(At(rel), File.Exists(At(rel)) ? File.ReadAllText(At(rel)) : null, content), default);
+    }
 
     [Fact]
     public async Task RestoresEditsAndRemovesCreatedFiles()

@@ -24,7 +24,9 @@ A command is read-only only if every part of it is. `grep foo *.py | sort` quali
 
 ## What asks first
 
-- Every file write. You see the diff before anything touches disk.
+- Every file write. You see the diff before anything touches disk. If you edit the file while the
+  diff is waiting for your answer, anchor doesn't overwrite your edit: a replacement is made in
+  your version, and any other change isn't written.
 - Every other shell command.
 - Reading anything outside the working directory.
 - MCP tools that aren't marked read-only.

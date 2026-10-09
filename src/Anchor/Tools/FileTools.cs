@@ -56,6 +56,7 @@ public sealed class FileTools(Gate gate)
               .Append(line.Length > MaxLineChars ? line[..MaxLineChars] + " [line truncated]" : line).Append('\n');
         }
 
+        gate.MarkRead(full);
         if (sb.Length == 0)
             return n == 0 ? "(empty file)" : $"(file has {n} lines; offset {offset} is past the end)";
         return sb.ToString();

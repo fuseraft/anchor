@@ -319,6 +319,7 @@ public sealed class Repl
                 return false;
             case "/clear":
                 agent.History.Clear();
+                gate.ForgetReads();
                 screen.Clear();
                 renderer.Line(renderer.Muted("History cleared."));
                 break;

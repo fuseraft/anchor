@@ -24,11 +24,11 @@ public sealed partial class EditTools(Gate gate)
         if (Directory.Exists(full))
             throw new ToolException($"'{path}' is a directory.");
 
-        var before = File.Exists(full) ? await File.ReadAllTextAsync(full, ct) : null;
+        var before = TextFile.Load(full)?.Text;
         if (before is not null && Elided().Match(content) is { Success: true } m && !before.Contains(m.Value.Trim()))
             throw new ToolException($"The content looks elided (\"{m.Value.Trim()}\"). Write the complete file, or use edit_file to change part of it.");
 
-        var diff = await gate.WriteAsync(full, before, content, ct);
+        var diff = await gate.WriteAsync(new FileEdit(full, before, content), ct);
         var rel = gate.Workspace.Relative(full);
         return before is null
             ? $"Created {rel} ({content.Split('\n').Length} lines)."
@@ -50,30 +50,36 @@ public sealed partial class EditTools(Gate gate)
 
         var full = await gate.ReadPathAsync(path, ct);
         gate.WritePath(path);
-        if (!File.Exists(full))
+        if (TextFile.Load(full) is not { Text: var before })
             throw new ToolException($"'{path}' does not exist. Use write_file to create it.");
 
-        var before = await File.ReadAllTextAsync(full, ct);
-        if (before.Contains("\r\n"))
-        {
-            old_string = old_string.ReplaceLineEndings("\r\n");
-            new_string = new_string.ReplaceLineEndings("\r\n");
-        }
+        if (Replace(before, old_string, new_string, replace_all, out var starts) is not { } after)
+            throw new ToolException(starts.Count == 0
+                ? NotFound(before, old_string)
+                : $"old_string matches {starts.Count} places (lines {string.Join(", ", starts.Take(10).Select(s => LineOf(before, s)))}{(starts.Count > 10 ? ", ..." : "")}). " +
+                  "Include more surrounding lines to make it unique, or set replace_all.");
 
-        var starts = Occurrences(before, old_string);
-        if (starts.Count == 0)
-            throw new ToolException(NotFound(before, old_string));
-        if (starts.Count > 1 && !replace_all)
-            throw new ToolException(
-                $"old_string matches {starts.Count} places (lines {string.Join(", ", starts.Take(10).Select(s => LineOf(before, s)))}{(starts.Count > 10 ? ", ..." : "")}). " +
-                "Include more surrounding lines to make it unique, or set replace_all.");
-
-        var after = before.Replace(old_string, new_string, StringComparison.Ordinal);
-        var diff = await gate.WriteAsync(full, before, after, ct);
+        // If the file changes while the user looks at the diff, the same replacement is made in the new content, as long as
+        // old_string still appears as many times.
+        var diff = await gate.WriteAsync(new FileEdit(full, before, after,
+            current => Replace(current, old_string, new_string, replace_all, out var found) is { } redone && found.Count == starts.Count ? redone : null), ct);
         var rel = gate.Workspace.Relative(full);
         return starts.Count > 1
             ? $"Replaced {starts.Count} occurrences in {rel} (+{diff.Added} -{diff.Removed})."
             : $"Edited {rel} at line {LineOf(before, starts[0])} (+{diff.Added} -{diff.Removed}).";
+    }
+
+    // text with old replaced by new, both given text's line endings; starts is where old was found. Null when old isn't
+    // found, or is found more than once without replaceAll.
+    static string? Replace(string text, string old, string @new, bool replaceAll, out List<int> starts)
+    {
+        if (text.Contains("\r\n"))
+        {
+            old = old.ReplaceLineEndings("\r\n");
+            @new = @new.ReplaceLineEndings("\r\n");
+        }
+        starts = Occurrences(text, old);
+        return starts.Count == 1 || (starts.Count > 1 && replaceAll) ? text.Replace(old, @new, StringComparison.Ordinal) : null;
     }
 
     static List<int> Occurrences(string text, string value)

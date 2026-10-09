@@ -70,6 +70,10 @@ When replacing an existing file, content that looks elided, such as `// ... rest
 rejected (unless the file already contains that line), so a file is never overwritten with a
 placeholder.
 
+Replacing an existing file also requires that the model has read its current version, with
+`read_file` or because you mentioned it with `@`. If the file has changed since, the model is told
+to read it again. If the file changes while you are looking at the diff, nothing is written.
+
 ### edit_file
 
 | Parameter     | Default | Description                                                      |
@@ -78,6 +82,13 @@ placeholder.
 | `old_string`  |         | The exact text to replace, including indentation.               |
 | `new_string`  |         | The replacement.                                                 |
 | `replace_all` | `false` | Replace every occurrence. Otherwise `old_string` must be unique. |
+
+If the file changes while you are looking at the diff, the same replacement is made in its new
+content, so your change is kept. That only happens if `old_string` still occurs as many times as
+before. Otherwise nothing is written, and the model is told to read the file again.
+
+Both file tools write through a temporary file that replaces the original, so a failed write
+never leaves half a file. A file keeps its encoding, byte-order mark and permissions.
 
 ## shell
 
