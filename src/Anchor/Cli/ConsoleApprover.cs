@@ -11,7 +11,7 @@ public sealed class ConsoleApprover(Renderer renderer) : IApprover
         if (!string.IsNullOrEmpty(request.Detail))
             renderer.Diff(request.Detail);
 
-        Console.Write($"  {renderer.AllowPrompt(request.AlwaysLabel)} › ");
+        renderer.Write($"  {renderer.AllowPrompt(request.AlwaysLabel)} › ");
 
         var answer = char.ToLowerInvariant(await ReadKeyAsync(ct)) switch
         {
@@ -19,7 +19,7 @@ public sealed class ConsoleApprover(Renderer renderer) : IApprover
             'a' when request.AlwaysLabel is not null => Answer.Always,
             _ => Answer.No,
         };
-        Console.WriteLine(answer == Answer.No ? renderer.Error("no") : renderer.Success(answer.ToString().ToLowerInvariant()));
+        renderer.Write((answer == Answer.No ? renderer.Error("no") : renderer.Success(answer.ToString().ToLowerInvariant())) + "\n");
         return answer;
     }
 
@@ -32,7 +32,7 @@ public sealed class ConsoleApprover(Renderer renderer) : IApprover
         var answer = Picker.Choose(null, question.AllowOther ? [.. question.Options, other] : question.Options);
         if (answer == other)
         {
-            Console.Write("  Your answer: ");
+            renderer.Write("  Your answer: ");
             answer = Console.ReadLine()?.Trim() is { Length: > 0 } typed ? typed : null;
         }
         return Task.FromResult(answer);

@@ -163,6 +163,8 @@ public sealed class JsonMode(JsonEvents json, JsonApprover approver, TextReader 
 /// <summary>Writes agent events as JSON lines, one object per event.</summary>
 public sealed class JsonEvents(TextWriter output)
 {
+    readonly Lock _lock = new();
+
     static readonly JsonSerializerOptions Options = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     public void Emit(AgentEvent e) => Write(Map(e));
@@ -171,7 +173,7 @@ public sealed class JsonEvents(TextWriter output)
 
     public void Write(JsonObject value)
     {
-        lock (output)
+        lock (_lock)
         {
             output.WriteLine(value.ToJsonString(Options));
             output.Flush();

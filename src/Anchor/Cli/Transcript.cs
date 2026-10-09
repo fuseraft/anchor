@@ -110,10 +110,9 @@ public sealed class Transcript : TextWriter
             _live = null;
     }
 
-    /// <summary>Takes every line out, for /clear. The Renderer's lock is held, so no output is cut in half.</summary>
+    /// <summary>Takes every line out, for /clear. Call it through <see cref="Renderer.Clear"/>, so no output is cut in half.</summary>
     public void Clear()
     {
-        lock (this)
         lock (_lines)
         {
             _lines.Clear();
@@ -142,20 +141,17 @@ public sealed class Transcript : TextWriter
 
     /// <summary>
     /// Runs <paramref name="write"/>, which must write whole lines, and returns an action that takes those lines back
-    /// out. The Renderer's lock is held throughout, so no other output lands among them.
+    /// out. Call it through <see cref="Renderer.Section"/>, whose lock keeps other output from landing among them.
     /// </summary>
     public Action Section(Action write)
     {
+        int from;
+        lock (_lines)
+            from = _live ?? _lines.Count - 1;
+        write();
         HashSet<List<Span>> written;
-        lock (this)
-        {
-            int from;
-            lock (_lines)
-                from = _live ?? _lines.Count - 1;
-            write();
-            lock (_lines)
-                written = new(_lines[from..(_live ?? _lines.Count - 1)], ReferenceEqualityComparer.Instance);
-        }
+        lock (_lines)
+            written = new(_lines[from..(_live ?? _lines.Count - 1)], ReferenceEqualityComparer.Instance);
         return () =>
         {
             lock (_lines)

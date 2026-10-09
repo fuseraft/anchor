@@ -124,7 +124,7 @@ public sealed class Repl
     async Task TurnAsync(string line)
     {
         if (!screen.FullScreen)
-            Console.WriteLine();
+            renderer.Write("\n");
         gate.BeginTurn();
         Status(working: true);
         using var reading = new CancellationTokenSource();

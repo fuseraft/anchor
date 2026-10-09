@@ -11,7 +11,10 @@ public sealed record ToolOutput(string Title, string Text, bool Diff);
 /// </summary>
 public sealed class Renderer(TextWriter output, bool color, bool streamText = true)
 {
+    readonly Transcript? _transcript = output as Transcript; // the TUI's
     readonly Transcript? _styled = color ? output as Transcript : null; // the TUI's, where Markdown is styled
+    // Everything the renderer writes goes out under this, so lines from different threads never interleave.
+    readonly Lock _lock = new();
     bool _midLine;
     Markdown? _message; // the model's message being streamed into it, while it's being redrawn
     readonly bool _keeps = output is Transcript; // the TUI, which has a viewer for whole outputs
@@ -26,8 +29,43 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
 
     public void Render(AgentEvent e)
     {
-        lock (output)
+        lock (_lock)
             Draw(e);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="write"/>, which must write whole lines, and returns an action that takes those lines back out of
+    /// the TUI's transcript; on a plain terminal it can't, and does nothing. Nothing else is written in between.
+    /// </summary>
+    public Action Section(Action write)
+    {
+        lock (_lock)
+        {
+            if (_transcript is not null)
+                return _transcript.Section(write);
+            write();
+            return () => { };
+        }
+    }
+
+    /// <summary>
+    /// Writes <paramref name="text"/> as it is, such as a prompt answered on the same line. Text for the terminal goes
+    /// through the renderer, so it never lands in the middle of what another thread is drawing.
+    /// </summary>
+    public void Write(string text)
+    {
+        lock (_lock)
+        {
+            output.Write(text);
+            output.Flush();
+        }
+    }
+
+    /// <summary>Empties the TUI's transcript, for /clear, between whole writes.</summary>
+    public void Clear()
+    {
+        lock (_lock)
+            _transcript?.Clear();
     }
 
     void Draw(AgentEvent e)
@@ -191,7 +229,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
 
     public void Line(string text)
     {
-        lock (output)
+        lock (_lock)
         {
             if (_styled is not null && _message is not null)
             {

@@ -138,4 +138,30 @@ public class RendererTests
 
         Assert.Equal("    ... 2 more lines (Ctrl+O shows them all)", Text(t.Lines()[3]));
     }
+
+    [Fact]
+    public void Section_TakesItsLinesBackOutOfTheTranscript_EvenWithoutColor()
+    {
+        var t = new Transcript();
+        var renderer = new Renderer(t, color: false);
+        renderer.Line("before");
+
+        var hide = renderer.Section(() => renderer.Diff("+added"));
+        Assert.Contains(t.Lines(), l => Text(l) == "    +added");
+
+        hide();
+        Assert.DoesNotContain(t.Lines(), l => Text(l) == "    +added");
+        Assert.Contains(t.Lines(), l => Text(l) == "before");
+    }
+
+    [Fact]
+    public void Section_OnAPlainTerminal_WritesAndCannotTakeBack()
+    {
+        var output = new StringWriter();
+        var renderer = new Renderer(output, color: false);
+
+        renderer.Section(() => renderer.Line("kept"))();
+
+        Assert.Equal("kept" + Environment.NewLine, output.ToString());
+    }
 }

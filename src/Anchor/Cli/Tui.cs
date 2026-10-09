@@ -210,7 +210,7 @@ public sealed class Tui : IReplScreen, IApprover
 
     public void Clear()
     {
-        _transcript.Clear();
+        Renderer.Clear();
         Ui(_view.Follow);
     }
 
@@ -257,7 +257,7 @@ public sealed class Tui : IReplScreen, IApprover
         Ui(Ring);
         if (!string.IsNullOrEmpty(request.Detail))
             Renderer.Keep(new ToolOutput(request.Title, request.Detail, Diff: true));
-        var hideDiff = string.IsNullOrEmpty(request.Detail) ? null : _transcript.Section(() => Renderer.Diff(request.Detail));
+        var hideDiff = string.IsNullOrEmpty(request.Detail) ? null : Renderer.Section(() => Renderer.Diff(request.Detail));
         var key = await KeyAsync(Renderer.AllowPrompt(request.AlwaysLabel), request.AlwaysLabel is null ? "yn" : "yna", ct);
         var answer = char.ToLowerInvariant(key) switch
         {
