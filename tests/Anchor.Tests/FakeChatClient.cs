@@ -27,7 +27,8 @@ sealed class FakeChatClient : IChatClient
 
     public FakeChatClient Enqueue(Func<CancellationToken, IAsyncEnumerable<ChatResponseUpdate>> response)
     {
-        _script.Enqueue(response);
+        lock (_script)
+            _script.Enqueue(response);
         return this;
     }
 
@@ -36,11 +37,15 @@ sealed class FakeChatClient : IChatClient
     public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
-        Requests.Add([.. messages]);
-        Tools.Add([.. options?.Tools?.Select(t => t.Name) ?? []]);
-        if (_script.Count == 0)
-            throw new InvalidOperationException("FakeChatClient script is exhausted.");
-        return _script.Dequeue()(cancellationToken);
+        // Sub-agents call it from several threads at once.
+        lock (_script)
+        {
+            Requests.Add([.. messages]);
+            Tools.Add([.. options?.Tools?.Select(t => t.Name) ?? []]);
+            if (_script.Count == 0)
+                throw new InvalidOperationException("FakeChatClient script is exhausted.");
+            return _script.Dequeue()(cancellationToken);
+        }
     }
 
     public Task<ChatResponse> GetResponseAsync(
