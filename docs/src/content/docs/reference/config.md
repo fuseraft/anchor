@@ -26,7 +26,9 @@ optional. Keys are case-insensitive, and comments and trailing commas are allowe
   },
   // Colors.
   "theme": "default",
-  "colors": { "accent": "bold magenta" }
+  "colors": { "accent": "bold magenta" },
+  // Ring the terminal bell when anchor needs you.
+  "bell": true
 }
 ```
 
@@ -147,3 +149,10 @@ backgrounds alike; `light` is for palettes where yellow is hard to read on white
 | `comment`, `string`, `constant`, `keyword`, `function`, `type` | Syntax highlighting in code blocks. |
 
 An unknown theme, role or color word is reported when anchor starts, and the rest still applies.
+
+## bell
+
+The full-screen REPL rings the terminal bell when a turn ends or an approval or question is
+waiting, if you haven't pressed a key or scrolled for 10 seconds. If you're watching, it stays
+quiet. How a bell shows up is up to the terminal: a sound, a flash, or a mark on the tab or
+window. `"bell": false` turns it off.

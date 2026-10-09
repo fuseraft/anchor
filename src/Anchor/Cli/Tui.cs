@@ -26,6 +26,9 @@ public sealed class Tui : IReplScreen, IApprover
     // How long typing has to stop before a prompt takes keys, so a "y" typed into the draft never answers an approval.
     static readonly TimeSpan Quiet = TimeSpan.FromMilliseconds(400);
 
+    // How long without a key before anchor guesses the user has looked away, and rings when it needs them.
+    internal static readonly TimeSpan Away = TimeSpan.FromSeconds(10);
+
     internal static readonly string[] Commands =
         ["/help", "/model", "/setup", "/theme", "/context", "/agents", "/skills", "/mcp", "/until", "/approvals", "/compact", "/copy", "/undo", "/sessions", "/clear", "/exit"];
 
@@ -46,6 +49,8 @@ public sealed class Tui : IReplScreen, IApprover
     readonly PanelView _panel;
     readonly StatusView _status;
     DateTime _lastInterrupt;
+    DateTime _lastKey = DateTime.UtcNow;
+    bool _bell = true;
     Theme _theme = Theme.Current; // what the views were last drawn in
     int _redrawQueued;
 
@@ -82,6 +87,7 @@ public sealed class Tui : IReplScreen, IApprover
         _top.Add(_view, _outputView, _suggest, _rule, _caret, _prompt, _panel, _status);
 
         _view.Scrolled = () => _rule.Below = _view.Below;
+        _view.Wheeled = _outputView.Wheeled = () => _lastKey = DateTime.UtcNow;
         _prompt.Sent += text =>
         {
             _prompt.Remember(text);
@@ -160,6 +166,7 @@ public sealed class Tui : IReplScreen, IApprover
         var h = await Startup.BuildAsync(options, new Output(Renderer.Render, this, m => Renderer.Line(Renderer.Warning(m)), Interactive: true));
         await using var _ = h.Mcp;
         _completion.Files = new FileIndex(h.Gate.Workspace).Warm();
+        _bell = Config.Load().Bell ?? true;
         foreach (var message in h.Agent.History.Where(Messages.IsUserInput))
             Ui(() => _prompt.Remember(message.Text));
         return await new Repl(h.Agent, h.Gate, h.Session, Renderer, this, ReplOptions.From(h, options)).RunAsync();
@@ -176,8 +183,22 @@ public sealed class Tui : IReplScreen, IApprover
             _caret.SetScheme(new Scheme(Styled.Accent));
             _top.SetNeedsDraw();
         }
+        if (_status.Working && !working)
+            Ring();
         _status.Set(text, working);
     });
+
+    /// <summary>Whether to ring: the user wants the bell, and hasn't pressed a key for <see cref="Away"/>.</summary>
+    internal static bool ShouldRing(bool enabled, DateTime lastKey, DateTime now) => enabled && now - lastKey >= Away;
+
+    // Called on the UI thread, so the bell goes out between frames.
+    void Ring()
+    {
+        if (!ShouldRing(_bell, _lastKey, DateTime.UtcNow))
+            return;
+        Console.Out.Write('\a');
+        Console.Out.Flush();
+    }
 
     // The sequence goes out between frames, so it never lands inside one the driver is writing.
     public string? Copy(string text)
@@ -236,6 +257,7 @@ public sealed class Tui : IReplScreen, IApprover
     public async Task<Answer> ApproveAsync(ApprovalRequest request, CancellationToken ct)
     {
         Renderer.Line(Renderer.Warning($"  ? {request.Title}"));
+        Ui(Ring);
         if (!string.IsNullOrEmpty(request.Detail))
             Renderer.Keep(new ToolOutput(request.Title, request.Detail, Diff: true));
         var hideDiff = string.IsNullOrEmpty(request.Detail) ? null : _transcript.Section(() => Renderer.Diff(request.Detail));
@@ -256,6 +278,7 @@ public sealed class Tui : IReplScreen, IApprover
     public async Task<string?> AskAsync(Question question, CancellationToken ct)
     {
         Renderer.Line(Renderer.Warning($"  ? {question.Text}"));
+        Ui(Ring);
         const string other = "Something else (type an answer)";
         var answer = await ChooseAsync(null, question.AllowOther ? [.. question.Options, other] : question.Options, null, false, ct);
         if (answer == other)
@@ -384,6 +407,7 @@ public sealed class Tui : IReplScreen, IApprover
     // Keys that mean the same everywhere: Ctrl+C, Ctrl+D, Esc (never quits), scrolling the transcript, and Ctrl+O.
     void OnKey(object? sender, Key key)
     {
+        _lastKey = DateTime.UtcNow;
         if (key.KeyCode == (KeyCode.C | KeyCode.CtrlMask))
         {
             key.Handled = true;
@@ -579,6 +603,9 @@ sealed class TranscriptView(Transcript transcript) : View
     /// <summary>Raised when <see cref="Below"/> changes: on a scroll, or when output arrives or goes while scrolled up.</summary>
     public Action? Scrolled { get; set; }
 
+    /// <summary>Raised when the user scrolls with the mouse.</summary>
+    public Action? Wheeled { get; set; }
+
     /// <summary>Rows below the bottom of the view, when the user has scrolled up.</summary>
     public int Below => _follow ? 0 : Math.Max(0, _rows.Count - _top - Viewport.Height);
 
@@ -617,6 +644,7 @@ sealed class TranscriptView(Transcript transcript) : View
             ScrollBy(3);
         else
             return false;
+        Wheeled?.Invoke();
         return true;
     }
 

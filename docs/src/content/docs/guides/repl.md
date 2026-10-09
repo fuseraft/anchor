@@ -77,6 +77,10 @@ conversation, which happens on its own once the context passes 80% of the model'
 green while that's out of reach, yellow when a turn as big as the last one would get there, and
 red once it's past, meaning anchor compacts before its next request. `/context` shows the numbers.
 
+If you've left anchor working and switched away, the terminal bell rings when the turn ends or
+a question is waiting for you. It doesn't ring while you're typing or scrolling. `"bell": false`
+in the [config](/anchor/reference/config/#bell) turns it off.
+
 When you exit, the conversation is printed to the terminal, so it stays in your scrollback.
 `anchor --plain` runs the older line-by-line REPL instead, and anchor uses it on its own when
 stdin or stdout isn't a terminal. It can't change text once it's printed, so it shows replies as

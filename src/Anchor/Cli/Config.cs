@@ -19,6 +19,9 @@ public sealed class Config
     /// <summary>Colors for single roles, on top of the theme: "accent": "bold magenta".</summary>
     public Dictionary<string, string>? Colors { get; set; }
 
+    /// <summary>Whether the full screen rings the terminal bell when a turn ends or a question waits; on unless false.</summary>
+    public bool? Bell { get; set; }
+
     public static string Home => Anchor.Core.AnchorHome.Dir;
 
     public static Config Load()
