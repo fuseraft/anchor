@@ -289,6 +289,27 @@ public sealed class Repl
     Setup NewSetup() => new(screen.SetupIO, Anchor.Mcp.Keychain.Default(), new CredentialsFile(AnchorHome.Credentials),
         new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, Path.Combine(Config.Home, "config.json"));
 
+    /// <summary>The slash commands, as /help lists them; the full screen suggests them from here.</summary>
+    public static readonly (string Usage, string Description)[] Help =
+    [
+        ("/help", "list commands"),
+        ("/model [name]", "pick a model and save it as the default, or switch to one for this session"),
+        ("/setup", "choose a provider, save its key and pick a model"),
+        ("/theme [name]", "list color themes, or switch to one for this session"),
+        ("/context", "how full the context window is, and session token usage"),
+        ("/agents", "list sub-agents"),
+        ("/skills", "list skills"),
+        ("/mcp", "list MCP servers; /mcp login|logout <server> to sign in or out"),
+        ("/until [check]", "keep each turn going until the check command exits 0; /until off to stop"),
+        ("/approvals", "list \"always\" answers saved for this directory; /approvals clear to forget them"),
+        ("/compact", "summarize older turns now"),
+        ("/copy [code]", "copy the last reply, or a code block from it, to the clipboard"),
+        ("/undo", "revert the files changed in the last turn that changed any"),
+        ("/sessions", "list sessions in this directory"),
+        ("/clear", "forget the conversation"),
+        ("/exit", "quit (or Ctrl+D)"),
+    ];
+
     async Task<bool> CommandAsync(string line)
     {
         var parts = line.Split(' ', 2, StringSplitOptions.TrimEntries);
@@ -455,22 +476,9 @@ public sealed class Repl
                 renderer.Line(renderer.Muted("Forgot every \"always\" answer for this directory, saved or from this session."));
                 break;
             case "/help":
+                foreach (var (usage, description) in Help.Skip(1))
+                    renderer.Line($"{usage,-15} {description}");
                 renderer.Line("""
-                    /model [name]   pick a model and save it as the default, or switch to one for this session
-                    /setup          choose a provider, save its key and pick a model
-                    /theme [name]   list color themes, or switch to one for this session
-                    /context        how full the context window is, and session token usage
-                    /agents         list sub-agents
-                    /skills         list skills
-                    /mcp            list MCP servers; /mcp login|logout <server> to sign in or out
-                    /until [check]  keep each turn going until the check command exits 0; /until off to stop
-                    /approvals      list "always" answers saved for this directory; /approvals clear to forget them
-                    /compact        summarize older turns now
-                    /copy [code]    copy the last reply, or a code block from it, to the clipboard
-                    /undo           revert the files changed in the last turn that changed any
-                    /sessions       list sessions in this directory
-                    /clear          forget the conversation
-                    /exit           quit (or Ctrl+D)
                     !<command>      run a shell command yourself; the model never sees it
                     @<path>         attach a file or directory to the message (Tab completes)
                     Ctrl+C          cancel the running turn

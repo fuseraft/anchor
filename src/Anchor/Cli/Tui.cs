@@ -29,9 +29,6 @@ public sealed class Tui : IReplScreen, IApprover
     // How long without a key before anchor guesses the user has looked away, and rings when it needs them.
     internal static readonly TimeSpan Away = TimeSpan.FromSeconds(10);
 
-    internal static readonly string[] Commands =
-        ["/help", "/model", "/setup", "/theme", "/context", "/agents", "/skills", "/mcp", "/until", "/approvals", "/compact", "/copy", "/undo", "/sessions", "/clear", "/exit"];
-
     readonly IApplication _app;
     readonly Transcript _transcript = new();
     readonly Channel<string?> _sent = Channel.CreateUnbounded<string?>();
@@ -166,6 +163,7 @@ public sealed class Tui : IReplScreen, IApprover
         var h = await Startup.BuildAsync(options, new Output(Renderer.Render, this, m => Renderer.Line(Renderer.Warning(m)), Interactive: true));
         await using var _ = h.Mcp;
         _completion.Files = new FileIndex(h.Gate.Workspace).Warm();
+        _completion.Servers = () => h.Mcp.Status.Select(s => s.Name);
         _bell = Config.Load().Bell ?? true;
         foreach (var message in h.Agent.History.Where(Messages.IsUserInput))
             Ui(() => _prompt.Remember(message.Text));
@@ -523,7 +521,7 @@ public sealed class Tui : IReplScreen, IApprover
             _prompt.Viewport = _prompt.Viewport with { Y = 0 };
         var rows = _panel.Visible ? _panel.Needed() : Math.Clamp(_prompt.Rows(_app.Screen.Width - 2), 1, MaxPromptRows);
         var bottom = rows + 2;
-        var suggested = _panel.Visible ? 0 : _prompt.Suggestions.Count;
+        var suggested = _panel.Visible ? 0 : Math.Min(_prompt.Suggestions.Count, PromptCompletion.MaxShown);
         _suggest.Visible = suggested > 0;
         _suggest.Y = Pos.AnchorEnd(bottom + suggested);
         _suggest.Height = suggested;
@@ -799,7 +797,7 @@ sealed class PromptView : Editor
 
     public PromptCompletion? Completion { get; set; }
 
-    public IReadOnlyList<string> Suggestions { get; private set; } = [];
+    public IReadOnlyList<Suggestion> Suggestions { get; private set; } = [];
 
     public int Selected { get; private set; }
 
@@ -827,7 +825,7 @@ sealed class PromptView : Editor
     // Replaces what's typed from where the suggestion starts up to the caret.
     void Accept()
     {
-        var item = Suggestions[Selected];
+        var item = Suggestions[Selected].Text;
         Document!.Replace(_start, CaretOffset - _start, item);
         CaretOffset = _start + item.Length;
         Suggest();
@@ -928,47 +926,93 @@ sealed class PromptView : Editor
     }
 }
 
-/// <summary>Completes slash commands while the first word of the draft is one, and workspace paths after an @.</summary>
+/// <summary>A completion the prompt offers: the text it puts in, and a few words on what it is.</summary>
+sealed record Suggestion(string Text, string Note = "");
+
+/// <summary>
+/// Completes slash commands while the first word of the draft is one, then the words some of them take (a theme, an
+/// MCP server), and workspace paths after an @.
+/// </summary>
 sealed class PromptCompletion
 {
+    /// <summary>Rows the list takes at most; it scrolls to keep the chosen one in view.</summary>
     public const int MaxShown = 8;
 
     public FileIndex? Files { get; set; }
 
+    /// <summary>The MCP servers' names, for /mcp login and logout.</summary>
+    public Func<IEnumerable<string>>? Servers { get; set; }
+
     /// <summary>
     /// What could replace the end of <paramref name="typed"/> (the draft up to the caret): the offset the replaced
-    /// text starts at, and the replacements, "/help" for "/he" or "@src/" for "@s".
+    /// text starts at, and the replacements, "/help" for "/he", "mono" for "/theme m", or "@src/" for "@s".
     /// </summary>
-    public (int Start, List<string> Items) Suggest(string typed)
+    public (int Start, List<Suggestion> Items) Suggest(string typed)
     {
-        if (typed.StartsWith('/') && !typed.Contains(' ') && !typed.Contains('\n'))
-            return (0, [.. Tui.Commands.Where(c => c.StartsWith(typed, StringComparison.Ordinal) && c != typed)]);
+        if (typed.StartsWith('/') && !typed.Contains('\n'))
+        {
+            var space = typed.IndexOf(' ');
+            if (space < 0)
+                return (0, [.. Repl.Help.Select(h => new Suggestion(h.Usage.Split(' ')[0], h.Description))
+                    .Where(c => c.Text.StartsWith(typed, StringComparison.Ordinal) && c.Text != typed)]);
+            var words = typed[(space + 1)..].Split(' ');
+            var word = words[^1];
+            return (typed.Length - word.Length, [.. Arguments(typed[..space], words)
+                .Where(a => a.Text.StartsWith(word, StringComparison.OrdinalIgnoreCase) && a.Text != word)]);
+        }
         var start = typed.LastIndexOfAny([' ', '\n', '\t']) + 1;
         if (Files is null || start >= typed.Length || typed[start] != '@')
             return (0, []);
-        return (start, [.. Files.Complete(typed[(start + 1)..]).Take(MaxShown).Select(p => "@" + p)]);
+        return (start, [.. Files.Complete(typed[(start + 1)..]).Select(p => new Suggestion("@" + p))]);
     }
+
+    // What the word being typed after a command can be; words[^1] is that word, the ones before it are already typed.
+    IEnumerable<Suggestion> Arguments(string command, string[] words) => (command, words.Length) switch
+    {
+        ("/theme", 1) => Theme.BuiltIn.Select(t => new Suggestion(t.Name, t.Description)),
+        ("/mcp", 1) => [new("login", "sign in to a server"), new("logout", "sign out of a server")],
+        ("/mcp", 2) when words[0] is "login" or "logout" => (Servers?.Invoke() ?? []).Select(s => new Suggestion(s)),
+        ("/until", 1) => [new("off", "stop checking")],
+        ("/approvals", 1) => [new("clear", "forget every saved \"always\" answer")],
+        ("/copy", 1) => [new("code", "a code block from the last reply")],
+        _ => [],
+    };
 }
 
 /// <summary>The prompt's suggestions, above it, the chosen one picked out.</summary>
 sealed class SuggestView : View
 {
-    IReadOnlyList<string> _items = [];
+    IReadOnlyList<Suggestion> _items = [];
     int _selected;
+    int _top;
 
-    public void Show(IReadOnlyList<string> items, int selected)
+    public void Show(IReadOnlyList<Suggestion> items, int selected)
     {
+        if (!ReferenceEquals(items, _items))
+            _top = 0;
         (_items, _selected) = (items, selected);
         SetNeedsDraw();
     }
 
     protected override bool OnDrawingContent(DrawContext? context)
     {
-        for (var i = 0; i < Viewport.Height; i++)
+        var width = _items.Count == 0 ? 0 : _items.Max(s => s.Text.GetColumns());
+        var muted = Theme.StyleOf(Theme.Current.Muted);
+        if (Viewport.Height <= 0)
+            return true;
+        _top = Math.Clamp(_top, Math.Max(0, _selected - Viewport.Height + 1), _selected);
+        for (var row = 0; row < Viewport.Height; row++)
         {
-            var chosen = i == _selected;
-            var text = i < _items.Count ? (chosen ? "› " : "  ") + _items[i] + (chosen ? "   Tab to complete" : "") : "";
-            Styled.Draw(this, i, [new(text, chosen ? default : Theme.StyleOf(Theme.Current.Muted))], chosen ? Styled.Accent : Styled.Plain);
+            var i = _top + row;
+            if (i >= _items.Count)
+            {
+                Styled.Draw(this, row, [], Styled.Plain);
+                continue;
+            }
+            var (item, chosen) = (_items[i], i == _selected);
+            var note = item.Note.Length == 0 ? "" : new string(' ', width - item.Text.GetColumns() + 3) + item.Note;
+            Styled.Draw(this, row, [new((chosen ? "› " : "  ") + item.Text, chosen ? default : muted), new(note, muted),
+                new(chosen ? "   Tab to complete" : "", muted)], chosen ? Styled.Accent : Styled.Plain);
         }
         return true;
     }

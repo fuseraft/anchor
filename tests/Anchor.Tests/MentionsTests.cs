@@ -33,10 +33,10 @@ public class MentionsTests
 
         var (start, items) = completion.Suggest("explain @src/Anchor/Cli/Tu");
         Assert.Equal(8, start);
-        Assert.Equal(["@src/Anchor/Cli/Tui.cs"], items);
-        Assert.Contains("@src/Anchor/Cli/Tui.cs", completion.Suggest("x @Tui").Items);
-        Assert.Contains("@README.md", completion.Suggest("@").Items);
-        Assert.Equal(["/clear"], completion.Suggest("/cl").Items);
+        Assert.Equal([new Suggestion("@src/Anchor/Cli/Tui.cs")], items);
+        Assert.Contains(new Suggestion("@src/Anchor/Cli/Tui.cs"), completion.Suggest("x @Tui").Items);
+        Assert.Contains(new Suggestion("@README.md"), completion.Suggest("@").Items);
+        Assert.Equal([new Suggestion("/clear", "forget the conversation")], completion.Suggest("/cl").Items);
         Assert.Empty(completion.Suggest("a@b").Items);
     }
 
@@ -59,4 +59,18 @@ public class MentionsTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    [Fact]
+    public void ThePrompt_SuggestsTheWordsACommandTakes()
+    {
+        var completion = new PromptCompletion { Servers = () => ["docs", "files"] };
+
+        Assert.Equal((7, "mono"), Texts(completion.Suggest("/theme mo")));
+        Assert.Equal((5, "login,logout"), Texts(completion.Suggest("/mcp ")));
+        Assert.Equal((11, "docs"), Texts(completion.Suggest("/mcp login d")));
+        Assert.Empty(completion.Suggest("/until make test").Items);
+        Assert.Empty(completion.Suggest("/copy code").Items);
+    }
+
+    static (int, string) Texts((int Start, List<Suggestion> Items) s) => (s.Start, string.Join(",", s.Items.Select(i => i.Text)));
 }

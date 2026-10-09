@@ -63,7 +63,8 @@ Looking at the failing target first.
 | Ctrl+C                      | Cancel the running turn; otherwise clear the message; twice to exit. |
 | Ctrl+D                      | Exit, when the message is empty.                              |
 
-Typing `/` suggests slash commands, and `@` suggests files (see below). ↑/↓ choose a
+Typing `/` suggests slash commands with what each does, then the words some of them take (a
+theme for `/theme`, a server for `/mcp login`), and `@` suggests files (see below). ↑/↓ choose a
 suggestion, Tab or Enter takes it, and Esc hides the list.
 
 anchor's replies are Markdown, and the screen styles them as they arrive: headings, **bold**,
