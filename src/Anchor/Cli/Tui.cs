@@ -409,6 +409,12 @@ public sealed class Tui : IReplScreen, IApprover
     void OnKey(object? sender, Key key)
     {
         _lastKey = DateTime.UtcNow;
+        if (key.KeyCode != (KeyCode.C | KeyCode.CtrlMask))
+        {
+            // Any other key disarms a pending Ctrl+C exit, and a hint shown for the last key no longer applies.
+            _lastInterrupt = default;
+            _status.ClearFlash();
+        }
         if (key.KeyCode == (KeyCode.C | KeyCode.CtrlMask))
         {
             key.Handled = true;
@@ -427,7 +433,7 @@ public sealed class Tui : IReplScreen, IApprover
             else
             {
                 _lastInterrupt = DateTime.UtcNow;
-                _status.Flash("Press Ctrl+C again to exit");
+                _status.Flash("Press Ctrl+C again to exit", TimeSpan.FromSeconds(2));
             }
         }
         else if (key.KeyCode == (KeyCode.O | KeyCode.CtrlMask))
@@ -1312,9 +1318,25 @@ sealed class StatusView : View
     public static string Elapsed(TimeSpan t) =>
         t.TotalHours >= 1 ? $"{(int)t.TotalHours}h{t.Minutes:00}m" : t.TotalMinutes >= 1 ? $"{(int)t.TotalMinutes}m{t.Seconds:00}s" : $"{(int)t.TotalSeconds}s";
 
-    public void Flash(string message)
+    /// <summary>Shows a hint until the next key, or until <paramref name="expires"/> passes.</summary>
+    public void Flash(string message, TimeSpan? expires = null)
     {
         _flash = message;
+        SetNeedsDraw();
+        if (expires is { } after && App is { } app)
+            app.AddTimeout(after, () =>
+            {
+                if (ReferenceEquals(_flash, message))
+                    ClearFlash();
+                return false;
+            });
+    }
+
+    public void ClearFlash()
+    {
+        if (_flash is null)
+            return;
+        _flash = null;
         SetNeedsDraw();
     }
 
