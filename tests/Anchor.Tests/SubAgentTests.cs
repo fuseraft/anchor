@@ -29,7 +29,7 @@ public sealed class SubAgentTests : IDisposable
             _events.Add(e);
     }
 
-    SubAgentRunner Runner(IChatClient client) => new(_toolbox, "base prompt", Record, _ => (client, new ChatOptions()));
+    SubAgentRunner Runner(IChatClient client) => new(_toolbox, "base prompt", Record, _ => Task.FromResult((client, new ChatOptions())));
 
     [Fact]
     public async Task RunsInAFreshContextAndReturnsOnlyTheReport()

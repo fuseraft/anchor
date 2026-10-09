@@ -28,7 +28,7 @@ public static class Startup
         };
         var models = new ModelSource(ModelSource.StoredKeys(keychain, new CredentialsFile(AnchorHome.Credentials)), Config.Load, m => emit(new Notice(m)));
         var provider = Providers.Providers.Resolve(options.Model ?? config.Provider.Model, config.Provider.Name, config.Provider.Endpoint, config.Provider.ApiKeyEnv, config.Providers);
-        var client = models.Create(provider);
+        var client = await models.CreateAsync(provider);
         var window = Providers.Providers.ContextWindow(provider, config.Provider.ContextWindow);
 
         var workspace = new Workspace(Directory.GetCurrentDirectory());
@@ -53,12 +53,12 @@ public static class Startup
         };
 
         // Sub-agents use the main agent's current model unless their definition names one.
-        var runner = new SubAgentRunner(toolbox, systemPrompt, emit, model =>
+        var runner = new SubAgentRunner(toolbox, systemPrompt, emit, async model =>
         {
             if (model is null)
                 return (agent.Client, agent.Options);
             var settings = models.Resolve(model);
-            return (models.Create(settings), Providers.Providers.Options(settings));
+            return (await models.CreateAsync(settings), Providers.Providers.Options(settings));
         }, () => new Compactor(window), options.MaxRounds)
         {
             Report = agent.Notify,

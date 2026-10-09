@@ -278,10 +278,10 @@ public sealed class Repl
         _ => n.ToString(),
     };
 
-    void SwitchModel(string name)
+    async Task SwitchModelAsync(string name)
     {
         var next = options.Models.Resolve(name);
-        agent.Use(options.Models.Create(next), Providers.Providers.Options(next));
+        agent.Use(await options.Models.CreateAsync(next), Providers.Providers.Options(next));
         _provider = next;
         renderer.Line(renderer.Muted($"Model: {next.Model}"));
     }
@@ -419,7 +419,7 @@ public sealed class Repl
                 {
                     if (await NewSetup().PickModelAsync(_provider) is { } picked)
                     {
-                        SwitchModel(picked);
+                        await SwitchModelAsync(picked);
                         renderer.Line(renderer.Muted("Saved as the default model."));
                     }
                 }
@@ -431,7 +431,7 @@ public sealed class Repl
             case "/model":
                 try
                 {
-                    SwitchModel(parts[1]);
+                    await SwitchModelAsync(parts[1]);
                 }
                 catch (AnchorException e)
                 {
@@ -454,7 +454,7 @@ public sealed class Repl
                 {
                     if (await NewSetup().RunAsync() is { } model)
                     {
-                        SwitchModel(model);
+                        await SwitchModelAsync(model);
                         Theme.Current = Theme.Of(Config.Load());
                     }
                 }

@@ -11,7 +11,7 @@ public sealed record SubAgentStats(string Id, int ToolCalls, long Tokens);
 /// that started them: each one's final report is handed to <see cref="Report"/>, and the turn waits for them to finish.
 /// </summary>
 public sealed class SubAgentRunner(Toolbox toolbox, string systemPrompt, Action<AgentEvent> emit,
-    Func<string?, (IChatClient Client, ChatOptions Options)> clientFor, Func<Compactor>? compactor = null, int? maxRounds = null) : IBackground
+    Func<string?, Task<(IChatClient Client, ChatOptions Options)>> clientFor, Func<Compactor>? compactor = null, int? maxRounds = null) : IBackground
 {
     public static readonly string[] ReadOnlyTools = ["read_file", "list_dir", "glob", "grep", "skill"];
 
@@ -148,7 +148,7 @@ public sealed class SubAgentRunner(Toolbox toolbox, string systemPrompt, Action<
     {
         var name = label ?? definition?.Name ?? "agent";
         var tools = toolbox.Subset((definition?.Tools ?? ReadOnlyTools).Where(t => !MainAgentOnly.Contains(t)));
-        var (client, options) = clientFor(definition?.Model);
+        var (client, options) = await clientFor(definition?.Model);
         var prompt = systemPrompt + Instructions + (definition is null ? "" : $"\n\n{definition.Prompt}");
 
         string? detail = null;

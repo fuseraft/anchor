@@ -21,7 +21,7 @@ public sealed class SkillToolTests : IDisposable
     }
 
     static AgentTools Tools(params Skill[] skills) =>
-        new(new SubAgentRunner(new Toolbox([]), "", _ => { }, _ => (new FakeChatClient(), new ChatOptions())), [], skills);
+        new(new SubAgentRunner(new Toolbox([]), "", _ => { }, _ => Task.FromResult<(IChatClient, ChatOptions)>((new FakeChatClient(), new ChatOptions()))), [], skills);
 
     [Fact]
     public void LoadSkill_ReturnsBodyDirectoryAndFiles_WithoutSecrets()

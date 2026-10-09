@@ -90,14 +90,14 @@ public static class Providers
     /// <summary>The keychain account <c>anchor setup</c> stores a key under, named for the variable it stands in for.</summary>
     public static string KeychainAccount(string apiKeyEnv) => $"api-key/{apiKeyEnv}";
 
-    /// <summary>Builds a client. The key comes from <c>ApiKeyEnv</c>, or from <paramref name="storedKey"/> (the keychain) when the variable is unset.
+    /// <summary>Builds a client. The key comes from <c>ApiKeyEnv</c>, or is <paramref name="storedKey"/> (saved by anchor setup) when the variable is unset.
     /// Failed requests the provider says to retry are retried, and <paramref name="onRetry"/> hears about each one.</summary>
-    public static IChatClient Create(ProviderSettings settings, Func<string, string?>? storedKey = null, Action<string>? onRetry = null)
+    public static IChatClient Create(ProviderSettings settings, string? storedKey = null, Action<string>? onRetry = null)
     {
         // A custom provider without apiKeyEnv authenticates some other way (headers, or none at all), but the SDKs want a key.
         var key = settings.ApiKeyEnv is null ? "unused"
             : Environment.GetEnvironmentVariable(settings.ApiKeyEnv) is { Length: > 0 } fromEnv ? fromEnv
-            : storedKey?.Invoke(settings.ApiKeyEnv);
+            : storedKey;
         if (string.IsNullOrEmpty(key))
             throw new AnchorException($"{settings.ApiKeyEnv} is not set (needed for {settings.Model}). Set it, or run anchor setup to save a key.");
         var headers = (settings.Headers ?? new Dictionary<string, string>()).ToDictionary(h => h.Key, h => Anchor.Mcp.McpConfig.Expand(h.Value));
