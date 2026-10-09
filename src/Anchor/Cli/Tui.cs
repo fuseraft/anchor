@@ -669,17 +669,17 @@ public sealed class Tui : IReplScreen, IApprover
         return new ConsoleKeyInfo((char)key.AsRune.Value, ConsoleKey.NoName, key.IsShift, false, false);
     }
 
-    /// <summary>anchor setup's questions, asked in the panel. Setup runs on the REPL's task, so blocking here is safe.</summary>
+    /// <summary>anchor setup's questions, asked in the panel.</summary>
     sealed class TuiSetupIO(Tui tui) : ISetupIO
     {
-        public string? Ask(string prompt) => tui.TextAsync(prompt.Trim(), false, CancellationToken.None).GetAwaiter().GetResult();
+        public Task<string?> AskAsync(string prompt, CancellationToken ct = default) => tui.TextAsync(prompt.Trim(), false, ct);
 
-        public string? AskSecret(string prompt) => tui.TextAsync(prompt.Trim(), true, CancellationToken.None).GetAwaiter().GetResult();
+        public Task<string?> AskSecretAsync(string prompt, CancellationToken ct = default) => tui.TextAsync(prompt.Trim(), true, ct);
 
-        public string? Select(string title, IReadOnlyList<string> choices, string? selected = null, bool allowTyped = false)
+        public async Task<string?> SelectAsync(string title, IReadOnlyList<string> choices, string? selected = null, bool allowTyped = false, CancellationToken ct = default)
         {
             tui.Renderer.Line(title);
-            var answer = tui.ChooseAsync(null, choices, selected, allowTyped, CancellationToken.None).GetAwaiter().GetResult();
+            var answer = await tui.ChooseAsync(null, choices, selected, allowTyped, ct);
             tui.Renderer.Line(tui.Renderer.Muted($"  › {answer ?? "(cancelled)"}"));
             return answer;
         }

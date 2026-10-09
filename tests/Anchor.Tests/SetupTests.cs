@@ -348,24 +348,24 @@ public class SetupTests : IDisposable
 
         public List<string> Output { get; } = [];
 
-        public string? Ask(string prompt)
+        public Task<string?> AskAsync(string prompt, CancellationToken ct = default)
         {
             Output.Add(prompt);
-            return _answers.TryDequeue(out var a) ? a : null;
+            return Task.FromResult(_answers.TryDequeue(out var a) ? a : null);
         }
 
-        public string? AskSecret(string prompt) => Ask(prompt);
+        public Task<string?> AskSecretAsync(string prompt, CancellationToken ct = default) => AskAsync(prompt, ct);
 
         // "" takes the default, a number picks by position, anything else is the answer itself.
-        public string? Select(string title, IReadOnlyList<string> choices, string? selected = null, bool allowTyped = false)
+        public Task<string?> SelectAsync(string title, IReadOnlyList<string> choices, string? selected = null, bool allowTyped = false, CancellationToken ct = default)
         {
             Output.Add(title);
             Output.AddRange(choices);
             if (!_answers.TryDequeue(out var a))
-                return null;
-            return a.Length == 0 ? selected ?? choices[0]
+                return Task.FromResult<string?>(null);
+            return Task.FromResult<string?>(a.Length == 0 ? selected ?? choices[0]
                 : int.TryParse(a, out var n) ? choices[n - 1]
-                : a;
+                : a);
         }
 
         public void Line(string text = "") => Output.Add(text);

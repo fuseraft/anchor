@@ -11,12 +11,14 @@ namespace Anchor.Cli;
 /// <summary>How the setup wizard talks to the person; null from an ask means input ended.</summary>
 public interface ISetupIO
 {
-    string? Ask(string prompt);
+    /// <summary>A line the person types; null if they stopped.</summary>
+    Task<string?> AskAsync(string prompt, CancellationToken ct = default);
 
-    string? AskSecret(string prompt);
+    /// <summary>Like <see cref="AskAsync"/>, without showing what's typed.</summary>
+    Task<string?> AskSecretAsync(string prompt, CancellationToken ct = default);
 
     /// <summary>One of <paramref name="choices"/>; with <paramref name="allowTyped"/>, also a name typed that matches none.</summary>
-    string? Select(string title, IReadOnlyList<string> choices, string? selected = null, bool allowTyped = false);
+    Task<string?> SelectAsync(string title, IReadOnlyList<string> choices, string? selected = null, bool allowTyped = false, CancellationToken ct = default);
 
     void Line(string text = "");
 
@@ -66,7 +68,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
         io.Line($"Your choices are saved in {Renderer.ShortPath(configPath)}.");
         io.Line();
         string[] sources = [.. Services.Select(s => s.Label), AnotherServer];
-        var choice = io.Select("Where do your models come from?", sources);
+        var choice = await io.SelectAsync("Where do your models come from?", sources, ct: ct);
         if (choice is null)
             return null;
         io.Line();
@@ -76,7 +78,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
             return null;
 
         io.Line();
-        PickTheme();
+        await PickThemeAsync(ct);
         io.Line();
         io.Note($"All set: anchor will use {model}.\nRun anchor setup to change it.", ok: true);
         return model;
@@ -106,7 +108,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
         if (service is not null)
             listing = listing with { Models = listing.Models?.Where(m => service.Prefixes.Any(p => m.StartsWith(p, StringComparison.OrdinalIgnoreCase))).ToList() };
 
-        var model = PickModel(listing, current.Model);
+        var model = await ChooseModelAsync(listing, current.Model, ct);
         if (model is null)
             return null;
         var reference = current.Via is null ? model : $"{current.Via}/{model}";
@@ -115,13 +117,13 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
     }
 
     // Comes after the model is saved, so stopping here only keeps the theme the config already names.
-    void PickTheme()
+    async Task PickThemeAsync(CancellationToken ct)
     {
         var key = Load().Select(p => p.Key).FirstOrDefault(k => k.Equals("theme", StringComparison.OrdinalIgnoreCase)) ?? "theme";
         var current = Theme.Named(Load()[key]?.GetValue<string>() ?? "") ?? Theme.BuiltIn[0];
         var width = Theme.BuiltIn.Max(t => t.Name.Length) + 2;
         var labels = Theme.BuiltIn.ToDictionary(t => t.Name.PadRight(width) + t.Description);
-        var choice = io.Select("Which colors? (Esc keeps the current ones)", [.. labels.Keys], current.Name.PadRight(width) + current.Description);
+        var choice = await io.SelectAsync("Which colors? (Esc keeps the current ones)", [.. labels.Keys], current.Name.PadRight(width) + current.Description, ct: ct);
         if (choice is null || !labels.TryGetValue(choice, out var theme) || theme == current)
             return;
         Save(root => root[key] = theme.Name);
@@ -130,12 +132,12 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
     async Task<string?> BuiltInAsync(Service service, CancellationToken ct)
     {
         var listing = await KeyAsync(service.ApiKeyEnv, service.KeyUrl, required: true,
-            key => ListAsync(service.Type, service.Endpoint, key, null, ct));
+            key => ListAsync(service.Type, service.Endpoint, key, null, ct), ct);
         if (listing is null)
             return null;
 
         var models = listing.Models?.Where(m => service.Prefixes.Any(p => m.StartsWith(p, StringComparison.OrdinalIgnoreCase))).ToList();
-        var model = PickModel(listing with { Models = models }, service.DefaultModel);
+        var model = await ChooseModelAsync(listing with { Models = models }, service.DefaultModel, ct);
         if (model is null)
             return null;
 
@@ -150,7 +152,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
 
     async Task<string?> CustomAsync(CancellationToken ct)
     {
-        var url = Ask("Server URL, such as https://litellm.example.com/v1");
+        var url = await AskAsync("Server URL, such as https://litellm.example.com/v1", ct: ct);
         if (url is null)
             return null;
         url = url.TrimEnd('/');
@@ -161,7 +163,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
         }
 
         var existing = Load()["providers"]?.AsObject();
-        var name = Ask("Name for this server; you'll pick its models as <name>/<model>", DefaultName(uri));
+        var name = await AskAsync("Name for this server; you'll pick its models as <name>/<model>", DefaultName(uri), ct);
         if (name is null)
             return null;
         if (name.Contains('/') || name.Any(char.IsWhiteSpace))
@@ -174,7 +176,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
         var type = entry?["type"]?.GetValue<string>() ?? "openai";
         var headers = entry?["headers"]?.Deserialize<Dictionary<string, string>>();
         var envDefault = entry?["apiKeyEnv"]?.GetValue<string>() ?? EnvName(name);
-        var env = Ask("Variable that holds its API key (none if it needs no key)", envDefault);
+        var env = await AskAsync("Variable that holds its API key (none if it needs no key)", envDefault, ct);
         if (env is null)
             return null;
         env = env.Equals("none", StringComparison.OrdinalIgnoreCase) ? null : env;
@@ -195,11 +197,11 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
             return listing;
         }
 
-        var listing = env is null ? await List(null) : await KeyAsync(env, null, required: false, List);
+        var listing = env is null ? await List(null) : await KeyAsync(env, null, required: false, List, ct);
         if (listing is null)
             return null;
 
-        var model = PickModel(listing, null);
+        var model = await ChooseModelAsync(listing, null, ct);
         if (model is null)
             return null;
 
@@ -224,7 +226,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
     /// <summary>Finds the key in the environment, the keychain or the credentials file, or asks for one, and tries it by
     /// listing the server's models. A key the server rejects is asked for again, and a pasted key is saved only once it
     /// isn't rejected. Returns the listing, or null if the person stopped.</summary>
-    async Task<Listing?> KeyAsync(string env, string? keyUrl, bool required, Func<string?, Task<Listing>> list)
+    async Task<Listing?> KeyAsync(string env, string? keyUrl, bool required, Func<string?, Task<Listing>> list, CancellationToken ct)
     {
         if (Environment.GetEnvironmentVariable(env) is { Length: > 0 } fromEnv)
         {
@@ -238,7 +240,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
 
         if (await StoredAsync(env) is { } stored)
         {
-            var keep = io.Select($"A key for {env} is already saved.", ["Keep it", "Replace it"]);
+            var keep = await io.SelectAsync($"A key for {env} is already saved.", ["Keep it", "Replace it"], ct: ct);
             if (keep is null)
                 return null;
             if (keep == "Keep it")
@@ -254,7 +256,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
             io.Note($"You can create a key at {keyUrl}");
         while (true)
         {
-            var pasted = io.AskSecret(required ? "Paste your API key: " : "Paste the API key (blank if the server needs none): ")?.Trim();
+            var pasted = (await io.AskSecretAsync(required ? "Paste your API key: " : "Paste the API key (blank if the server needs none): ", ct))?.Trim();
             if (pasted is null)
                 return null;
             if (pasted.Length == 0)
@@ -333,25 +335,25 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
         }
     }
 
-    string? PickModel(Listing listing, string? fallback)
+    async Task<string?> ChooseModelAsync(Listing listing, string? fallback, CancellationToken ct)
     {
         io.Line();
         if (listing.Models is not { Count: > 0 } models)
         {
             if (listing.Error is not null)
                 io.Note($"Couldn't list models: {listing.Error}\nYou can type a model name instead.", ok: false);
-            return Ask("Model", fallback);
+            return await AskAsync("Model", fallback, ct);
         }
         var preferred = fallback is not null && models.Contains(fallback) ? fallback : null;
-        return io.Select($"Model ({models.Count} available)", models, preferred, allowTyped: true);
+        return await io.SelectAsync($"Model ({models.Count} available)", models, preferred, allowTyped: true, ct);
     }
 
     /// <summary>Asks until there's an answer; a blank answer takes the default when there is one.</summary>
-    string? Ask(string prompt, string? fallback = null)
+    async Task<string?> AskAsync(string prompt, string? fallback = null, CancellationToken ct = default)
     {
         while (true)
         {
-            var answer = io.Ask(fallback is { Length: > 0 } ? $"{prompt} [{fallback}]: " : $"{prompt}: ")?.Trim();
+            var answer = (await io.AskAsync(fallback is { Length: > 0 } ? $"{prompt} [{fallback}]: " : $"{prompt}: ", ct))?.Trim();
             if (answer is null)
                 return null;
             if (answer.Length > 0)
@@ -415,17 +417,20 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
 }
 
 /// <summary>The terminal side of the wizard; a pasted key is echoed as dots.</summary>
+/// <summary>Setup on a plain terminal. Its reads block, which is fine: setup has the console to itself.</summary>
 public sealed class ConsoleSetupIO : ISetupIO
 {
     readonly Renderer _renderer = Renderer.ForConsole();
 
-    public string? Ask(string prompt)
+    public Task<string?> AskAsync(string prompt, CancellationToken ct = default)
     {
         Console.Write(prompt);
-        return Console.ReadLine();
+        return Task.FromResult(Console.ReadLine());
     }
 
-    public string? AskSecret(string prompt)
+    public Task<string?> AskSecretAsync(string prompt, CancellationToken ct = default) => Task.FromResult(AskSecret(prompt));
+
+    static string? AskSecret(string prompt)
     {
         Console.Write(prompt);
         if (Console.IsInputRedirected)
@@ -461,8 +466,8 @@ public sealed class ConsoleSetupIO : ISetupIO
         return secret.ToString();
     }
 
-    public string? Select(string title, IReadOnlyList<string> choices, string? selected = null, bool allowTyped = false) =>
-        Picker.Choose(title, choices, selected, allowTyped);
+    public Task<string?> SelectAsync(string title, IReadOnlyList<string> choices, string? selected = null, bool allowTyped = false, CancellationToken ct = default) =>
+        Task.FromResult(Picker.Choose(title, choices, selected, allowTyped));
 
     public void Line(string text = "") => Console.WriteLine(text);
 

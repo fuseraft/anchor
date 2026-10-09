@@ -360,7 +360,7 @@ public sealed class Repl
                     renderer.Line($"{s.Name}  {renderer.Muted(s.Description)}");
                 break;
             case "/copy":
-                Copy(parts.Length == 1 ? "" : parts[1]);
+                await CopyAsync(parts.Length == 1 ? "" : parts[1]);
                 break;
             case "/undo":
                 var (restored, skipped) = gate.Undo();
@@ -502,7 +502,7 @@ public sealed class Repl
     }
 
     // The last reply as the model wrote it, or one of its code blocks, which the user picks when there are several.
-    void Copy(string what)
+    async Task CopyAsync(string what)
     {
         if (what is not ("" or "code"))
         {
@@ -527,7 +527,7 @@ public sealed class Repl
             if (blocks.Count > 1)
             {
                 var choices = blocks.Select((b, i) => $"{i + 1}. {(b.Language.Length > 0 ? b.Language + ": " : "")}{Truncate(b.Code.Split('\n')[0].Trim(), 60)}").ToList();
-                if (screen.SetupIO.Select("Which code block?", choices) is not { } chosen)
+                if (await screen.SetupIO.SelectAsync("Which code block?", choices) is not { } chosen)
                     return;
                 pick = choices.IndexOf(chosen);
             }
