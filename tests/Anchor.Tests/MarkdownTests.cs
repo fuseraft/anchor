@@ -196,4 +196,15 @@ public class MarkdownTests
     }
 
     static string Text(List<Span> spans) => string.Concat(spans.Select(s => s.Text));
+
+    [Fact]
+    public void CodeBlocks_FindsEachFencedBlock_WithoutItsFencesOrIndent()
+    {
+        var blocks = Markdown.CodeBlocks("Run:\n```sh\nmake\nmake test\n```\n- then\n  ~~~\n  x = 1\n    y = 2\n  ~~~\n````md\n```\nnot closed");
+
+        Assert.Equal([("sh", "make\nmake test"), ("", "x = 1\n  y = 2"), ("md", "```\nnot closed")], blocks);
+    }
+
+    [Fact]
+    public void CodeBlocks_IsEmptyWithoutFences() => Assert.Empty(Markdown.CodeBlocks("just `inline` code"));
 }

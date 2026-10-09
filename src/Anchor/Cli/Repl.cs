@@ -332,6 +332,9 @@ public sealed class Repl
                 foreach (var s in options.Skills)
                     renderer.Line($"{s.Name}  {renderer.Muted(s.Description)}");
                 break;
+            case "/copy":
+                Copy(parts.Length == 1 ? "" : parts[1]);
+                break;
             case "/undo":
                 var (restored, skipped) = gate.Undo();
                 if (restored.Count == 0 && skipped.Count == 0)
@@ -461,6 +464,7 @@ public sealed class Repl
                     /until [check]  keep each turn going until the check command exits 0; /until off to stop
                     /approvals      list "always" answers saved for this directory; /approvals clear to forget them
                     /compact        summarize older turns now
+                    /copy [code]    copy the last reply, or a code block from it, to the clipboard
                     /undo           revert the files changed in the last turn that changed any
                     /sessions       list sessions in this directory
                     /clear          forget the conversation
@@ -478,6 +482,45 @@ public sealed class Repl
                 break;
         }
         return true;
+    }
+
+    // The last reply as the model wrote it, or one of its code blocks, which the user picks when there are several.
+    void Copy(string what)
+    {
+        if (what is not ("" or "code"))
+        {
+            renderer.Line(renderer.Error("Usage: /copy, or /copy code for a code block"));
+            return;
+        }
+        var reply = agent.History.LastOrDefault(m => m.Role == Microsoft.Extensions.AI.ChatRole.Assistant && m.Text.Trim().Length > 0)?.Text.Trim();
+        if (reply is null)
+        {
+            renderer.Line(renderer.Muted("Nothing to copy yet."));
+            return;
+        }
+        var (text, name) = (reply, "the last reply");
+        if (what == "code")
+        {
+            var blocks = Markdown.CodeBlocks(reply);
+            if (blocks.Count == 0)
+            {
+                renderer.Line(renderer.Muted("The last reply has no code blocks."));
+                return;
+            }
+            var pick = 0;
+            if (blocks.Count > 1)
+            {
+                var choices = blocks.Select((b, i) => $"{i + 1}. {(b.Language.Length > 0 ? b.Language + ": " : "")}{Truncate(b.Code.Split('\n')[0].Trim(), 60)}").ToList();
+                if (screen.SetupIO.Select("Which code block?", choices) is not { } chosen)
+                    return;
+                pick = choices.IndexOf(chosen);
+            }
+            (text, name) = (blocks[pick].Code, blocks.Count == 1 ? "the code block" : $"code block {pick + 1}");
+        }
+        var lines = text.Split('\n').Length;
+        var tool = screen.Copy(text);
+        renderer.Line(renderer.Muted($"Copied {name} ({lines} line{(lines == 1 ? "" : "s")})" +
+                                     (tool is null ? " via OSC 52, if the terminal supports it." : ".")));
     }
 
     async Task ShellAsync(string command)

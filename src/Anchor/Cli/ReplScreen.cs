@@ -20,6 +20,20 @@ public interface IReplScreen
     /// <summary>Empties the transcript, for /clear. A plain terminal's scrollback is the terminal's, so it stays.</summary>
     void Clear() { }
 
+    /// <summary>
+    /// Puts <paramref name="text"/> on the clipboard, for /copy: through the terminal (OSC 52) and the system's
+    /// clipboard tool. Returns the tool's name, or null when only the terminal was asked.
+    /// </summary>
+    string? Copy(string text)
+    {
+        if (!Console.IsOutputRedirected)
+        {
+            Console.Out.Write(Clipboard.Osc52(text));
+            Console.Out.Flush();
+        }
+        return Clipboard.CopyNatively(text);
+    }
+
     /// <summary>Shows where things stand: the model, how full the context is, and whether a turn is running.</summary>
     void Status(string text, bool working);
 

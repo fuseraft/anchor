@@ -28,7 +28,7 @@ public sealed class Tui : IReplScreen, IApprover
     static readonly TimeSpan Quiet = TimeSpan.FromMilliseconds(400);
 
     internal static readonly string[] Commands =
-        ["/help", "/model", "/setup", "/theme", "/context", "/agents", "/skills", "/mcp", "/until", "/approvals", "/compact", "/undo", "/sessions", "/clear", "/exit"];
+        ["/help", "/model", "/setup", "/theme", "/context", "/agents", "/skills", "/mcp", "/until", "/approvals", "/compact", "/copy", "/undo", "/sessions", "/clear", "/exit"];
 
     readonly IApplication _app;
     readonly Transcript _transcript = new();
@@ -169,6 +169,17 @@ public sealed class Tui : IReplScreen, IApprover
         }
         _status.Set(text, working);
     });
+
+    // The sequence goes out between frames, so it never lands inside one the driver is writing.
+    public string? Copy(string text)
+    {
+        Ui(() =>
+        {
+            Console.Out.Write(Clipboard.Osc52(text));
+            Console.Out.Flush();
+        });
+        return Clipboard.CopyNatively(text);
+    }
 
     public void Clear()
     {

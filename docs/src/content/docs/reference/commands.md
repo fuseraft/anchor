@@ -49,6 +49,16 @@ session (sub-agents included), and the size past which anchor compacts on its ow
 Summarizes older turns now, instead of waiting for the context to reach 80%. The last turn is kept
 as it is. If there's nothing old enough to summarize, it says so.
 
+### /copy
+
+```
+/copy        copy the last reply, as the Markdown the model wrote
+/copy code   copy a code block from it; with several, pick one
+```
+
+The text goes to the terminal through OSC 52, and on a local session to `wl-copy`, `xclip`,
+`xsel`, `pbcopy` or `clip.exe` as well. In tmux, OSC 52 needs `set -g set-clipboard on`.
+
 ### /clear
 
 Forgets the conversation. The model starts fresh, and the full-screen view is emptied; your files are

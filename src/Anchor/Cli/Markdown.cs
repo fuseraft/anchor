@@ -226,6 +226,36 @@ public sealed partial class Markdown(int width = int.MaxValue)
 
     static int Width(string styled) => Ansi().Replace(styled, "").GetColumns();
 
+    /// <summary>
+    /// The fenced code blocks in <paramref name="markdown"/>, by the same rules the renderer uses, without their
+    /// fences and with the fence's indentation taken off each line. A block the text ends inside runs to the end.
+    /// </summary>
+    public static List<(string Language, string Code)> CodeBlocks(string markdown)
+    {
+        List<(string, string)> blocks = [];
+        string? fence = null, language = null;
+        var indent = 0;
+        List<string> code = [];
+        foreach (var line in markdown.ReplaceLineEndings("\n").Split('\n'))
+        {
+            if (fence is null)
+            {
+                if (FenceOpen().Match(line) is { Success: true } f)
+                    (fence, language, indent, code) = (f.Groups[1].Value, f.Groups[2].Value, line.Length - line.TrimStart().Length, []);
+            }
+            else if (line.TrimStart() is var close && close.StartsWith(fence) && close.Trim(fence[0]).Trim().Length == 0)
+            {
+                blocks.Add((language!, string.Join('\n', code)));
+                fence = null;
+            }
+            else
+                code.Add(line[Math.Min(indent, line.Length - line.TrimStart().Length)..]);
+        }
+        if (fence is not null)
+            blocks.Add((language!, string.Join('\n', code)));
+        return blocks;
+    }
+
     [GeneratedRegex(@"^\s*(`{3,}|~{3,})\s*([^`\s]*)")]
     private static partial Regex FenceOpen();
 

@@ -98,7 +98,7 @@ anchor -p --yolo "fix the failing test"      # -p can't ask, so it refuses unles
 anchor -p --allow edits --allow dotnet "fix the failing test" --max-rounds 40 --timeout 900
 ```
 
-In the REPL: `/help`, `/model`, `/setup`, `/context`, `/until`, `/compact`, `/approvals`, `/undo`, `/sessions`, `/agents`,
+In the REPL: `/help`, `/model`, `/setup`, `/context`, `/until`, `/compact`, `/approvals`, `/copy`, `/undo`, `/sessions`, `/agents`,
 `/skills`, `/mcp` (`/mcp login|logout <server>`), `/clear`, `/exit`. `!cmd` runs a command in
 your own shell; the model never sees it. Ctrl+C cancels the running turn.
 

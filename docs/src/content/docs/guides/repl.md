@@ -156,6 +156,7 @@ A multi-line paste goes into the prompt as it is, and you send it with Enter.
 | `/until [check]`   | Keep each turn going until a command exits 0. [More](/anchor/guides/until/) |
 | `/compact`         | Summarize older turns now.                                                  |
 | `/approvals`       | List saved "always" answers. `/approvals clear` forgets them.              |
+| `/copy [code]`     | Copy the last reply, or a code block from it. [More](#copying-a-reply)     |
 | `/undo`            | Revert the files changed in the last turn that changed any.                |
 | `/sessions`        | List recent sessions in this directory.                                    |
 | `/agents`          | List sub-agents.                                                            |
@@ -165,6 +166,16 @@ A multi-line paste goes into the prompt as it is, and you send it with Enter.
 | `/exit`, `/quit`   | Quit.                                                                       |
 
 The [commands reference](/anchor/reference/commands/) has the details.
+
+## Copying a reply
+
+The screen uses the mouse to scroll, so selecting text with it doesn't work in every terminal.
+`/copy` copies the last reply instead, as the Markdown the model wrote. `/copy code` copies its
+code block, without the fences; when there are several, pick one from a list.
+
+anchor asks the terminal to copy through OSC 52, which works over SSH and in most terminals
+(in tmux, `set -g set-clipboard on`). On your own machine it also uses `wl-copy`, `xclip`,
+`xsel`, `pbcopy` or `clip.exe`, whichever is there, for terminals without OSC 52.
 
 ## Running your own commands
 
