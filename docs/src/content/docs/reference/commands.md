@@ -131,6 +131,7 @@ See [MCP servers](/anchor/guides/mcp/).
 | Enter mid-turn  | Send what you typed into the running turn; commands wait for it to end. |
 | Alt+Enter       | New line in the message (Shift+Enter where the terminal supports it). |
 | ↑ / ↓           | Message history, from the first or last line of the prompt.     |
+| Ctrl+R          | Search message history; Enter puts the chosen one in the prompt. |
 | PgUp / PgDn     | Scroll the conversation; Ctrl+End follows it again.             |
 | Ctrl+O          | Show the last tool output or diff in full; ←/→ for earlier ones, Esc to close. |
 | Ctrl+D          | Exit.                                                            |

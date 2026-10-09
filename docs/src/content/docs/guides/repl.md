@@ -57,6 +57,7 @@ Looking at the failing target first.
 | Enter                       | Send the message.                                             |
 | Alt+Enter, Shift+Enter      | New line in the message.                                      |
 | ↑ / ↓                       | On the first or last line: earlier messages (history).        |
+| Ctrl+R                      | Search earlier messages: type to filter, Enter puts one in the prompt. |
 | ←, →, Home, End, Ctrl+Z     | Edit the message as in any editor; Ctrl+U deletes to the line start. |
 | PgUp / PgDn, mouse wheel    | Scroll the conversation. Ctrl+End jumps back to the bottom.   |
 | Ctrl+O                      | Show the last tool output or diff in full (see below).        |

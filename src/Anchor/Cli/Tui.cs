@@ -302,8 +302,8 @@ public sealed class Tui : IReplScreen, IApprover
         });
 
     // The picker from anchor setup, drawn in the panel: ↑/↓, type to filter, Enter, Esc to dismiss (null).
-    internal Task<string?> ChooseAsync(string? title, IReadOnlyList<string> choices, string? selected, bool allowTyped, CancellationToken ct) =>
-        PanelAsync<string?>(ct, (panel, done) =>
+    internal Task<string?> ChooseAsync(string? title, IReadOnlyList<string> choices, string? selected, bool allowTyped, CancellationToken ct, bool quiet = true) =>
+        PanelAsync<string?>(ct, quiet: quiet, setup: (panel, done) =>
         {
             var picker = new Picker(choices, selected, allowTyped);
             var hint = allowTyped || choices.Count > Picker.DefaultHeight ? "↑/↓ to move, type to filter, Enter to choose" : "↑/↓ to move, Enter to choose";
@@ -361,8 +361,9 @@ public sealed class Tui : IReplScreen, IApprover
         }, rows: 2);
 
     // Shows the panel in place of the prompt (whose draft is kept) until the answer comes, or until ct, which throws.
-    // Keys arriving as it appears were meant for the prompt; they're thrown away until typing stops.
-    async Task<T> PanelAsync<T>(CancellationToken ct, Action<PanelView, Action<T>> setup, int rows = 0)
+    // Keys arriving as it appears were meant for the prompt; they're thrown away until typing stops, unless the user
+    // opened the panel (not quiet), when they're meant for it.
+    async Task<T> PanelAsync<T>(CancellationToken ct, Action<PanelView, Action<T>> setup, int rows = 0, bool quiet = true)
     {
         await _panelTurn.WaitAsync(ct);
         try
@@ -371,7 +372,7 @@ public sealed class Tui : IReplScreen, IApprover
             await using var _ = ct.Register(() => answer.TrySetCanceled(ct));
             Ui(() =>
             {
-                _panel.Reset(DateTime.UtcNow, Quiet);
+                _panel.Reset(quiet ? DateTime.UtcNow : default, Quiet);
                 setup(_panel, value => answer.TrySetResult(value));
                 _panel.Rows = rows;
                 _panel.Visible = true;
@@ -435,6 +436,11 @@ public sealed class Tui : IReplScreen, IApprover
         }
         else if (_output is { } shown)
             key.Handled = OutputKey(key, shown);
+        else if (key.KeyCode == (KeyCode.R | KeyCode.CtrlMask) && !_panel.Visible)
+        {
+            key.Handled = true;
+            _ = SearchHistoryAsync();
+        }
         else if (key.KeyCode == (KeyCode.D | KeyCode.CtrlMask) && !_panel.Visible && _prompt.Text.Length == 0)
         {
             key.Handled = true;
@@ -455,6 +461,22 @@ public sealed class Tui : IReplScreen, IApprover
             key.Handled = true;
             _view.Follow();
         }
+    }
+
+    // Ctrl+R: earlier messages, newest first, filtered as the user types; the chosen one replaces the draft. A
+    // multi-line message is shown on one line, and matched on all of it.
+    async Task SearchHistoryAsync()
+    {
+        Dictionary<string, string> messages = [];
+        foreach (var message in _prompt.History.Reverse())
+            messages.TryAdd(message.ReplaceLineEndings(" ⏎ "), message);
+        if (messages.Count == 0)
+        {
+            _status.Flash("No messages to search yet");
+            return;
+        }
+        if (await ChooseAsync("History, newest first; type to search", [.. messages.Keys], null, false, CancellationToken.None, quiet: false) is { } chosen)
+            Ui(() => _prompt.Replace(messages[chosen]));
     }
 
     // While the viewer is open it has the keys, so they scroll it rather than edit the draft or answer an approval
@@ -839,6 +861,17 @@ sealed class PromptView : Editor
     }
 
     public event Action<string>? Sent;
+
+    /// <summary>Messages sent so far, oldest first.</summary>
+    public IReadOnlyList<string> History => _history;
+
+    /// <summary>Puts <paramref name="text"/> in place of the draft, the caret at its end.</summary>
+    public void Replace(string text)
+    {
+        Text = text;
+        CaretOffset = text.Length;
+        _index = _history.Count;
+    }
 
     public void Remember(string text)
     {
