@@ -208,6 +208,35 @@ public sealed class GateTests : IDisposable
     }
 
     [Fact]
+    public async Task Run_KeepsTheStartAndEndOfEndlessOutput()
+    {
+        var output = await NewGate(new FakeApprover(Answer.Yes), yolo: true).RunAsync("seq 1 500000", TimeSpan.FromSeconds(30), default);
+
+        Assert.StartsWith("1\n2\n", output);
+        Assert.Contains("499999\n500000\n[exit code 0]", output);
+        Assert.Contains("characters of output left out", output);
+        Assert.True(output.Length <= Toolbox.MaxResultChars, $"{output.Length} characters");
+    }
+
+    [Fact]
+    public async Task Run_MasksEachLineOfAMultiLineSecret_WhenOnlySomeLinesAreKept()
+    {
+        Environment.SetEnvironmentVariable("ANCHOR_TEST_PRIVATE_KEY", "-----BEGIN-----\nfirst-secret-line\nlast-secret-line\n-----END-----");
+        try
+        {
+            var output = await NewGate(new FakeApprover(Answer.Yes), yolo: true).RunAsync(
+                "seq 1 100000; printenv ANCHOR_TEST_PRIVATE_KEY", TimeSpan.FromSeconds(30), default);
+
+            Assert.Contains("characters of output left out", output);
+            Assert.DoesNotContain("secret-line", output);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ANCHOR_TEST_PRIVATE_KEY", null);
+        }
+    }
+
+    [Fact]
     public async Task ReadOutside_AsksAndYoloAllows()
     {
         File.WriteAllText(Path.Combine(_outside, "x.txt"), "x");

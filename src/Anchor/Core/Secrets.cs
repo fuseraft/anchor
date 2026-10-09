@@ -43,7 +43,12 @@ public static partial class Secrets
     {
         foreach (DictionaryEntry e in Environment.GetEnvironmentVariables())
             if (e.Value is string v && v.Length >= MinValueLength && IsSecretEnvName((string)e.Key))
+            {
                 yield return v;
+                // Long output keeps only some of its lines, so each line of a multi-line value (a PEM key) is masked on its own too.
+                foreach (var line in v.Split('\n', StringSplitOptions.TrimEntries).Where(l => l.Length >= MinValueLength && l != v))
+                    yield return line;
+            }
 
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var files = workspace.SecretFiles().Concat(HomeCredentialFiles.Select(f => Path.Combine(home, f))).Append(AnchorHome.Credentials);

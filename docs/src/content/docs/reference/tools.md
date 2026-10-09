@@ -138,7 +138,9 @@ are looking at the diff, the patch is applied to its new content when it still f
 Runs in the working directory with bash (or `sh`), or `cmd.exe` on Windows. stdin is closed, and
 `TERM=dumb`, `NO_COLOR=1`, `PAGER=cat`, `GIT_PAGER=cat` and `GIT_TERMINAL_PROMPT=0` are set so
 commands don't wait for input. Output is stdout
-and stderr combined, followed by the exit code, with secrets masked.
+and stderr combined, followed by the exit code, with secrets masked. Long output keeps its first and
+last lines and says how much was left out between them, so a command that prints without end can't
+fill memory.
 
 ## Agent tools
 

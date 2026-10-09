@@ -259,7 +259,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
         }
     }
 
-    static void Store(string full, string? text, System.Text.Encoding? encoding)
+    static void Store(string full, string? text, Encoding? encoding)
     {
         if (text is null)
             File.Delete(full);
@@ -356,10 +356,10 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
         foreach (var (k, v) in new[] { ("TERM", "dumb"), ("NO_COLOR", "1"), ("PAGER", "cat"), ("GIT_PAGER", "cat"), ("GIT_TERMINAL_PROMPT", "0") })
             psi.Environment[k] = v;
 
-        var output = new StringBuilder();
+        var output = new ProcessOutput();
         using var process = new Process { StartInfo = psi };
-        process.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (output) output.Append(e.Data).Append('\n'); };
-        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (output) output.Append(e.Data).Append('\n'); };
+        process.OutputDataReceived += (_, e) => { if (e.Data is not null) output.Add(e.Data); };
+        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) output.Add(e.Data); };
         process.Start();
         process.StandardInput.Close();
         process.BeginOutputReadLine();
@@ -382,8 +382,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
             status = $"[timed out after {limit.TotalSeconds:0}s; process killed]";
         }
 
-        lock (output)
-            return (exitCode, output.Length == 0 ? $"(no output)\n{status}" : $"{output}{status}");
+        return (exitCode, output.IsEmpty ? $"(no output)\n{status}" : $"{output}{status}");
     }
 
     /// <summary>Calls a tool that lives outside anchor (an MCP server) and returns its masked output.</summary>
