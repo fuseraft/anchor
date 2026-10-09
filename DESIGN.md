@@ -188,9 +188,10 @@ anchor [--yolo] [--allow rule]... [--resume [id]] [--model m] [-p "prompt"] [--u
 !cmd runs in your shell, outside the model's history; @path attaches a file to the message
 ```
 
-The REPL is full screen (`Cli/Tui.cs`, on Terminal.Gui and its Editor view for the prompt). `Repl`
-is the controller and talks to an `IReplScreen`; `--plain`, or a stdin or stdout that isn't a
-terminal, gets the line-based `LineScreen` instead. The Renderer is unchanged: in the TUI it writes
+The REPL is full screen (`Cli/Tui.cs`, with its views in `TranscriptView.cs`, `PromptView.cs` and
+`Views.cs`, on Terminal.Gui and its Editor view for the prompt). `Repl` is the controller and talks
+to an `IReplScreen`; `--plain`, or a stdin or stdout that isn't a terminal, gets the line-based
+`LineScreen` instead. The Renderer is unchanged: in the TUI it writes
 its ANSI text into a `Transcript`, which reads the styles back, so commands and events look the
 same in both. The one difference is the model's text: in the TUI, `Cli/Markdown.cs` styles it as it
 streams, and the Renderer hands it to `Transcript.Stream`, which redraws the open part of the
