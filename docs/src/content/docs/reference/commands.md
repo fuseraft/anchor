@@ -122,4 +122,5 @@ See [MCP servers](/anchor/guides/mcp/).
 | Alt+Enter       | New line in the message (Shift+Enter where the terminal supports it). |
 | ↑ / ↓           | Message history, from the first or last line of the prompt.     |
 | PgUp / PgDn     | Scroll the conversation; Ctrl+End follows it again.             |
+| Ctrl+O          | Show the last tool output or diff in full; ←/→ for earlier ones, Esc to close. |
 | Ctrl+D          | Exit.                                                            |

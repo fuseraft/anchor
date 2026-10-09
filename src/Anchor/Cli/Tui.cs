@@ -36,6 +36,9 @@ public sealed class Tui : IReplScreen, IApprover
     readonly SemaphoreSlim _panelTurn = new(1, 1);
     readonly Runnable _top;
     readonly TranscriptView _view;
+    readonly Transcript _outputText = new();
+    readonly TranscriptView _outputView;
+    int? _output; // which of the Renderer's outputs the viewer shows, while it's open
     readonly RuleView _rule;
     readonly Label _caret;
     readonly PromptView _prompt;
@@ -67,13 +70,14 @@ public sealed class Tui : IReplScreen, IApprover
         _top = new Runnable { Width = Dim.Fill(), Height = Dim.Fill() };
         _top.SetScheme(new Scheme(plain) { Focus = plain, Editable = plain, Active = plain });
         _view = new TranscriptView(_transcript) { X = 0, Y = 0, Width = Dim.Fill() };
+        _outputView = new TranscriptView(_outputText) { X = 0, Y = 0, Width = Dim.Fill(), Visible = false };
         _rule = new RuleView { X = 0, Width = Dim.Fill(), Height = 1 };
         _caret = new Label { X = 0, Text = "›", Width = 2, Height = 1 };
         _caret.SetScheme(new Scheme(Styled.Accent));
         _prompt = new PromptView { X = 2, Width = Dim.Fill() };
         _panel = new PanelView { X = 0, Width = Dim.Fill(), Visible = false };
         _status = new StatusView { X = 0, Width = Dim.Fill(), Height = 1, Y = Pos.AnchorEnd(1) };
-        _top.Add(_view, _rule, _caret, _prompt, _panel, _status);
+        _top.Add(_view, _outputView, _rule, _caret, _prompt, _panel, _status);
 
         _view.Scrolled = () => _rule.Below = _view.Below;
         _prompt.Sent += text =>
@@ -90,6 +94,7 @@ public sealed class Tui : IReplScreen, IApprover
         });
         _prompt.CompletionProvider = new CommandCompletion();
         _transcript.Changed += Redraw;
+        _outputText.Changed += () => Ui(_outputView.SetNeedsDraw);
         _app.Keyboard.KeyDown += OnKey;
         _app.Paste += (_, e) =>
         {
@@ -211,6 +216,8 @@ public sealed class Tui : IReplScreen, IApprover
     public async Task<Answer> ApproveAsync(ApprovalRequest request, CancellationToken ct)
     {
         Renderer.Line(Renderer.Warning($"  ? {request.Title}"));
+        if (!string.IsNullOrEmpty(request.Detail))
+            Renderer.Keep(new ToolOutput(request.Title, request.Detail, Diff: true));
         var hideDiff = string.IsNullOrEmpty(request.Detail) ? null : _transcript.Section(() => Renderer.Diff(request.Detail));
         var key = await KeyAsync(Renderer.AllowPrompt(request.AlwaysLabel), request.AlwaysLabel is null ? "yn" : "yna", ct);
         var answer = char.ToLowerInvariant(key) switch
@@ -354,7 +361,7 @@ public sealed class Tui : IReplScreen, IApprover
         }
     }
 
-    // Keys that mean the same everywhere: Ctrl+C, Ctrl+D, Esc (never quits), and scrolling the transcript.
+    // Keys that mean the same everywhere: Ctrl+C, Ctrl+D, Esc (never quits), scrolling the transcript, and Ctrl+O.
     void OnKey(object? sender, Key key)
     {
         if (key.KeyCode == (KeyCode.C | KeyCode.CtrlMask))
@@ -362,7 +369,9 @@ public sealed class Tui : IReplScreen, IApprover
             key.Handled = true;
             if (Interrupt?.Invoke() == true)
                 return;
-            if (_panel.Visible)
+            if (_output is not null)
+                CloseOutput();
+            else if (_panel.Visible)
                 _panel.Dismiss();
             else if (_prompt.Text.Length > 0)
                 _prompt.Text = "";
@@ -374,6 +383,16 @@ public sealed class Tui : IReplScreen, IApprover
                 _status.Flash("Press Ctrl+C again to exit");
             }
         }
+        else if (key.KeyCode == (KeyCode.O | KeyCode.CtrlMask))
+        {
+            key.Handled = true;
+            if (_output is null)
+                ShowOutput(int.MaxValue);
+            else
+                CloseOutput();
+        }
+        else if (_output is { } shown)
+            key.Handled = OutputKey(key, shown);
         else if (key.KeyCode == (KeyCode.D | KeyCode.CtrlMask) && !_panel.Visible && _prompt.Text.Length == 0)
         {
             key.Handled = true;
@@ -393,6 +412,63 @@ public sealed class Tui : IReplScreen, IApprover
         }
     }
 
+    // While the viewer is open it has the keys, so they scroll it rather than edit the draft or answer an approval
+    // behind it. Esc closes it; anything else is ignored.
+    bool OutputKey(Key key, int shown)
+    {
+        if (key == Key.Esc || key == Key.Q)
+            CloseOutput();
+        else if (key == Key.CursorLeft)
+            ShowOutput(shown - 1);
+        else if (key == Key.CursorRight)
+            ShowOutput(shown + 1);
+        else if (key == Key.CursorUp || key == Key.CursorDown)
+            _outputView.ScrollBy(key == Key.CursorUp ? -1 : 1);
+        else if (key == Key.PageUp || key == Key.PageDown || key == Key.Space)
+            _outputView.Page(key == Key.PageUp ? -1 : 1);
+        else if (key == Key.Home)
+            _outputView.ScrollToTop();
+        else if (key == Key.End)
+            _outputView.Follow();
+        return true;
+    }
+
+    // Opens the viewer on output <paramref name="index"/> (clamped, so int.MaxValue is the newest), over the transcript.
+    void ShowOutput(int index)
+    {
+        var outputs = Renderer.Outputs;
+        if (outputs.Count == 0)
+        {
+            _status.Flash("No tool output yet");
+            return;
+        }
+        index = Math.Clamp(index, 0, outputs.Count - 1);
+        if (index == _output)
+            return;
+        _output = index;
+        var output = outputs[index];
+        _outputText.Clear();
+        var renderer = new Renderer(_outputText, color: Environment.GetEnvironmentVariable("NO_COLOR") is null);
+        if (output.Diff)
+            renderer.Diff(output.Text, int.MaxValue);
+        else
+            foreach (var line in output.Text.TrimEnd('\n').Split('\n'))
+                renderer.Line(line.Replace("\t", "    "));
+        _outputView.ScrollToTop();
+        _outputView.Visible = true;
+        _view.Visible = false;
+        _rule.Note = $" {output.Title} · {index + 1} of {outputs.Count} · ←/→ older/newer · Esc to close ";
+    }
+
+    void CloseOutput()
+    {
+        _output = null;
+        _outputView.Visible = false;
+        _view.Visible = true;
+        _rule.Note = null;
+        _outputText.Clear();
+    }
+
     // The bottom area grows with the draft (or the panel): rule, prompt or panel, status line.
     void Layout()
     {
@@ -400,7 +476,7 @@ public sealed class Tui : IReplScreen, IApprover
             _prompt.Viewport = _prompt.Viewport with { Y = 0 };
         var rows = _panel.Visible ? _panel.Needed() : Math.Clamp(_prompt.Rows(_app.Screen.Width - 2), 1, MaxPromptRows);
         var bottom = rows + 2;
-        _view.Height = Dim.Fill(bottom);
+        _view.Height = _outputView.Height = Dim.Fill(bottom);
         _rule.Y = Pos.AnchorEnd(bottom);
         _caret.Y = _prompt.Y = _panel.Y = Pos.AnchorEnd(bottom - 1);
         _prompt.Height = _panel.Height = rows;
@@ -481,6 +557,14 @@ sealed class TranscriptView(Transcript transcript) : View
 
     public void Page(int direction) => ScrollBy(direction * Math.Max(1, Viewport.Height - 2));
 
+    public void ScrollToTop()
+    {
+        _follow = false;
+        _top = 0;
+        SetNeedsDraw();
+        Scrolled?.Invoke();
+    }
+
     public void Follow()
     {
         _follow = true;
@@ -488,7 +572,7 @@ sealed class TranscriptView(Transcript transcript) : View
         Scrolled?.Invoke();
     }
 
-    void ScrollBy(int rows)
+    public void ScrollBy(int rows)
     {
         Sync();
         var last = Math.Max(0, _rows.Count - Viewport.Height);
@@ -800,10 +884,22 @@ sealed class PanelView : View
     }
 }
 
-/// <summary>The line above the prompt; says how much is below when the transcript is scrolled up.</summary>
+/// <summary>The line above the prompt; says how much is below when the transcript is scrolled up, or what the viewer shows.</summary>
 sealed class RuleView : View
 {
     int _below;
+    string? _note;
+
+    /// <summary>Drawn in place of the scroll count while set.</summary>
+    public string? Note
+    {
+        get => _note;
+        set
+        {
+            _note = value;
+            SetNeedsDraw();
+        }
+    }
 
     public int Below
     {
@@ -817,10 +913,8 @@ sealed class RuleView : View
 
     protected override bool OnDrawingContent(DrawContext? context)
     {
-        var label = _below > 0 ? $" ↓ {_below} more line{(_below == 1 ? "" : "s")} · Ctrl+End to follow " : "";
-        Move(0, 0);
-        SetAttribute(Styled.Border);
-        AddStr("──" + label + new string('─', Math.Max(0, Viewport.Width - 2 - label.Length)));
+        var label = _note ?? (_below > 0 ? $" ↓ {_below} more line{(_below == 1 ? "" : "s")} · Ctrl+End to follow " : "");
+        Styled.Draw(this, 0, [new("──" + label + new string('─', Math.Max(0, Viewport.Width - 2 - label.GetColumns())), default)], Styled.Border);
         return true;
     }
 }
@@ -868,7 +962,7 @@ sealed class StatusView : View
         List<Span> left = _flash is not null ? [new(_flash, Theme.StyleOf(Theme.Current.Warning))]
             : _working ? [new(Spinner[_frame % Spinner.Length], Theme.StyleOf(Theme.Current.Accent) with { Bold = true }), new(" working · ", default), .. Styled.Parse(_text)]
             : Styled.Parse(_text);
-        var right = _working ? "Enter adds to the turn · Ctrl+C cancel" : "Enter send · Alt+Enter newline · PgUp/PgDn scroll";
+        var right = _working ? "Enter adds to the turn · Ctrl+C cancel" : "Enter send · Alt+Enter newline · PgUp/PgDn scroll · Ctrl+O output";
         var gap = Viewport.Width - left.Sum(s => s.Text.GetColumns()) - right.GetColumns();
         Styled.Draw(this, 0, gap >= 2 ? [.. left, new(new string(' ', gap) + right, default)] : left, Styled.Border);
         return true;

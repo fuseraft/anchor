@@ -2,6 +2,9 @@ using Anchor.Core;
 
 namespace Anchor.Cli;
 
+/// <summary>A tool's whole result, or an approval's whole detail, for the TUI's output viewer (Ctrl+O).</summary>
+public sealed record ToolOutput(string Title, string Text, bool Diff);
+
 /// <summary>
 /// Draws agent events on a terminal. In the TUI the model's Markdown is styled as it streams, the message redrawn as it
 /// grows; a plain terminal can't take back what it printed, so it shows the Markdown as written.
@@ -11,6 +14,12 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     readonly Transcript? _styled = color ? output as Transcript : null; // the TUI's, where Markdown is styled
     bool _midLine;
     Markdown? _message; // the model's message being streamed into it, while it's being redrawn
+    readonly bool _keeps = output is Transcript; // the TUI, which has a viewer for whole outputs
+    readonly List<ToolOutput> _outputs = [];
+    readonly Dictionary<string, string> _calls = []; // what each running call was started with, for its output's title
+
+    /// <summary>How many outputs the TUI keeps for its viewer; older ones are let go.</summary>
+    public const int KeptOutputs = 100;
 
     public static Renderer ForConsole() =>
         new(Console.Out, !Console.IsOutputRedirected && Environment.GetEnvironmentVariable("NO_COLOR") is null);
@@ -46,10 +55,13 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
                 _midLine = !t.Text.EndsWith('\n');
                 break;
             case ToolStarted t:
+                Started("", t);
                 Line("  " + Tool(t.Name, t.Summary));
                 break;
-            case ToolFinished { Ok: false } t:
-                Line(Error($"    {FirstLine(t.Result)}"));
+            case ToolFinished t:
+                Finished("", t);
+                if (!t.Ok)
+                    Line(Error($"    {FirstLine(t.Result)}"));
                 break;
             case FileChanged f:
                 Line(Muted($"  ✎ {f.Path} ") + Success($"+{f.Added}") + " " + Error($"-{f.Removed}"));
@@ -105,10 +117,13 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
         switch (e)
         {
             case ToolStarted t:
+                Started(agent, t);
                 Line($"{tag} {Tool(t.Name, t.Summary)}");
                 break;
-            case ToolFinished { Ok: false } t:
-                Line(Error($"{tag}   {FirstLine(t.Result)}"));
+            case ToolFinished t:
+                Finished(agent, t);
+                if (!t.Ok)
+                    Line(Error($"{tag}   {FirstLine(t.Result)}"));
                 break;
             case FileChanged f:
                 Line(tag + Muted($" ✎ {f.Path} ") + Success($"+{f.Added}") + " " + Error($"-{f.Removed}"));
@@ -122,6 +137,44 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
             case LoopWarning or Notice or Compacted or Trimmed or RoundsDropped:
                 Line(tag + Muted($" {e switch { LoopWarning w => w.Message, Notice n => n.Message, _ => "reduced its context" }}"));
                 break;
+        }
+    }
+
+    void Started(string agent, ToolStarted t)
+    {
+        if (_keeps)
+            _calls[agent + "\0" + t.CallId] = (agent.Length == 0 ? "" : $"[{agent}] ") + (t.Name + " " + t.Summary).Trim();
+    }
+
+    void Finished(string agent, ToolFinished t)
+    {
+        if (!_keeps)
+            return;
+        var key = agent + "\0" + t.CallId;
+        var title = _calls.Remove(key, out var started) ? started : t.Name;
+        Keep(new ToolOutput(t.Ok ? title : title + " (failed)", t.Result.Length == 0 ? "(no output)" : t.Result, Diff: false));
+    }
+
+    /// <summary>Keeps <paramref name="output"/> for the TUI's viewer; a plain terminal has no viewer, so it keeps nothing.</summary>
+    public void Keep(ToolOutput output)
+    {
+        if (!_keeps)
+            return;
+        lock (_outputs)
+        {
+            _outputs.Add(output);
+            if (_outputs.Count > KeptOutputs)
+                _outputs.RemoveAt(0);
+        }
+    }
+
+    /// <summary>The kept outputs, oldest first.</summary>
+    public IReadOnlyList<ToolOutput> Outputs
+    {
+        get
+        {
+            lock (_outputs)
+                return [.. _outputs];
         }
     }
 
@@ -182,7 +235,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
         foreach (var line in lines.Take(maxLines))
             Line("    " + (line.StartsWith('+') ? Success(line) : line.StartsWith('-') ? Error(line) : line.StartsWith("@@") ? Muted(line) : line));
         if (lines.Length > maxLines)
-            Line(Muted($"    ... {lines.Length - maxLines} more lines"));
+            Line(Muted($"    ... {lines.Length - maxLines} more lines" + (_keeps ? " (Ctrl+O shows them all)" : "")));
     }
 
     /// <summary>The caret before what the user sends, in the accent color.</summary>

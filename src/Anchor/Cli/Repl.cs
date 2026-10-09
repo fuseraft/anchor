@@ -467,6 +467,7 @@ public sealed class Repl
                     /exit           quit (or Ctrl+D)
                     !<command>      run a shell command yourself; the model never sees it
                     Ctrl+C          cancel the running turn
+                    Ctrl+O          show the last tool output or diff in full; ←/→ for earlier ones
 
                     While anchor works you can keep typing: Enter sends the message into the
                     running turn, read after its current step. Commands wait for the turn to end.

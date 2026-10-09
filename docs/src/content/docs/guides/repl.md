@@ -59,6 +59,7 @@ Looking at the failing target first.
 | ↑ / ↓                       | On the first or last line: earlier messages (history).        |
 | ←, →, Home, End, Ctrl+Z     | Edit the message as in any editor; Ctrl+U deletes to the line start. |
 | PgUp / PgDn, mouse wheel    | Scroll the conversation. Ctrl+End jumps back to the bottom.   |
+| Ctrl+O                      | Show the last tool output or diff in full (see below).        |
 | Ctrl+C                      | Cancel the running turn; otherwise clear the message; twice to exit. |
 | Ctrl+D                      | Exit, when the message is empty.                              |
 
@@ -79,6 +80,21 @@ When you exit, the conversation is printed to the terminal, so it stays in your 
 `anchor --plain` runs the older line-by-line REPL instead, and anchor uses it on its own when
 stdin or stdout isn't a terminal. It can't change text once it's printed, so it shows replies as
 plain Markdown.
+
+## Seeing a tool's whole output
+
+The conversation shows one line per tool call, the first line of an error, and at most 80 lines
+of a diff. **Ctrl+O** opens the whole of the latest tool output, or the diff of the latest
+approval, in place of the conversation:
+
+| Key                    | Effect                                     |
+| ---------------------- | ------------------------------------------ |
+| ↑ / ↓, PgUp / PgDn     | Scroll. Home and End jump to either end.   |
+| ← / →                  | The output before or after this one.       |
+| Esc, `q`, Ctrl+O       | Back to the conversation.                  |
+
+The last 100 outputs are kept, including those of sub-agents. It works while an approval is
+waiting, so you can read a long diff before answering.
 
 ## Typing while anchor works
 
