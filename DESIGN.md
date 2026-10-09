@@ -65,9 +65,11 @@ tests/Anchor.Tests/
 - Replacing a whole existing file requires that the model has read its current version, with
   `read_file` or an `@` mention. Otherwise it could drop lines it never saw. `/clear` forgets what
   was read, and so does a session that is resumed.
+- `edit_file` takes one replacement, or several as `edits`. Several are made in order, each on the
+  result of the one before: one call, one diff, one approval.
 - A file that changes while the user is looking at the diff is never overwritten. `edit_file` makes
-  the same replacement in the new content if `old_string` still occurs as many times as before.
-  Every other change fails, and the model is told to read the file again.
+  the same replacements in the new content if each `old_string` still occurs as many times as
+  before. Every other change fails, and the model is told to read the file again.
 - Each file is written to a temporary file beside it, which is then renamed over it, so a failed
   write never leaves half a file. A file keeps its encoding, byte-order mark and permissions. New
   files are UTF-8 without a byte-order mark.

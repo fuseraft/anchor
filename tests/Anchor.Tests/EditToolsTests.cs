@@ -1,5 +1,7 @@
+using System.Text.Json;
 using Anchor.Core;
 using Anchor.Tools;
+using Microsoft.Extensions.AI;
 
 namespace Anchor.Tests;
 
@@ -145,6 +147,80 @@ public sealed class EditToolsTests : IDisposable
 
         Assert.Contains("nothing was written", e.Message);
         Assert.Equal("a\nb\nb\n", File.ReadAllText(At("a.txt")));
+    }
+
+    [Fact]
+    public async Task EditFile_MakesSeveralEditsInOrder_WithOneApproval()
+    {
+        File.WriteAllText(At("a.txt"), "a\nb\nc\n");
+
+        var result = await _tools.EditFile("a.txt", edits: [new("a", "A"), new("b", "B"), new("A\nB", "AB")]);
+
+        Assert.Equal("AB\nc\n", File.ReadAllText(At("a.txt")));
+        Assert.StartsWith("Made 3 edits to a.txt", result);
+        Assert.Single(_approver.Requests);
+    }
+
+    [Fact]
+    public async Task EditFile_MakesNoneOfSeveralEdits_WhenOneCantBeMade()
+    {
+        File.WriteAllText(At("a.txt"), "a\nb\nb\n");
+
+        var e = await Assert.ThrowsAsync<ToolException>(() => _tools.EditFile("a.txt", edits: [new("a", "A"), new("b", "B")]));
+
+        Assert.StartsWith("edits[1]: old_string matches 2 places (lines 2, 3)", e.Message);
+        Assert.Equal("a\nb\nb\n", File.ReadAllText(At("a.txt")));
+        Assert.Empty(_approver.Requests);
+    }
+
+    [Fact]
+    public async Task EditFile_TakesOneFormOrTheOther()
+    {
+        File.WriteAllText(At("a.txt"), "a");
+
+        await Assert.ThrowsAsync<ToolException>(() => _tools.EditFile("a.txt"));
+        var e = await Assert.ThrowsAsync<ToolException>(() => _tools.EditFile("a.txt", "a", "b", edits: [new("a", "c")]));
+
+        Assert.Contains("not both", e.Message);
+    }
+
+    [Fact]
+    public async Task EditFile_SeveralEditsArriveAsJson()
+    {
+        File.WriteAllText(At("a.txt"), "x\ny\nx\n");
+        var editFile = _tools.All().Single(f => f.Name == "edit_file");
+        var args = JsonDocument.Parse("""{"path":"a.txt","edits":[{"old_string":"x","new_string":"z","replace_all":true},{"old_string":"y","new_string":"w"}]}""");
+
+        await editFile.InvokeAsync(new AIFunctionArguments(args.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value)));
+
+        Assert.Equal("z\nw\nz\n", File.ReadAllText(At("a.txt")));
+        Assert.Contains("\"old_string\"", editFile.JsonSchema.GetRawText());
+    }
+
+    [Theory]
+    [InlineData("""[{"old_string":"x","new_string":"z"},null]""")]
+    [InlineData("""[{"old_string":"x","new_string":null}]""")]
+    public async Task EditFile_SaysWhichEditIsIncomplete(string edits)
+    {
+        File.WriteAllText(At("a.txt"), "x\n");
+        var editFile = _tools.All().Single(f => f.Name == "edit_file");
+
+        var e = await Assert.ThrowsAsync<ToolException>(async () => await editFile.InvokeAsync(new AIFunctionArguments(
+            new Dictionary<string, object?> { ["path"] = "a.txt", ["edits"] = JsonDocument.Parse(edits).RootElement })));
+
+        Assert.Contains("needs both old_string and new_string", e.Message);
+        Assert.Equal("x\n", File.ReadAllText(At("a.txt")));
+    }
+
+    [Fact]
+    public async Task EditFile_SeveralEdits_AreReappliedWhenTheUserChangesTheFileWhileApproving()
+    {
+        File.WriteAllText(At("a.txt"), "a\nb\n");
+        var tools = ToolsWhere(_ => File.WriteAllText(At("a.txt"), "user\na\nb\n"));
+
+        await tools.EditFile("a.txt", edits: [new("a\n", "A\n"), new("b\n", "B\n")]);
+
+        Assert.Equal("user\nA\nB\n", File.ReadAllText(At("a.txt")));
     }
 
     EditTools ToolsWhere(Action<ApprovalRequest> meanwhile)

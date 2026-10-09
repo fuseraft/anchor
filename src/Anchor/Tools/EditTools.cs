@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Anchor.Core;
 using Microsoft.Extensions.AI;
@@ -35,39 +36,84 @@ public sealed partial class EditTools(Gate gate)
             : $"Wrote {rel} (+{diff.Added} -{diff.Removed}).";
     }
 
-    [Description("Replace exact text in a file. old_string must match the file exactly, including indentation, and be unique unless replace_all is true. Read the file first.")]
+    [Description("Replace exact text in a file. old_string must match the file exactly, including indentation, and be unique unless " +
+                 "replace_all is true. Read the file first. For several changes to one file, pass edits instead of old_string and " +
+                 "new_string: they are made in order, each on the result of the one before, and either all are made or none.")]
     public async Task<string> EditFile(
         [Description("File path, relative to the workspace root.")] string path,
-        [Description("The exact text to replace.")] string old_string,
-        [Description("The replacement text.")] string new_string,
+        [Description("The exact text to replace.")] string? old_string = null,
+        [Description("The replacement text.")] string? new_string = null,
         [Description("Replace every occurrence instead of requiring a unique match.")] bool replace_all = false,
+        [Description("Several replacements to make in order, in place of old_string and new_string.")] TextEdit[]? edits = null,
         CancellationToken ct = default)
     {
-        if (old_string.Length == 0)
-            throw new ToolException("old_string is empty. Use write_file to create a file.");
-        if (old_string == new_string)
-            throw new ToolException("old_string and new_string are identical.");
+        TextEdit[] changes = (edits, old_string, new_string) switch
+        {
+            ({ Length: > 0 }, null, null) => edits,
+            (null or [], { } old, { } @new) => [new(old, @new, replace_all)],
+            _ => throw new ToolException("Pass old_string and new_string for one change, or edits for several, but not both."),
+        };
+        for (var i = 0; i < changes.Length; i++)
+        {
+            // The schema can't stop a model from sending null for a string, or for a whole edit.
+            var invalid = changes[i] switch
+            {
+                null or { OldString: null } or { NewString: null } => "needs both old_string and new_string.",
+                { OldString.Length: 0 } => "old_string is empty. Use write_file to create a file.",
+                var c when c.OldString == c.NewString => "old_string and new_string are identical.",
+                _ => null,
+            };
+            if (invalid is not null)
+                throw new ToolException(Which(i, changes.Length) + invalid);
+        }
 
         var full = await gate.ReadPathAsync(path, ct);
         gate.WritePath(path);
         if (TextFile.Load(full) is not { Text: var before })
             throw new ToolException($"'{path}' does not exist. Use write_file to create it.");
+        if (Apply(before, changes, out var found, out var problem) is not { } after)
+            throw new ToolException(problem!);
 
-        if (Replace(before, old_string, new_string, replace_all, out var starts) is not { } after)
-            throw new ToolException(starts.Count == 0
-                ? NotFound(before, old_string)
-                : $"old_string matches {starts.Count} places (lines {string.Join(", ", starts.Take(10).Select(s => LineOf(before, s)))}{(starts.Count > 10 ? ", ..." : "")}). " +
-                  "Include more surrounding lines to make it unique, or set replace_all.");
-
-        // If the file changes while the user looks at the diff, the same replacement is made in the new content, as long as
-        // old_string still appears as many times.
+        // If the file changes while the user looks at the diff, the same changes are made to the new content, as long as each
+        // old_string is found as many times as before.
         var diff = await gate.WriteAsync(new FileEdit(full, before, after,
-            current => Replace(current, old_string, new_string, replace_all, out var found) is { } redone && found.Count == starts.Count ? redone : null), ct);
+            current => Apply(current, changes, out var again, out _) is { } redone && again.Select(s => s.Count).SequenceEqual(found.Select(s => s.Count)) ? redone : null), ct);
         var rel = gate.Workspace.Relative(full);
-        return starts.Count > 1
-            ? $"Replaced {starts.Count} occurrences in {rel} (+{diff.Added} -{diff.Removed})."
-            : $"Edited {rel} at line {LineOf(before, starts[0])} (+{diff.Added} -{diff.Removed}).";
+        return changes.Length > 1 ? $"Made {changes.Length} edits to {rel} (+{diff.Added} -{diff.Removed})."
+            : found[0].Count > 1 ? $"Replaced {found[0].Count} occurrences in {rel} (+{diff.Added} -{diff.Removed})."
+            : $"Edited {rel} at line {LineOf(before, found[0][0])} (+{diff.Added} -{diff.Removed}).";
     }
+
+    /// <summary>One replacement in an edit_file call with several.</summary>
+    public sealed record TextEdit(
+        [property: JsonPropertyName("old_string"), Description("The exact text to replace.")] string OldString,
+        [property: JsonPropertyName("new_string"), Description("The replacement text.")] string NewString,
+        [property: JsonPropertyName("replace_all"), Description("Replace every occurrence instead of requiring a unique match.")] bool ReplaceAll = false);
+
+    // text with each edit made in turn, on the result of the one before; found is where each old_string was found. Null when an
+    // edit can't be made, with problem saying why.
+    static string? Apply(string text, TextEdit[] edits, out List<List<int>> found, out string? problem)
+    {
+        found = [];
+        problem = null;
+        for (var i = 0; i < edits.Length; i++)
+        {
+            var next = Replace(text, edits[i].OldString, edits[i].NewString, edits[i].ReplaceAll, out var starts);
+            found.Add(starts);
+            if (next is null)
+            {
+                problem = Which(i, edits.Length) + (starts.Count == 0
+                    ? NotFound(text, edits[i].OldString) + (i > 0 ? " It was looked for in the text as the edits before it left it." : "")
+                    : $"old_string matches {starts.Count} places (lines {string.Join(", ", starts.Take(10).Select(s => LineOf(text, s)))}{(starts.Count > 10 ? ", ..." : "")}). " +
+                      "Include more surrounding lines to make it unique, or set replace_all.");
+                return null;
+            }
+            text = next;
+        }
+        return text;
+    }
+
+    static string Which(int index, int count) => count > 1 ? $"edits[{index}]: " : "";
 
     // text with old replaced by new, both given text's line endings; starts is where old was found. Null when old isn't
     // found, or is found more than once without replaceAll.
