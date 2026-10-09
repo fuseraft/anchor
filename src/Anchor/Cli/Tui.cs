@@ -38,6 +38,8 @@ public sealed class Tui : IReplScreen, IApprover
     readonly Transcript _outputText = new();
     readonly TranscriptView _outputView;
     int? _output; // which of the Renderer's outputs the viewer shows, while it's open
+    string? _find; // what Ctrl+F is looking for, while it's open
+    int? _found; // the transcript line of the match it's on
     readonly RuleView _rule;
     readonly Label _caret;
     readonly PromptView _prompt;
@@ -412,7 +414,9 @@ public sealed class Tui : IReplScreen, IApprover
             key.Handled = true;
             if (Interrupt?.Invoke() == true)
                 return;
-            if (_output is not null)
+            if (_find is not null)
+                CloseFind();
+            else if (_output is not null)
                 CloseOutput();
             else if (_panel.Visible)
                 _panel.Dismiss();
@@ -434,8 +438,21 @@ public sealed class Tui : IReplScreen, IApprover
             else
                 CloseOutput();
         }
+        else if (_find is { } find)
+            key.Handled = FindKey(key, find);
         else if (_output is { } shown)
             key.Handled = OutputKey(key, shown);
+        else if (key.KeyCode == (KeyCode.F | KeyCode.CtrlMask))
+        {
+            key.Handled = true;
+            _find = "";
+            Find(older: null);
+        }
+        else if (key.KeyCode == (KeyCode.Home | KeyCode.CtrlMask))
+        {
+            key.Handled = true;
+            _view.ScrollToTop();
+        }
         else if (key.KeyCode == (KeyCode.R | KeyCode.CtrlMask) && !_panel.Visible)
         {
             key.Handled = true;
@@ -461,6 +478,68 @@ public sealed class Tui : IReplScreen, IApprover
             key.Handled = true;
             _view.Follow();
         }
+    }
+
+    // While Ctrl+F is open it has the keys: typing narrows the search, Enter or ↑ goes to an older match and ↓ to a
+    // newer one, and Esc closes it where it is. PgUp/PgDn still scroll.
+    bool FindKey(Key key, string find)
+    {
+        if (key == Key.Esc)
+            CloseFind();
+        else if (key.KeyCode == KeyCode.Enter || key == Key.CursorUp || key.KeyCode == (KeyCode.F | KeyCode.CtrlMask))
+            Find(older: true);
+        else if (key == Key.CursorDown)
+            Find(older: false);
+        else if (key == Key.PageUp || key == Key.PageDown)
+            _view.Page(key == Key.PageUp ? -1 : 1);
+        else if (key == Key.Backspace)
+        {
+            if (find.Length > 0)
+                (_find, _found) = (find[..^1], null);
+            Find(older: null);
+        }
+        else if (!key.IsCtrl && !key.IsAlt && key.AsRune.Value is >= ' ' and var rune)
+        {
+            (_find, _found) = (find + char.ConvertFromUtf32(rune), null);
+            Find(older: null);
+        }
+        return true;
+    }
+
+    // Moves to the next match older or newer than the one it's on; null starts again from the newest.
+    void Find(bool? older)
+    {
+        var find = _find ?? "";
+        var matches = find.Length == 0 ? [] : Matches(_transcript.Lines(), find);
+        if (matches.Count > 0)
+        {
+            var at = _found is { } found ? matches.IndexOf(found) : -1;
+            at = older switch
+            {
+                null => matches.Count - 1,
+                _ when at < 0 => matches.Count - 1,
+                true => Math.Max(0, at - 1),
+                false => Math.Min(matches.Count - 1, at + 1),
+            };
+            _found = matches[at];
+            _view.ShowLine(matches[at]);
+            _rule.Note = $" find: {find} · {at + 1} of {matches.Count} · Enter older · ↓ newer · Esc to close ";
+        }
+        else
+            _rule.Note = find.Length == 0 ? " find: type to search the conversation · Esc to close " : $" find: {find} · no matches · Esc to close ";
+        _view.Highlight = find.Length == 0 ? null : find;
+    }
+
+    /// <summary>The transcript lines holding <paramref name="find"/>, ignoring case, oldest first.</summary>
+    internal static List<int> Matches(List<List<Span>> lines, string find) =>
+        [.. lines.Select((line, i) => (Text: string.Concat(line.Select(s => s.Text)), i))
+            .Where(l => l.Text.Contains(find, StringComparison.OrdinalIgnoreCase)).Select(l => l.i)];
+
+    void CloseFind()
+    {
+        (_find, _found) = (null, null);
+        _view.Highlight = null;
+        _rule.Note = null;
     }
 
     // Ctrl+R: earlier messages, newest first, filtered as the user types; the chosen one replaces the draft. A
@@ -623,6 +702,32 @@ sealed class TranscriptView(Transcript transcript) : View
     /// <summary>Raised when <see cref="Below"/> changes: on a scroll, or when output arrives or goes while scrolled up.</summary>
     public Action? Scrolled { get; set; }
 
+    string? _highlight;
+
+    /// <summary>Text drawn in reverse wherever it appears, ignoring case: what Ctrl+F is looking for.</summary>
+    public string? Highlight
+    {
+        get => _highlight;
+        set
+        {
+            _highlight = value;
+            SetNeedsDraw();
+        }
+    }
+
+    /// <summary>Scrolls so transcript line <paramref name="line"/> sits a third of the way down.</summary>
+    public void ShowLine(int line)
+    {
+        Sync();
+        if (line >= _starts.Count)
+            return;
+        var last = Math.Max(0, _rows.Count - Viewport.Height);
+        _top = Math.Clamp(_starts[line] - Viewport.Height / 3, 0, last);
+        _follow = _top >= last;
+        SetNeedsDraw();
+        Scrolled?.Invoke();
+    }
+
     /// <summary>Raised when the user scrolls with the mouse.</summary>
     public Action? Wheeled { get; set; }
 
@@ -679,11 +784,12 @@ sealed class TranscriptView(Transcript transcript) : View
             Move(0, i);
             var used = 0;
             if (_top + i < _rows.Count)
-                foreach (var span in _rows[_top + i])
+                foreach (var (text, style, marked) in Marked(_rows[_top + i], _highlight))
                 {
-                    SetAttribute(Styled.Of(span.Style, Styled.Plain));
-                    AddStr(span.Text);
-                    used += span.Text.GetColumns();
+                    var attribute = Styled.Of(style, Styled.Plain);
+                    SetAttribute(marked ? attribute with { Style = attribute.Style | TextStyle.Reverse } : attribute);
+                    AddStr(text);
+                    used += text.GetColumns();
                 }
             SetAttribute(new Attribute(Color.None, Color.None));
             if (used < Viewport.Width)
@@ -695,6 +801,27 @@ sealed class TranscriptView(Transcript transcript) : View
             Scrolled?.Invoke();
         }
         return true;
+    }
+
+    /// <summary>A row's spans, split where <paramref name="find"/> starts and ends, each piece marked when it's part of a match.</summary>
+    internal static IEnumerable<(string Text, Style Style, bool Marked)> Marked(List<Span> row, string? find)
+    {
+        var text = string.Concat(row.Select(s => s.Text));
+        var marked = new bool[text.Length];
+        if (!string.IsNullOrEmpty(find))
+            for (var at = text.IndexOf(find, StringComparison.OrdinalIgnoreCase); at >= 0; at = text.IndexOf(find, at + find.Length, StringComparison.OrdinalIgnoreCase))
+                Array.Fill(marked, true, at, find.Length);
+        var pos = 0;
+        foreach (var span in row)
+        {
+            for (int start = 0, end; start < span.Text.Length; start = end)
+            {
+                var m = marked[pos + start];
+                for (end = start; end < span.Text.Length && marked[pos + end] == m; end++) { }
+                yield return (span.Text[start..end], span.Style, m);
+            }
+            pos += span.Text.Length;
+        }
     }
 
     // Rewraps everything when the width changes or lines were taken out; otherwise only from the first line that may

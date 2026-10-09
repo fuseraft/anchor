@@ -482,6 +482,7 @@ public sealed class Repl
                     !<command>      run a shell command yourself; the model never sees it
                     @<path>         attach a file or directory to the message (Tab completes)
                     Ctrl+C          cancel the running turn
+                    Ctrl+F          find text in the conversation
                     Ctrl+R          search earlier messages
                     Ctrl+O          show the last tool output or diff in full; ←/→ for earlier ones
 

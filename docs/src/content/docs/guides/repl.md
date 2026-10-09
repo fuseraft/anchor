@@ -59,7 +59,8 @@ Looking at the failing target first.
 | ↑ / ↓                       | On the first or last line: earlier messages (history).        |
 | Ctrl+R                      | Search earlier messages: type to filter, Enter puts one in the prompt. |
 | ←, →, Home, End, Ctrl+Z     | Edit the message as in any editor; Ctrl+U deletes to the line start. |
-| PgUp / PgDn, mouse wheel    | Scroll the conversation. Ctrl+End jumps back to the bottom.   |
+| PgUp / PgDn, mouse wheel    | Scroll the conversation. Ctrl+Home jumps to the top, Ctrl+End back to the bottom. |
+| Ctrl+F                      | Find text in the conversation: type to search, Enter or ↑ for an older match, ↓ for a newer one, Esc to close. |
 | Ctrl+O                      | Show the last tool output or diff in full (see below).        |
 | Ctrl+C                      | Cancel the running turn; otherwise clear the message; twice to exit. |
 | Ctrl+D                      | Exit, when the message is empty.                              |
