@@ -290,3 +290,6 @@ plugin registry. Any of these can be added later as a tool behind the gate.
     and tables that fit the screen; then the v0.5.0 release.
 11. Color themes with per-role overrides, picked in `anchor setup`, a `/model` picker that saves
     its choice, and `/clear` emptying the full-screen transcript; then the v0.6.0 release.
+12. Quality of life in the TUI: `@path` attachments, Ctrl+O for a tool's whole output, `/copy`,
+    Ctrl+F and Ctrl+R to search, completion for command arguments, a turn timer, and the bell
+    when anchor needs you; then the v0.7.0 release.
