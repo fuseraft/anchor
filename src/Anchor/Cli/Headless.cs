@@ -50,7 +50,7 @@ public static class PrintMode
             h.Session.Sync(h.Agent.History);
             var timedOut = end == TurnEnd.Cancelled && !interrupted && timeout is not null;
 
-            var answer = end == TurnEnd.Completed ? FinalText(h.Agent.History) : "";
+            var answer = end == TurnEnd.Completed ? h.Agent.LastReply ?? "" : "";
             if (json is not null)
                 json.Write(new JsonObject
                 {
@@ -81,9 +81,6 @@ public static class PrintMode
             Console.CancelKeyPress -= cancel;
         }
     }
-
-    static string FinalText(List<ChatMessage> history) =>
-        history.LastOrDefault(m => m.Role == ChatRole.Assistant && m.Text.Length > 0)?.Text.Trim() ?? "";
 }
 
 /// <summary>

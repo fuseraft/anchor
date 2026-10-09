@@ -504,4 +504,30 @@ public class AgentTests
         Assert.Equal(TurnEnd.Cancelled, await agent.RunTurnAsync("read @a.txt", cts.Token));
         Assert.Empty(agent.History);
     }
+
+    [Fact]
+    public async Task LastReply_IsTheLatestTextTheModelWrote()
+    {
+        var agent = new Agent(new FakeChatClient().Text("  first  ").Text(" "), new Toolbox([]), "system", _ => { });
+        Assert.Null(agent.LastReply);
+
+        await agent.RunTurnAsync("one", default);
+        await agent.RunTurnAsync("two", default);
+
+        Assert.Equal("first", agent.LastReply);
+    }
+
+    [Fact]
+    public void Restore_AddNote_AndClear_ChangeTheHistoryBetweenTurns()
+    {
+        var agent = new Agent(new FakeChatClient(), new Toolbox([]), "system", _ => { });
+
+        agent.Restore([new ChatMessage(ChatRole.User, "saved")]);
+        agent.AddNote("[anchor] note");
+        Assert.Equal(["saved", "[anchor] note"], agent.History.Select(m => m.Text));
+        Assert.Equal(MessageKind.Note, Messages.Kind(agent.History[1]));
+
+        agent.Clear();
+        Assert.Empty(agent.History);
+    }
 }

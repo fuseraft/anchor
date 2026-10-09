@@ -321,7 +321,7 @@ public sealed class Repl
             case "/exit" or "/quit":
                 return false;
             case "/clear":
-                agent.History.Clear();
+                agent.Clear();
                 gate.ForgetReads();
                 screen.Clear();
                 renderer.Line(renderer.Muted("History cleared."));
@@ -371,8 +371,8 @@ public sealed class Repl
                 foreach (var path in skipped)
                     renderer.Line(renderer.Warning($"  skipped {path}: it changed after anchor wrote it"));
                 if (restored.Count > 0)
-                    agent.History.Add(Messages.Create(MessageKind.Note,
-                        $"[anchor] The user undid your file changes. These files are back to their earlier content: {string.Join(", ", restored)}."));
+                    agent.AddNote(
+                        $"[anchor] The user undid your file changes. These files are back to their earlier content: {string.Join(", ", restored)}.");
                 break;
             case "/sessions":
                 foreach (var s in SessionLog.List(options.SessionsDir, Workspace.Root).Take(10))
@@ -509,8 +509,7 @@ public sealed class Repl
             renderer.Line(renderer.Error("Usage: /copy, or /copy code for a code block"));
             return;
         }
-        var reply = agent.History.LastOrDefault(m => m.Role == Microsoft.Extensions.AI.ChatRole.Assistant && m.Text.Trim().Length > 0)?.Text.Trim();
-        if (reply is null)
+        if (agent.LastReply is not { } reply)
         {
             renderer.Line(renderer.Muted("Nothing to copy yet."));
             return;

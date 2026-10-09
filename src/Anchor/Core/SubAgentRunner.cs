@@ -167,7 +167,7 @@ public sealed class SubAgentRunner(Toolbox toolbox, string systemPrompt, Action<
         var end = await agent.RunTurnAsync(task, ct);
         ct.ThrowIfCancellationRequested();
 
-        var report = agent.History.LastOrDefault(m => m.Role == ChatRole.Assistant && m.Text.Length > 0)?.Text.Trim() ?? "";
+        var report = agent.LastReply ?? "";
         return end == TurnEnd.Completed
             ? report.Length > 0 ? report : $"[sub-agent {name} finished without a report]"
             : $"[sub-agent {name} stopped early: {detail ?? end.ToString()}]\n\n{report}".TrimEnd();

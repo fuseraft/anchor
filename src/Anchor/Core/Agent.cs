@@ -33,7 +33,11 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     int _rounds;
     long _turnTokens;
 
-    public List<ChatMessage> History { get; } = [];
+    readonly List<ChatMessage> _history = [];
+
+    /// <summary>The conversation so far. Only the agent changes it: during its turns, and through <see cref="Clear"/>,
+    /// <see cref="AddNote"/> and <see cref="Restore"/> between them.</summary>
+    public IReadOnlyList<ChatMessage> History => _history;
 
     public IChatClient Client => _client;
 
@@ -112,6 +116,23 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
         return texts.Count == 0 ? null : string.Join("\n\n", texts);
     }
 
+    /// <summary>The model's latest message with text in it, trimmed; null when it hasn't written one.</summary>
+    public string? LastReply => _history.LastOrDefault(m => m.Role == ChatRole.Assistant && m.Text.Trim().Length > 0)?.Text.Trim();
+
+    /// <summary>Forgets the conversation, for /clear.</summary>
+    public void Clear() => _history.Clear();
+
+    /// <summary>Adds a note from anchor between turns, such as that the user undid the agent's file changes. During a turn,
+    /// <see cref="Notify"/> queues one for the model to read after its current step.</summary>
+    public void AddNote(string text) => _history.Add(Messages.Create(MessageKind.Note, text));
+
+    /// <summary>Continues a saved conversation, for --resume.</summary>
+    public void Restore(IEnumerable<ChatMessage> messages)
+    {
+        _history.Clear();
+        _history.AddRange(messages);
+    }
+
     /// <summary>Switches model/provider; history carries over.</summary>
     public void Use(IChatClient newClient, ChatOptions newOptions)
     {
@@ -124,7 +145,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     {
         if (compactor is null)
             return null;
-        var result = await compactor.CompactAsync(_client, _options, History, ct);
+        var result = await compactor.CompactAsync(_client, _options, _history, ct);
         if (result.Outcome == CompactOutcome.Compacted)
         {
             LastContextTokens = null;
@@ -136,7 +157,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     public async Task<TurnEnd> RunTurnAsync(string input, CancellationToken ct)
     {
         var userMessage = new ChatMessage(ChatRole.User, input);
-        History.Add(userMessage);
+        _history.Add(userMessage);
         _warnedFull = false;
 
         var guard = new LoopGuard(_limits);
@@ -185,7 +206,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
                 }
                 else
                     LastContextTokens = null;
-                History.AddRange(response.Messages);
+                _history.AddRange(response.Messages);
 
                 var calls = response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>().ToList();
                 if (calls.Count == 0)
@@ -235,7 +256,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
                     results.Add(new FunctionResultContent(call.CallId, text));
                 }
 
-                History.Add(new ChatMessage(ChatRole.Tool, results));
+                _history.Add(new ChatMessage(ChatRole.Tool, results));
                 results = null;
                 if (stop is not null)
                     return await EndAsync(TurnEnd.LoopStopped, stop);
@@ -291,10 +312,10 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
         while (_notes.TryDequeue(out var note))
             notes.Add(note);
         if (notes.Count > 0)
-            History.Add(Messages.Create(MessageKind.Note, string.Join("\n\n", notes)));
+            _history.Add(Messages.Create(MessageKind.Note, string.Join("\n\n", notes)));
         if (TakeInterjections() is { } typed)
         {
-            History.Add(new ChatMessage(ChatRole.User, typed));
+            _history.Add(new ChatMessage(ChatRole.User, typed));
             await AttachAsync(typed, ct);
         }
     }
@@ -302,7 +323,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     async Task AttachAsync(string typed, CancellationToken ct)
     {
         if (Attachments is { } attach && await attach(typed, ct) is { } note)
-            History.Add(Messages.Create(MessageKind.Note, note));
+            _history.Add(Messages.Create(MessageKind.Note, note));
     }
 
     // Summarizes older turns first; if that isn't enough (or there are none, as in one long turn), trims old tool
@@ -318,19 +339,19 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
             return compacted;
 
         // Shed the real excess: provider counts include the system prompt and tool definitions, which the estimate doesn't see.
-        var before = Messages.EstimateTokens(History);
+        var before = Messages.EstimateTokens(_history);
         var target = before - Math.Max(force ? before / 2 : ContextTokens - compactor.EvictTarget, 0);
 
-        var trimmed = Compactor.TrimToolContent(History, target);
-        var afterTrim = Messages.EstimateTokens(History);
+        var trimmed = Compactor.TrimToolContent(_history, target);
+        var afterTrim = Messages.EstimateTokens(_history);
         if (trimmed > 0)
             emit(new Trimmed(trimmed, before, afterTrim));
 
         // Dropping loses more than trimming, so it only happens when trimming couldn't get back under the trigger.
         var dropAbove = force ? target : before - Math.Max(ContextTokens - compactor.TriggerTokens, 0);
-        var dropped = afterTrim > dropAbove ? Compactor.DropRounds(History, target) : 0;
+        var dropped = afterTrim > dropAbove ? Compactor.DropRounds(_history, target) : 0;
         if (dropped > 0)
-            emit(new RoundsDropped(dropped, afterTrim, Messages.EstimateTokens(History)));
+            emit(new RoundsDropped(dropped, afterTrim, Messages.EstimateTokens(_history)));
 
         if (trimmed + dropped > 0)
             LastContextTokens = null;
@@ -342,7 +363,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
         return compacted || trimmed + dropped > 0;
     }
 
-    IEnumerable<ChatMessage> Context() => [new ChatMessage(ChatRole.System, SystemPrompt), .. History];
+    IEnumerable<ChatMessage> Context() => [new ChatMessage(ChatRole.System, SystemPrompt), .. _history];
 
     // Leaves history valid after an interrupted turn: keeps streamed text, answers every open call,
     // and drops the turn entirely if the model never produced anything.
@@ -350,22 +371,22 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     {
         var partial = streamed.ToChatResponse().Text;
         if (partial.Length > 0)
-            History.Add(new ChatMessage(ChatRole.Assistant, partial));
+            _history.Add(new ChatMessage(ChatRole.Assistant, partial));
 
-        if (History.Count > 0 && History[^1] is { Role: var role } last && role == ChatRole.Assistant)
+        if (_history.Count > 0 && _history[^1] is { Role: var role } last && role == ChatRole.Assistant)
         {
             var answered = (results ?? []).OfType<FunctionResultContent>().Select(r => r.CallId).ToHashSet();
             var open = last.Contents.OfType<FunctionCallContent>().Where(c => !answered.Contains(c.CallId)).ToList();
             if (open.Count > 0)
-                History.Add(new ChatMessage(ChatRole.Tool,
+                _history.Add(new ChatMessage(ChatRole.Tool,
                     [.. results ?? [], .. open.Select(c => new FunctionResultContent(c.CallId, $"[anchor] {reason}"))]));
         }
 
         // A message the model never answered goes, with the files attached to it.
-        if (History.Count > 1 && ReferenceEquals(History[^2], userMessage) && Messages.Kind(History[^1]) == MessageKind.Note)
-            History.RemoveAt(History.Count - 1);
-        if (History.Count > 0 && ReferenceEquals(History[^1], userMessage))
-            History.RemoveAt(History.Count - 1);
+        if (_history.Count > 1 && ReferenceEquals(_history[^2], userMessage) && Messages.Kind(_history[^1]) == MessageKind.Note)
+            _history.RemoveAt(_history.Count - 1);
+        if (_history.Count > 0 && ReferenceEquals(_history[^1], userMessage))
+            _history.RemoveAt(_history.Count - 1);
     }
 
     static ChatOptions WithTools(ChatOptions? options, Toolbox toolbox)

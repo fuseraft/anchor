@@ -77,7 +77,7 @@ public static class Startup
         if (options.Resume)
         {
             (session, var history) = SessionLog.Open(sessionsDir, options.ResumeId, workspace.Root, provider.Model);
-            agent.History.AddRange(history);
+            agent.Restore(history);
         }
         return new Harness(agent, gate, session, hub, ready, provider, window, sessionsDir, skills, agents, usage, models, runner);
     }
