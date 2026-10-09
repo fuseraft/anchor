@@ -30,6 +30,10 @@ public static class Providers
 {
     static readonly TimeSpan NetworkTimeout = TimeSpan.FromMinutes(10);
 
+    // One connection pool for every client: /model and sub-agents with their own model make new clients, and each one
+    // creating its own pool would leave sockets behind. Connections are renewed now and then, so DNS changes are seen.
+    static readonly SocketsHttpHandler Connections = new() { PooledConnectionLifetime = TimeSpan.FromMinutes(5) };
+
     static readonly (string Prefix, ProviderSettings Preset)[] Presets =
     [
         ("claude-", new("anthropic", "", null, "ANTHROPIC_API_KEY")),
@@ -101,7 +105,8 @@ public static class Providers
         if (string.IsNullOrEmpty(key))
             throw new AnchorException($"{settings.ApiKeyEnv} is not set (needed for {settings.Model}). Set it, or run anchor setup to save a key.");
         var headers = (settings.Headers ?? new Dictionary<string, string>()).ToDictionary(h => h.Key, h => Anchor.Mcp.McpConfig.Expand(h.Value));
-        var http = new HttpClient(new RetryHandler(onRetry)) { Timeout = NetworkTimeout };
+        // Disposing a client must never close the shared pool.
+        var http = new HttpClient(new RetryHandler(onRetry, inner: Connections), disposeHandler: false) { Timeout = NetworkTimeout };
 
         switch (settings.Provider)
         {

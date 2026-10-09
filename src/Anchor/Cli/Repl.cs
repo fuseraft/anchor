@@ -286,8 +286,11 @@ public sealed class Repl
         renderer.Line(renderer.Muted($"Model: {next.Model}"));
     }
 
+    // Model lists for /model and /setup; one client serves every run of either.
+    static readonly HttpClient SetupHttp = new() { Timeout = TimeSpan.FromSeconds(30) };
+
     Setup NewSetup() => new(screen.SetupIO, Anchor.Mcp.Keychain.Default(), new CredentialsFile(AnchorHome.Credentials),
-        new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, Path.Combine(Config.Home, "config.json"));
+        SetupHttp, Path.Combine(Config.Home, "config.json"));
 
     /// <summary>The slash commands, as /help lists them; the full screen suggests them from here.</summary>
     public static readonly (string Usage, string Description)[] Help =
