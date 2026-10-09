@@ -209,6 +209,27 @@ public sealed class HeadlessTests : IDisposable
     }
 
     [Fact]
+    public async Task JsonMode_ReportsAFailedSave_AndIsReadyAgain()
+    {
+        var output = new JsonLines();
+        var json = new JsonEvents(output);
+        var approver = new JsonApprover(json);
+        var stdin = new LineFeed();
+        var h = Build(new FakeChatClient().Text("hello"), approver, json.Emit);
+        File.WriteAllText(Path.Combine(_root, ".sessions"), "a file where the sessions directory should be");
+        var run = new JsonMode(json, approver, stdin).RunAsync(h);
+
+        await output.WaitForAsync(e => (string)e["type"]! == "ready");
+        stdin.Send("""{"type":"user_input","text":"hi"}""");
+        var error = await output.WaitForAsync(e => (string)e["type"]! == "error");
+        await output.WaitForAsync(e => (string)e["type"]! == "ready", count: 2);
+        stdin.Close();
+
+        Assert.StartsWith("Couldn't save the session", (string)error["message"]!);
+        Assert.Equal(0, await run.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
     public async Task JsonMode_RoundTripsQuestions()
     {
         var output = new JsonLines();

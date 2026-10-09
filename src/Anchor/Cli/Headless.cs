@@ -120,15 +120,10 @@ public sealed class JsonMode(JsonEvents json, JsonApprover approver, TextReader 
                     json.Error("A turn is already running; send cancel first.");
                     break;
                 case "user_input" when request!["text"] is JsonValue text && text.TryGetValue<string>(out var input) && input.Length > 0:
+                    turnCts?.Dispose(); // its turn has ended
                     turnCts = new CancellationTokenSource();
                     var ct = turnCts.Token;
-                    turn = Task.Run(async () =>
-                    {
-                        h.Gate.BeginTurn();
-                        await h.Agent.RunTurnAsync(input, ct);
-                        h.Session.Sync(h.Agent.History);
-                        json.Write(Ready(h));
-                    });
+                    turn = Task.Run(() => TurnAsync(h, input, ct));
                     break;
                 case "approval_response":
                     approver.Answer((string?)request!["id"], (string?)request["answer"]);
@@ -148,7 +143,28 @@ public sealed class JsonMode(JsonEvents json, JsonApprover approver, TextReader 
         turnCts?.Cancel();
         if (turn is not null)
             await turn;
+        turnCts?.Dispose();
         return 0;
+    }
+
+    // Runs in the background, where nothing else would see it fail: whatever happens, the client hears about it and then
+    // gets a ready event, so it's never left waiting for one.
+    async Task TurnAsync(Harness h, string input, CancellationToken ct)
+    {
+        try
+        {
+            h.Gate.BeginTurn();
+            await h.Agent.RunTurnAsync(input, ct);
+            h.Session.Sync(h.Agent.History);
+        }
+        catch (Exception e)
+        {
+            json.Error(e is IOException or UnauthorizedAccessException ? $"Couldn't save the session: {e.Message}" : $"The turn failed: {e}");
+        }
+        finally
+        {
+            json.Write(Ready(h));
+        }
     }
 
     static JsonObject Ready(Harness h) => new()

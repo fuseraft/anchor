@@ -77,8 +77,8 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     // Background sub-agents use the gate alongside the main agent.
     readonly Lock _lock = new();
     bool _alwaysWrite;
-    readonly HashSet<string> _alwaysPrograms = [.. saved?.Load().Programs ?? []];
-    readonly HashSet<string> _alwaysExternal = [.. saved?.Load().Tools ?? []];
+    // "Always" answers for programs and for MCP tools, starting from the ones saved for this workspace.
+    readonly (HashSet<string> Programs, HashSet<string> External) _always = Load(saved);
     readonly LinkedList<Dictionary<string, Change>> _turns = [];
     // A fingerprint of each file as the model last saw it, by full path.
     readonly Dictionary<string, string> _read = [];
@@ -88,6 +88,9 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
 
     public Workspace Workspace => workspace;
 
+    static (HashSet<string>, HashSet<string>) Load(ApprovalStore? saved) =>
+        saved?.Load() is { } loaded ? ([.. loaded.Programs], [.. loaded.Tools]) : ([], []);
+
     /// <summary>"Always" answers saved for this workspace.</summary>
     public ApprovalStore.Saved SavedApprovals => saved?.Load() ?? new();
 
@@ -95,8 +98,8 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     public void ForgetApprovals()
     {
         _alwaysWrite = false;
-        _alwaysPrograms.Clear();
-        _alwaysExternal.Clear();
+        _always.Programs.Clear();
+        _always.External.Clear();
         saved?.Clear();
     }
 
@@ -109,9 +112,9 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
         if (rule == "edits")
             _alwaysWrite = true;
         else if (rule.StartsWith("mcp__", StringComparison.Ordinal))
-            _alwaysExternal.Add(rule);
+            _always.External.Add(rule);
         else
-            _alwaysPrograms.Add(rule);
+            _always.Programs.Add(rule);
     }
 
     /// <summary>Files the current turn has written with the file tools, relative to the workspace when inside it.</summary>
@@ -320,12 +323,12 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
         // An interpreter can run anything, so "always" for one lasts only this session.
         bool known;
         lock (_lock)
-            known = programs.Count > 0 && programs.All(_alwaysPrograms.Contains);
+            known = programs.Count > 0 && programs.All(_always.Programs.Contains);
         var save = saved is not null && programs.Count > 0 && !programs.Any(ShellCommand.RunsAnyCode);
         var always = programs.Count > 0 ? $"commands using {string.Join(", ", programs.Order())}{(save ? SavedNote : "")}" : null;
         await EnforceAsync(policy.Run(command), new ApprovalRequest($"Run: {command}", null, always), known, always is null ? null : () =>
         {
-            _alwaysPrograms.UnionWith(programs);
+            _always.Programs.UnionWith(programs);
             if (save)
                 saved!.Add(programs: programs);
         }, ct);
@@ -391,11 +394,11 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
         var detail = arguments.Length > 2_000 ? arguments[..2_000] + " ..." : arguments;
         bool known;
         lock (_lock)
-            known = _alwaysExternal.Contains(tool);
+            known = _always.External.Contains(tool);
         await EnforceAsync(policy.External(readOnly), new ApprovalRequest($"Call {tool}", detail, $"all calls to {tool}{(saved is null ? "" : SavedNote)}"),
             known, () =>
             {
-                _alwaysExternal.Add(tool);
+                _always.External.Add(tool);
                 saved?.Add(tool: tool);
             }, ct);
         return Secrets.Mask(await call(ct), workspace);
