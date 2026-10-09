@@ -17,7 +17,7 @@ src/Anchor/              one project
   Core/SessionLog.cs     append-only JSONL
   Core/Definitions.cs    skills and sub-agent definitions (YAML frontmatter)
   Core/SubAgentRunner.cs fresh agent per task, same gate
-  Tools/                 read, list, glob, grep, write, edit, shell, agent, skill, ask_user
+  Tools/                 read, list, glob, grep, write, edit, apply_patch, shell, agent, skill, ask_user
   Mcp/                   config and trust, background connections, OAuth, keychain
   Providers/             anthropic (official SDK, cached), openai-compatible, retries
   Cli/                   REPL, full-screen TUI, rendering, approvals, config
@@ -67,6 +67,16 @@ tests/Anchor.Tests/
   was read, and so does a session that is resumed.
 - `edit_file` takes one replacement, or several as `edits`. Several are made in order, each on the
   result of the one before: one call, one diff, one approval.
+- Each model edits in the format it was trained on. OpenAI's models (`gpt`, `codex`, `o1`/`o3`/`o4`
+  in the name) get `apply_patch` (one patch adds, updates, deletes and moves files); every other
+  model gets `write_file` and `edit_file`. The agent picks the format on every request from the model
+  it uses, so `/model` and sub-agents with their own model follow. A sub-agent definition that names
+  any edit tool gets both formats, and the model chooses. A call in the other format, such as one in
+  a resumed history, still runs.
+- `apply_patch` places a change by its context lines, like the reference implementation: exactly,
+  then ignoring trailing whitespace, then ignoring surrounding whitespace. Context lines keep the
+  file's own text, so a loose match never changes whitespace the patch didn't mean to change. If a
+  file changes during approval, its sections are applied to the new content.
 - A file that changes while the user is looking at the diff is never overwritten. `edit_file` makes
   the same replacements in the new content if each `old_string` still occurs as many times as
   before. Every other change fails, and the model is told to read the file again.

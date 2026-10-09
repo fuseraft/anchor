@@ -5,6 +5,10 @@ description: The tools anchor gives the model, their parameters, and whether the
 
 These are the tools the model can call. Use these names in a named sub-agent's `tools` list.
 
+The model sees one set of file-editing tools: OpenAI's models (GPT, Codex and the o-series) get
+`apply_patch`, the format they're trained on, and every other model gets `write_file` and
+`edit_file`. A sub-agent whose `tools` names any of the three gets whichever suits its model.
+
 | Tool          | What it does                                             | Asks?                          |
 | ------------- | -------------------------------------------------------- | ------------------------------ |
 | `read_file`   | Read a text file as numbered lines.                      | Only outside the directory     |
@@ -13,6 +17,7 @@ These are the tools the model can call. Use these names in a named sub-agent's `
 | `grep`        | Search file contents with a regular expression.          | Only outside the directory     |
 | `write_file`  | Create a file or replace its content.                    | Yes, with a diff               |
 | `edit_file`   | Replace exact text in a file.                            | Yes, with a diff               |
+| `apply_patch` | Add, update, delete and move files with a patch.         | Yes, with a diff               |
 | `shell`       | Run a bash command.                                      | Unless it's read-only          |
 | `agent`       | Start a sub-agent in the background.                     | No (its own tools may ask)     |
 | `agent_status` | Check on the turn's sub-agents.                         | No                             |
@@ -94,6 +99,34 @@ as before. Otherwise nothing is written, and the model is told to read the file 
 
 Both file tools write through a temporary file that replaces the original, so a failed write
 never leaves half a file. A file keeps its encoding, byte-order mark and permissions.
+
+### apply_patch
+
+| Parameter | Description                                                  |
+| --------- | ------------------------------------------------------------ |
+| `input`   | The whole patch, from `*** Begin Patch` to `*** End Patch`.  |
+
+```
+*** Begin Patch
+*** Update File: src/app.py
+@@ def greet():
+ def greet():
+-    print("hi")
++    print("hello")
+*** Add File: src/new.py
++print("new file")
+*** Delete File: src/old.py
+*** End Patch
+```
+
+A change is found by its context lines (the ones starting with a space), not by line numbers. A
+`@@` line names the class or function to look in when the same context appears more than once.
+`*** Move to: <path>` after an `*** Update File:` line renames the file, and `*** End of File`
+after a change anchors it to the end of the file.
+
+You see one diff for every file in the patch and answer once, and either every file is changed or
+none is. A file the patch adds must not exist yet. As with `edit_file`, if a file changes while you
+are looking at the diff, the patch is applied to its new content when it still fits.
 
 ## shell
 

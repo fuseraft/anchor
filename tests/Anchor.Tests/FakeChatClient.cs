@@ -10,6 +10,9 @@ sealed class FakeChatClient : IChatClient
 
     public List<List<ChatMessage>> Requests { get; } = [];
 
+    /// <summary>The names of the tools each request offered.</summary>
+    public List<List<string>> Tools { get; } = [];
+
     public FakeChatClient Text(string text, long input = 10, long output = 5) =>
         Enqueue(Updates(new TextContent(text), new UsageContent(new() { InputTokenCount = input, OutputTokenCount = output })));
 
@@ -34,6 +37,7 @@ sealed class FakeChatClient : IChatClient
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
         Requests.Add([.. messages]);
+        Tools.Add([.. options?.Tools?.Select(t => t.Name) ?? []]);
         if (_script.Count == 0)
             throw new InvalidOperationException("FakeChatClient script is exhausted.");
         return _script.Dequeue()(cancellationToken);

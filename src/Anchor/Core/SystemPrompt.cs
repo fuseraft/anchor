@@ -17,7 +17,7 @@ public static class SystemPrompt
             - Paths are relative to the workspace root. Secret and credential files (.env, keys) are always denied; don't try to work around that.
             - File writes, most shell commands, and reads outside the workspace may need the user's approval. If the user declines, don't retry; ask how to proceed.
             - Prefer grep and glob to find things, then read only the ranges you need.
-            - Read a file before editing it. Use edit_file for changes to existing files and write_file for new files.
+            - Read a file before editing it, and change existing files in place rather than rewriting them whole.
             - After changing code, run the relevant build or tests with shell when there is one.
             - Be concise. Answer in Markdown.
             """;

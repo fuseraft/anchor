@@ -11,9 +11,30 @@ public sealed class Toolbox(IEnumerable<AIFunction> tools)
     readonly Dictionary<string, AIFunction> _tools = tools.ToDictionary(t => t.Name);
     readonly Lock _lock = new();
 
-    public IList<AITool> Declarations
+    /// <summary>
+    /// Tools that edit files, in two formats: apply_patch, which OpenAI's models are trained on, and write_file with edit_file,
+    /// which other models are. A model is offered one format. A call in the other still runs, as after switching models.
+    /// </summary>
+    public static readonly string[] PatchTools = ["apply_patch"], ReplaceTools = ["write_file", "edit_file"];
+
+    /// <summary>The tools to offer <paramref name="model"/>: all of them, less the edit tools in the format it isn't trained on.</summary>
+    public IList<AITool> DeclarationsFor(string? model)
     {
-        get { lock (_lock) return [.. _tools.Values]; }
+        var (preferred, other) = UsesPatches(model) ? (PatchTools, ReplaceTools) : (ReplaceTools, PatchTools);
+        lock (_lock)
+        {
+            // Only when the preferred format is here, so a toolbox with one format never loses its edit tools.
+            var hidden = _tools.Keys.Any(preferred.Contains) ? other : [];
+            return [.. _tools.Values.Where(t => !hidden.Contains(t.Name))];
+        }
+    }
+
+    /// <summary>Whether <paramref name="model"/> is one of OpenAI's (GPT, Codex, o-series), which edit files with apply_patch.</summary>
+    public static bool UsesPatches(string? model)
+    {
+        // A router may put the vendor first, as in openai/gpt-5.
+        var name = (model?[(model.LastIndexOf('/') + 1)..] ?? "").ToLowerInvariant();
+        return name.Contains("gpt") || name.Contains("codex") || (name.Length > 1 && name[0] == 'o' && char.IsAsciiDigit(name[1]));
     }
 
     public IReadOnlyList<string> Names
@@ -35,11 +56,15 @@ public sealed class Toolbox(IEnumerable<AIFunction> tools)
                 _tools.Remove(name);
     }
 
-    /// <summary>A new toolbox with only the named tools that exist right now.</summary>
+    /// <summary>A new toolbox with only the named tools that exist right now. Naming any edit tool brings both formats, so
+    /// whichever model runs it gets the one it's trained on.</summary>
     public Toolbox Subset(IEnumerable<string> names)
     {
+        var wanted = names.ToList();
+        if (wanted.Any(n => PatchTools.Contains(n) || ReplaceTools.Contains(n)))
+            wanted = [.. wanted, .. PatchTools, .. ReplaceTools];
         lock (_lock)
-            return new Toolbox(names.Select(n => _tools.GetValueOrDefault(n)).OfType<AIFunction>().Distinct());
+            return new Toolbox(wanted.Select(n => _tools.GetValueOrDefault(n)).OfType<AIFunction>().Distinct());
     }
 
     public async Task<(string Text, bool Ok)> InvokeAsync(FunctionCallContent call, CancellationToken ct)

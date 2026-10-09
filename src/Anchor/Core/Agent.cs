@@ -156,7 +156,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
                 streamed = [];
                 try
                 {
-                    _options.Tools = toolbox.Declarations;
+                    _options.Tools = toolbox.DeclarationsFor(_options.ModelId);
                     await foreach (var update in _client.GetStreamingResponseAsync(Context(), _options, ct))
                     {
                         streamed.Add(update);
@@ -371,7 +371,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     static ChatOptions WithTools(ChatOptions? options, Toolbox toolbox)
     {
         var o = options?.Clone() ?? new ChatOptions();
-        o.Tools = toolbox.Declarations;
+        o.Tools = toolbox.DeclarationsFor(o.ModelId);
         return o;
     }
 }

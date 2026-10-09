@@ -87,7 +87,7 @@ Review the change you're given. Report problems with file:line, most serious fir
 | ------------- | -------- | ----------------------------------------------------------------------- |
 | `name`        | yes      | Lowercase letters, digits and single hyphens, up to 64 characters.     |
 | `description` | yes      | When to use it. The main agent sees this. Up to 1,024 characters.      |
-| `tools`       | no       | A list or comma-separated string of [tool names](/anchor/reference/tools/). Defaults to the read-only set. |
+| `tools`       | no       | A list or comma-separated string of [tool names](/anchor/reference/tools/). Defaults to the read-only set. Any of `write_file`, `edit_file` or `apply_patch` gives the agent whichever its model is trained on. |
 | `model`       | no       | A model for this agent. Defaults to the session's current model.       |
 
 The body is added to the sub-agent's system prompt.
