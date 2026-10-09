@@ -44,6 +44,8 @@ public sealed class Repl
         (this.agent, this.gate, this.session, this.renderer, this.screen, this.options) = (agent, gate, session, renderer, screen, options);
         _provider = options.Provider;
         screen.Interrupt = Interrupt;
+        agent.Attachments = (text, ct) => Mentions.AttachAsync(text, gate,
+            (what, ok) => renderer.Line(ok ? renderer.Muted($"  + attached {what}") : renderer.Warning($"  {what}")), ct);
         if (options.SubAgents is { } subAgents)
             subAgents.Changed += () =>
             {
@@ -470,6 +472,7 @@ public sealed class Repl
                     /clear          forget the conversation
                     /exit           quit (or Ctrl+D)
                     !<command>      run a shell command yourself; the model never sees it
+                    @<path>         attach a file or directory to the message (Tab completes)
                     Ctrl+C          cancel the running turn
                     Ctrl+O          show the last tool output or diff in full; ←/→ for earlier ones
 

@@ -100,7 +100,7 @@ anchor -p --allow edits --allow dotnet "fix the failing test" --max-rounds 40 --
 
 In the REPL: `/help`, `/model`, `/setup`, `/context`, `/until`, `/compact`, `/approvals`, `/copy`, `/undo`, `/sessions`, `/agents`,
 `/skills`, `/mcp` (`/mcp login|logout <server>`), `/clear`, `/exit`. `!cmd` runs a command in
-your own shell; the model never sees it. Ctrl+C cancels the running turn.
+your own shell; the model never sees it. `@path` attaches a file to your message. Ctrl+C cancels the running turn.
 
 `AGENTS.md` in the directory is added to the system prompt.
 

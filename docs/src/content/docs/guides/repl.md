@@ -63,7 +63,8 @@ Looking at the failing target first.
 | Ctrl+C                      | Cancel the running turn; otherwise clear the message; twice to exit. |
 | Ctrl+D                      | Exit, when the message is empty.                              |
 
-Typing `/` offers to complete a slash command.
+Typing `/` suggests slash commands, and `@` suggests files (see below). ↑/↓ choose a
+suggestion, Tab or Enter takes it, and Esc hides the list.
 
 anchor's replies are Markdown, and the screen styles them as they arrive: headings, **bold**,
 *italic*, `code`, lists, task lists, quotes and links. Code blocks are syntax highlighted in the
@@ -140,6 +141,26 @@ last only until you exit: file writes, because seeing each diff is the point, an
 interpreter (`bash`, `python3`, `node`, ...), which can run anything. `/approvals` lists what is
 saved and `/approvals clear` forgets it. See [Safety and approvals](/anchor/guides/safety/) for
 what asks and what doesn't.
+
+## Mentioning files
+
+Name a file or directory with `@` to hand it to the model with your message:
+
+```
+› why does @src/parser.py reject @tests/fixtures/bad.json?
+  + attached @src/parser.py
+  + attached @tests/fixtures/bad.json
+```
+
+As you type after `@`, anchor suggests paths in the directory: the entries one level down from
+what you've typed, then files anywhere whose name starts with it, so `@pars` finds
+`src/parser.py`. Files that git ignores, and secret files, aren't suggested.
+
+When the message is sent, each mentioned file is read as `read_file` would read it, and a
+directory is listed as `list_dir` would list it. The model gets them next to your message, so
+it doesn't spend a step reading them. The same rules apply as when the model reads: a secret
+file such as `.env` is never attached. Only paths inside the directory that exist count, up to
+10 per message; anything else after an `@` stays plain text.
 
 ## Pasting
 

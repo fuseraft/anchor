@@ -71,6 +71,12 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
         }
     }
 
+    /// <summary>
+    /// What the user's text points at (the files it mentions with @), as a note for the model to read right after it;
+    /// null when there's nothing to add. Runs as each message the user typed joins the history.
+    /// </summary>
+    public Func<string, CancellationToken, Task<string?>>? Attachments { get; set; }
+
     /// <summary>Adds a message the user typed while the turn runs; the model reads it after the current step's tool results.</summary>
     public void Interject(string text)
     {
@@ -142,6 +148,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
 
         try
         {
+            await AttachAsync(input, ct);
             while (true)
             {
                 if (_rounds++ >= MaxRounds)
@@ -185,7 +192,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
                 {
                     if (await AwaitBackgroundAsync(ct))
                     {
-                        ReadInbox();
+                        await ReadInboxAsync(ct);
                         continue;
                     }
                     await ReduceContextAsync(force: false, ct);
@@ -232,7 +239,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
                 results = null;
                 if (stop is not null)
                     return await EndAsync(TurnEnd.LoopStopped, stop);
-                ReadInbox();
+                await ReadInboxAsync(ct);
                 await ReduceContextAsync(force: false, ct);
             }
         }
@@ -278,7 +285,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     }
 
     // Reports and other notes from anchor, then what the user typed, for the model to read next.
-    void ReadInbox()
+    async Task ReadInboxAsync(CancellationToken ct)
     {
         List<string> notes = [];
         while (_notes.TryDequeue(out var note))
@@ -286,7 +293,16 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
         if (notes.Count > 0)
             History.Add(Messages.Create(MessageKind.Note, string.Join("\n\n", notes)));
         if (TakeInterjections() is { } typed)
+        {
             History.Add(new ChatMessage(ChatRole.User, typed));
+            await AttachAsync(typed, ct);
+        }
+    }
+
+    async Task AttachAsync(string typed, CancellationToken ct)
+    {
+        if (Attachments is { } attach && await attach(typed, ct) is { } note)
+            History.Add(Messages.Create(MessageKind.Note, note));
     }
 
     // Summarizes older turns first; if that isn't enough (or there are none, as in one long turn), trims old tool
@@ -345,6 +361,9 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
                     [.. results ?? [], .. open.Select(c => new FunctionResultContent(c.CallId, $"[anchor] {reason}"))]));
         }
 
+        // A message the model never answered goes, with the files attached to it.
+        if (History.Count > 1 && ReferenceEquals(History[^2], userMessage) && Messages.Kind(History[^1]) == MessageKind.Note)
+            History.RemoveAt(History.Count - 1);
         if (History.Count > 0 && ReferenceEquals(History[^1], userMessage))
             History.RemoveAt(History.Count - 1);
     }

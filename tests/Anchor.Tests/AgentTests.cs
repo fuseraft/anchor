@@ -475,4 +475,33 @@ public class AgentTests
 
         Assert.Equal(TurnEnd.Completed, await turn.WaitAsync(TimeSpan.FromSeconds(5)));
     }
+
+    [Fact]
+    public async Task Attachments_FollowTheMessageAsANote()
+    {
+        var client = new FakeChatClient().Text("ok");
+        var agent = NewAgent(client);
+        agent.Attachments = (text, _) => Task.FromResult<string?>(text.Contains('@') ? "contents" : null);
+
+        await agent.RunTurnAsync("read @a.txt", CancellationToken.None);
+
+        Assert.Equal(["read @a.txt", "contents", "ok"], agent.History.Select(m => m.Text));
+        Assert.Equal(MessageKind.Note, Messages.Kind(agent.History[1]));
+        Assert.Equal("contents", client.Requests[0][^1].Text);
+    }
+
+    [Fact]
+    public async Task Attachments_GoWithAMessageTheModelNeverAnswered()
+    {
+        using var cts = new CancellationTokenSource();
+        var agent = NewAgent(new FakeChatClient().Throws(new OperationCanceledException()));
+        agent.Attachments = (_, _) =>
+        {
+            cts.Cancel();
+            return Task.FromResult<string?>("contents");
+        };
+
+        Assert.Equal(TurnEnd.Cancelled, await agent.RunTurnAsync("read @a.txt", cts.Token));
+        Assert.Empty(agent.History);
+    }
 }

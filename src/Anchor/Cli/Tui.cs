@@ -6,7 +6,6 @@ using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Drivers;
 using Terminal.Gui.Editor;
-using Terminal.Gui.Editor.Completion;
 using Terminal.Gui.Editor.Document;
 using Terminal.Gui.Input;
 using Terminal.Gui.Text;
@@ -42,6 +41,8 @@ public sealed class Tui : IReplScreen, IApprover
     readonly RuleView _rule;
     readonly Label _caret;
     readonly PromptView _prompt;
+    readonly PromptCompletion _completion = new();
+    readonly SuggestView _suggest;
     readonly PanelView _panel;
     readonly StatusView _status;
     DateTime _lastInterrupt;
@@ -75,9 +76,10 @@ public sealed class Tui : IReplScreen, IApprover
         _caret = new Label { X = 0, Text = "›", Width = 2, Height = 1 };
         _caret.SetScheme(new Scheme(Styled.Accent));
         _prompt = new PromptView { X = 2, Width = Dim.Fill() };
+        _suggest = new SuggestView { X = 0, Width = Dim.Fill(), Visible = false };
         _panel = new PanelView { X = 0, Width = Dim.Fill(), Visible = false };
         _status = new StatusView { X = 0, Width = Dim.Fill(), Height = 1, Y = Pos.AnchorEnd(1) };
-        _top.Add(_view, _outputView, _rule, _caret, _prompt, _panel, _status);
+        _top.Add(_view, _outputView, _suggest, _rule, _caret, _prompt, _panel, _status);
 
         _view.Scrolled = () => _rule.Below = _view.Below;
         _prompt.Sent += text =>
@@ -89,10 +91,16 @@ public sealed class Tui : IReplScreen, IApprover
         // After the edit has settled; the editor reports a change before its text reflects all of it.
         _prompt.ContentChanged += (_, _) => _app.AddTimeout(TimeSpan.Zero, () =>
         {
+            _prompt.Suggest();
             Layout();
             return false;
         });
-        _prompt.CompletionProvider = new CommandCompletion();
+        _prompt.Completion = _completion;
+        _prompt.SuggestionsChanged += () =>
+        {
+            _suggest.Show(_prompt.Suggestions, _prompt.Selected);
+            Layout();
+        };
         _transcript.Changed += Redraw;
         _outputText.Changed += () => Ui(_outputView.SetNeedsDraw);
         _app.Keyboard.KeyDown += OnKey;
@@ -151,6 +159,7 @@ public sealed class Tui : IReplScreen, IApprover
     {
         var h = await Startup.BuildAsync(options, new Output(Renderer.Render, this, m => Renderer.Line(Renderer.Warning(m)), Interactive: true));
         await using var _ = h.Mcp;
+        _completion.Files = new FileIndex(h.Gate.Workspace).Warm();
         foreach (var message in h.Agent.History.Where(Messages.IsUserInput))
             Ui(() => _prompt.Remember(message.Text));
         return await new Repl(h.Agent, h.Gate, h.Session, Renderer, this, ReplOptions.From(h, options)).RunAsync();
@@ -410,7 +419,10 @@ public sealed class Tui : IReplScreen, IApprover
             _sent.Writer.TryWrite(null);
         }
         else if (key == Key.Esc && !_panel.Visible)
+        {
             key.Handled = true;
+            _prompt.Dismiss();
+        }
         else if (key == Key.PageUp || key == Key.PageDown)
         {
             key.Handled = true;
@@ -487,7 +499,11 @@ public sealed class Tui : IReplScreen, IApprover
             _prompt.Viewport = _prompt.Viewport with { Y = 0 };
         var rows = _panel.Visible ? _panel.Needed() : Math.Clamp(_prompt.Rows(_app.Screen.Width - 2), 1, MaxPromptRows);
         var bottom = rows + 2;
-        _view.Height = _outputView.Height = Dim.Fill(bottom);
+        var suggested = _panel.Visible ? 0 : _prompt.Suggestions.Count;
+        _suggest.Visible = suggested > 0;
+        _suggest.Y = Pos.AnchorEnd(bottom + suggested);
+        _suggest.Height = suggested;
+        _view.Height = _outputView.Height = Dim.Fill(bottom + suggested);
         _rule.Y = Pos.AnchorEnd(bottom);
         _caret.Y = _prompt.Y = _panel.Y = Pos.AnchorEnd(bottom - 1);
         _prompt.Height = _panel.Height = rows;
@@ -741,12 +757,53 @@ static class Styled
     }
 }
 
-/// <summary>The message being written: Enter sends, Alt+Enter or Shift+Enter starts a new line, ↑/↓ at the edges walk history.</summary>
+/// <summary>
+/// The message being written: Enter sends, Alt+Enter or Shift+Enter starts a new line, ↑/↓ at the edges walk history.
+/// While it suggests completions (a slash command, an @ path), ↑/↓ choose one and Tab or Enter takes it.
+/// </summary>
 sealed class PromptView : Editor
 {
     readonly List<string> _history = [];
     int _index;
     string _draft = "";
+    int _start; // where the text the suggestions would replace begins
+    string? _dismissed; // the draft as it was when Esc hid the suggestions; they stay hidden until it changes
+
+    public PromptCompletion? Completion { get; set; }
+
+    public IReadOnlyList<string> Suggestions { get; private set; } = [];
+
+    public int Selected { get; private set; }
+
+    public event Action? SuggestionsChanged;
+
+    /// <summary>Works out the suggestions for the text before the caret.</summary>
+    public void Suggest()
+    {
+        var typed = Document is null ? "" : Text[..Math.Min(CaretOffset, Text.Length)];
+        var (start, items) = typed == _dismissed || Completion is null ? (0, []) : Completion.Suggest(typed);
+        if (items.SequenceEqual(Suggestions) && start == _start)
+            return;
+        (_start, Suggestions, Selected) = (start, items, 0);
+        SuggestionsChanged?.Invoke();
+    }
+
+    public void Dismiss()
+    {
+        if (Suggestions.Count == 0)
+            return;
+        _dismissed = Text[..Math.Min(CaretOffset, Text.Length)];
+        Suggest();
+    }
+
+    // Replaces what's typed from where the suggestion starts up to the caret.
+    void Accept()
+    {
+        var item = Suggestions[Selected];
+        Document!.Replace(_start, CaretOffset - _start, item);
+        CaretOffset = _start + item.Length;
+        Suggest();
+    }
 
     public PromptView()
     {
@@ -770,8 +827,30 @@ sealed class PromptView : Editor
 
     protected override bool OnKeyDown(Key key)
     {
-        if (IsCompletionActive)
-            return base.OnKeyDown(key);
+        // Typing that came just before this key may not have been looked at yet.
+        if (Suggestions.Count > 0)
+            Suggest();
+        if (Suggestions.Count > 0)
+        {
+            if (key == Key.CursorUp || key == Key.CursorDown)
+            {
+                Selected = (Selected + (key == Key.CursorUp ? -1 : 1) + Suggestions.Count) % Suggestions.Count;
+                SuggestionsChanged?.Invoke();
+                return true;
+            }
+            if (key == Key.Tab || key.KeyCode == KeyCode.Enter)
+            {
+                Accept();
+                return true;
+            }
+        }
+        var handled = Handle(key);
+        Suggest(); // the caret may have moved without the text changing
+        return handled;
+    }
+
+    bool Handle(Key key)
+    {
         if (key.KeyCode == KeyCode.Enter)
         {
             var text = Text.Trim();
@@ -821,18 +900,50 @@ sealed class PromptView : Editor
     }
 }
 
-/// <summary>Completes slash commands while the first word of the draft is one.</summary>
-sealed class CommandCompletion : IEditorCompletionProvider
+/// <summary>Completes slash commands while the first word of the draft is one, and workspace paths after an @.</summary>
+sealed class PromptCompletion
 {
-    public IReadOnlyList<CompletionItem> GetCompletions(TextDocument document, int caretOffset, string prefix)
+    public const int MaxShown = 8;
+
+    public FileIndex? Files { get; set; }
+
+    /// <summary>
+    /// What could replace the end of <paramref name="typed"/> (the draft up to the caret): the offset the replaced
+    /// text starts at, and the replacements, "/help" for "/he" or "@src/" for "@s".
+    /// </summary>
+    public (int Start, List<string> Items) Suggest(string typed)
     {
-        var typed = document.GetText(0, caretOffset);
-        if (!typed.StartsWith('/') || typed.Contains(' ') || typed.Contains('\n'))
-            return [];
-        return [.. Tui.Commands.Where(c => c.StartsWith(typed, StringComparison.Ordinal) && c != typed).Select(c => new CompletionItem { Label = c, InsertText = c[1..] })];
+        if (typed.StartsWith('/') && !typed.Contains(' ') && !typed.Contains('\n'))
+            return (0, [.. Tui.Commands.Where(c => c.StartsWith(typed, StringComparison.Ordinal) && c != typed)]);
+        var start = typed.LastIndexOfAny([' ', '\n', '\t']) + 1;
+        if (Files is null || start >= typed.Length || typed[start] != '@')
+            return (0, []);
+        return (start, [.. Files.Complete(typed[(start + 1)..]).Take(MaxShown).Select(p => "@" + p)]);
+    }
+}
+
+/// <summary>The prompt's suggestions, above it, the chosen one picked out.</summary>
+sealed class SuggestView : View
+{
+    IReadOnlyList<string> _items = [];
+    int _selected;
+
+    public void Show(IReadOnlyList<string> items, int selected)
+    {
+        (_items, _selected) = (items, selected);
+        SetNeedsDraw();
     }
 
-    public bool ShouldTrigger(Key key) => false;
+    protected override bool OnDrawingContent(DrawContext? context)
+    {
+        for (var i = 0; i < Viewport.Height; i++)
+        {
+            var chosen = i == _selected;
+            var text = i < _items.Count ? (chosen ? "› " : "  ") + _items[i] + (chosen ? "   Tab to complete" : "") : "";
+            Styled.Draw(this, i, [new(text, chosen ? default : Theme.StyleOf(Theme.Current.Muted))], chosen ? Styled.Accent : Styled.Plain);
+        }
+        return true;
+    }
 }
 
 /// <summary>Takes the prompt's place for approvals, ask_user and setup: a few lines of text, and a key handler.</summary>
