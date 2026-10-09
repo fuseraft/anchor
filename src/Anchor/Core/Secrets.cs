@@ -34,12 +34,12 @@ public static partial class Secrets
     /// <summary>Replaces known secret values (secret-named env vars, contents of secret files) with <see cref="Placeholder"/>.</summary>
     public static string Mask(string text, Workspace workspace)
     {
-        foreach (var value in Values(workspace).OrderByDescending(v => v.Length))
+        foreach (var value in EnvValues().Concat(FileValues(workspace)).Distinct().OrderByDescending(v => v.Length))
             text = text.Replace(value, Placeholder, StringComparison.Ordinal);
         return text;
     }
 
-    static IEnumerable<string> Values(Workspace workspace)
+    static IEnumerable<string> EnvValues()
     {
         foreach (DictionaryEntry e in Environment.GetEnvironmentVariables())
             if (e.Value is string v && v.Length >= MinValueLength && IsSecretEnvName((string)e.Key))
@@ -49,12 +49,31 @@ public static partial class Secrets
                 foreach (var line in v.Split('\n', StringSplitOptions.TrimEntries).Where(l => l.Length >= MinValueLength && l != v))
                     yield return line;
             }
+    }
 
+    static readonly Lock CacheLock = new();
+    static (string Key, string[] Values) _fileCache = ("", []);
+
+    // Every tool result is masked, so the secret files' values are kept between calls, until a file appears, goes, or changes
+    // size or time, or five seconds pass. Checking that costs a stat per file, where reading them all cost a read per file.
+    static string[] FileValues(Workspace workspace)
+    {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var files = workspace.SecretFiles().Concat(HomeCredentialFiles.Select(f => Path.Combine(home, f))).Append(AnchorHome.Credentials);
-        foreach (var file in files)
-            foreach (var value in FileValues(file))
-                yield return value;
+        var files = workspace.SecretFiles().Concat(HomeCredentialFiles.Select(f => Path.Combine(home, f))).Append(AnchorHome.Credentials).ToList();
+        // The clock is part of the key too: some file systems keep times to the second, which could hide a quick edit.
+        var key = $"{Environment.TickCount64 / 5_000}\n{string.Join('\n', files.Select(Stamp))}";
+        lock (CacheLock)
+        {
+            if (key != _fileCache.Key)
+                _fileCache = (key, [.. files.SelectMany(FileValues)]);
+            return _fileCache.Values;
+        }
+    }
+
+    static string Stamp(string file)
+    {
+        var info = new FileInfo(file);
+        return info.Exists ? $"{file}|{info.Length}|{info.LastWriteTimeUtc.Ticks}" : file;
     }
 
     static IEnumerable<string> FileValues(string file)

@@ -219,6 +219,18 @@ public sealed class GateTests : IDisposable
     }
 
     [Fact]
+    public void Mask_SeesAChangedSecretFile_Immediately()
+    {
+        var workspace = new Workspace(_root);
+        File.WriteAllText(At(".env"), "TOKEN=first-secret-value\n");
+        Assert.Equal($"x {Secrets.Placeholder}", Secrets.Mask("x first-secret-value", workspace));
+
+        File.WriteAllText(At(".env"), "TOKEN=other-secret-value-that-is-longer\n");
+
+        Assert.Equal($"x {Secrets.Placeholder}", Secrets.Mask("x other-secret-value-that-is-longer", workspace));
+    }
+
+    [Fact]
     public async Task Run_MasksEachLineOfAMultiLineSecret_WhenOnlySomeLinesAreKept()
     {
         Environment.SetEnvironmentVariable("ANCHOR_TEST_PRIVATE_KEY", "-----BEGIN-----\nfirst-secret-line\nlast-secret-line\n-----END-----");
