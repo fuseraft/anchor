@@ -16,7 +16,9 @@ tools, and a deterministic harness decides what it may touch.
   File writes and interpreters like `python3` are only ever allowed for the session.
 - **Full-screen terminal UI.** Replies are styled Markdown as they stream, with syntax-highlighted
   code and tables that fit the screen. Keep typing while anchor works, and watch background
-  sub-agents in the status line. `--plain` gives a line-by-line REPL instead.
+  sub-agents in the status line. Attach files with `@path`, open a tool's whole output with
+  Ctrl+O, search history with Ctrl+R, and `/copy` a reply or code block. The bell rings when
+  anchor needs you while you're away. `--plain` gives a line-by-line REPL instead.
 - **Long sessions.** Context is kept under the model's window by summarizing older turns,
   trimming old tool output, and as a last resort dropping the oldest steps of a long turn.
   Sessions are saved and can be resumed. `/undo` reverts the last turn's file changes.
