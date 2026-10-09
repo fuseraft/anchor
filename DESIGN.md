@@ -184,8 +184,8 @@ tests/Anchor.Tests/
 anchor setup
 anchor [--yolo] [--allow rule]... [--resume [id]] [--model m] [-p "prompt"] [--until check]
        [--max-rounds n] [--timeout s] [--json] [--plain]
-/help /model /setup /context /until /compact /approvals /undo /sessions /clear /agents /skills /mcp /exit
-!cmd runs in your shell, outside the model's history
+/help /model /setup /theme /context /until /compact /approvals /copy /undo /sessions /clear /agents /skills /mcp /exit
+!cmd runs in your shell, outside the model's history; @path attaches a file to the message
 ```
 
 The REPL is full screen (`Cli/Tui.cs`, on Terminal.Gui and its Editor view for the prompt). `Repl`
@@ -200,6 +200,22 @@ already brings, mapped onto the 16 terminal colors rather than a theme's. Anythi
 does ends the message; a sub-agent's lines go above it. A plain terminal can't take text back, so
 `LineScreen` shows the Markdown as written. Approvals, `ask_user` and setup questions take the
 prompt's place and ignore keys until typing stops, so typed text can't answer them.
+
+A few things in the TUI are anchor's own rather than Terminal.Gui's:
+
+- Suggestions (slash commands, their arguments, `@` paths) are drawn by `SuggestView` above the
+  prompt. The Editor's completion popover sat below the caret, which at the bottom of the screen
+  got clipped, and it never opened on an empty word, so `@` and a just-accepted `src/` showed
+  nothing. `/help` and the suggestions read the same `Repl.Help` table.
+- The Renderer keeps the last 100 tool results and approval details; Ctrl+O shows one in a second
+  `TranscriptView` over the transcript. Ctrl+F searches the transcript's lines and highlights
+  matches as it draws.
+- An `@path` is attached through `Agent.Attachments`, which the REPL sets: each path is read with
+  the file tools, so it passes the gate like a model read, and goes in as a Note right after the
+  user's message. A cancelled turn that the model never answered takes the Note with it.
+- There's no Ctrl+G for `$EDITOR`. Terminal.Gui's input thread keeps polling stdin, so an editor
+  would lose keystrokes to it, and there's no public way to pause it; its own Suspend stops the
+  whole process. It waits for a public API, or for the TUI to close and reopen around the editor.
 
 The user can type while a turn runs. A sent message is queued on the agent and added as a user
 message after the current step's tool results, so a call is never separated from its result;

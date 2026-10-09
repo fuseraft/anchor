@@ -85,6 +85,14 @@ See [Working until a check passes](/anchor/guides/until/).
 - **Ctrl+C** cancels a running turn. Pressed twice at the prompt, or **Ctrl+D**, exits.
 - `anchor --resume` picks up the latest session in this directory.
 
+## Find your way around
+
+- `@src/app.py` in a message attaches the file; Tab completes the path as you type.
+- **Ctrl+O** shows the last tool's whole output, or a diff in full.
+- **Ctrl+F** finds text in the conversation, and **Ctrl+R** finds an earlier message.
+- `/copy` copies the last reply; `/copy code` copies a code block from it.
+- `/help` lists every command and key. [Using the REPL](/anchor/guides/repl/) has the details.
+
 ## Give it project instructions
 
 anchor adds `AGENTS.md` in the working directory to its system prompt. Use it for build commands,

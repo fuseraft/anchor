@@ -20,6 +20,9 @@ git diff | anchor -p "review this change"
 cat error.log | anchor -p
 ```
 
+An `@path` in the prompt is only attached in the interactive REPL. In `-p` it stays plain text,
+and the model reads the file itself if it needs it.
+
 ## Approvals in -p
 
 Nobody can answer a prompt in `-p` mode, so anything that would ask is refused, and the refusal is

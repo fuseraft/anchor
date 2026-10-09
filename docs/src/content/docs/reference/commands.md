@@ -127,6 +127,8 @@ See [MCP servers](/anchor/guides/mcp/).
 | `/help`         | List commands.                                                   |
 | `/exit`, `/quit` | Quit.                                                           |
 | `!<command>`    | Run a command in your own shell. The model never sees it.        |
+| `@<path>`       | Attach a file or directory to the message. See [Mentioning files](/anchor/guides/repl/#mentioning-files). |
+| Tab             | Take the highlighted suggestion (a command, its argument, or a path). Enter does too; Esc hides the list. |
 | Ctrl+C          | Cancel the running turn; otherwise clear the prompt. Twice: exit. |
 | Enter mid-turn  | Send what you typed into the running turn; commands wait for it to end. |
 | Alt+Enter       | New line in the message (Shift+Enter where the terminal supports it). |

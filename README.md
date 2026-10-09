@@ -17,7 +17,7 @@ tools, and a deterministic harness decides what it may touch.
 - **Full-screen terminal UI.** Replies are styled Markdown as they stream, with syntax-highlighted
   code and tables that fit the screen. Keep typing while anchor works, and watch background
   sub-agents in the status line. Attach files with `@path`, open a tool's whole output with
-  Ctrl+O, search history with Ctrl+R, and `/copy` a reply or code block. The bell rings when
+  Ctrl+O, find text with Ctrl+F, search history with Ctrl+R, and `/copy` a reply or code block. The bell rings when
   anchor needs you while you're away. `--plain` gives a line-by-line REPL instead.
 - **Long sessions.** Context is kept under the model's window by summarizing older turns,
   trimming old tool output, and as a last resort dropping the oldest steps of a long turn.
