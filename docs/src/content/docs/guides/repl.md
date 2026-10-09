@@ -38,8 +38,8 @@ turn that is going in circles:
 ## The screen
 
 The REPL is a full-screen terminal UI (TUI): the conversation on top, the prompt below a rule,
-and a status line at the bottom showing the model, how full the context is, and a spinner while a
-turn runs.
+and a status line at the bottom showing the model, how full the context is, and a spinner and the
+time so far while a turn runs.
 
 ```
 anchor · claude-sonnet-5 · /home/you/my-project
@@ -49,7 +49,7 @@ Looking at the failing target first.
   ✎ src/Foo.cs +4 -1
 ──────────────────────────────────────────────────────────────
 › also run the tests
-⠼ working · claude-sonnet-5 · 12% context    Enter adds to the turn · Ctrl+C cancel
+⠼ working 14s · claude-sonnet-5 · 12% context    Enter adds to the turn · Ctrl+C cancel
 ```
 
 | Key                         | Effect                                                        |

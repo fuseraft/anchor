@@ -1121,6 +1121,7 @@ sealed class StatusView : View
     string _text = "";
     string? _flash;
     int _frame;
+    DateTime _since; // when the running turn started
     object? _timer;
 
     public bool Working => _working;
@@ -1129,6 +1130,8 @@ sealed class StatusView : View
 
     public void Set(string text, bool working)
     {
+        if (working && !_working)
+            _since = DateTime.UtcNow;
         _text = text;
         _working = working;
         _flash = null;
@@ -1145,6 +1148,10 @@ sealed class StatusView : View
         SetNeedsDraw();
     }
 
+    /// <summary>How long a turn has run, as the status line shows it: 9s, 1m05s, 1h02m.</summary>
+    public static string Elapsed(TimeSpan t) =>
+        t.TotalHours >= 1 ? $"{(int)t.TotalHours}h{t.Minutes:00}m" : t.TotalMinutes >= 1 ? $"{(int)t.TotalMinutes}m{t.Seconds:00}s" : $"{(int)t.TotalSeconds}s";
+
     public void Flash(string message)
     {
         _flash = message;
@@ -1154,7 +1161,7 @@ sealed class StatusView : View
     protected override bool OnDrawingContent(DrawContext? context)
     {
         List<Span> left = _flash is not null ? [new(_flash, Theme.StyleOf(Theme.Current.Warning))]
-            : _working ? [new(Spinner[_frame % Spinner.Length], Theme.StyleOf(Theme.Current.Accent) with { Bold = true }), new(" working · ", default), .. Styled.Parse(_text)]
+            : _working ? [new(Spinner[_frame % Spinner.Length], Theme.StyleOf(Theme.Current.Accent) with { Bold = true }), new($" working {Elapsed(DateTime.UtcNow - _since)} · ", default), .. Styled.Parse(_text)]
             : Styled.Parse(_text);
         var right = _working ? "Enter adds to the turn · Ctrl+C cancel" : "Enter send · Alt+Enter newline · PgUp/PgDn scroll · Ctrl+O output";
         var gap = Viewport.Width - left.Sum(s => s.Text.GetColumns()) - right.GetColumns();
