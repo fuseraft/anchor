@@ -38,6 +38,9 @@ public sealed class SubAgentRunner(Toolbox toolbox, string systemPrompt, Action<
     /// <summary>Where finished sub-agents' reports go: the main agent, which reads them as notes.</summary>
     public Action<string>? Report { get; set; }
 
+    /// <summary>How a sub-agent's failed turn describes the error; see <see cref="Agent.DescribeFailure"/>.</summary>
+    public Func<Exception, string?>? DescribeFailure { get; set; }
+
     /// <summary>Raised from the sub-agents' threads whenever <see cref="Running"/> may have changed.</summary>
     public event Action? Changed;
 
@@ -161,6 +164,7 @@ public sealed class SubAgentRunner(Toolbox toolbox, string systemPrompt, Action<
         }, options, compactor: compactor?.Invoke())
         {
             MaxRounds = maxRounds,
+            DescribeFailure = DescribeFailure,
         };
         started?.Invoke(agent);
 

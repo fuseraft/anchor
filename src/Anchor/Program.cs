@@ -6,6 +6,21 @@ var (options, exitCode) = Options.Parse(args, Console.Out, Console.Error);
 if (options is null)
     return exitCode;
 
+CrashLog.Mode = options switch
+{
+    { Print: true, Json: true } => "-p --json",
+    { Print: true } => "-p",
+    { Json: true } => "--json",
+    _ when options.Plain || !Tui.Supported => "plain",
+    _ => "full screen",
+};
+// A bug on a background thread ends the process; it's recorded first.
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    if (e.ExceptionObject is Exception bug)
+        Console.Error.WriteLine($"anchor: {CrashLog.Record(bug)}");
+};
+
 try
 {
     // Set before anything is drawn; Startup reports what in it couldn't be read.
@@ -71,6 +86,11 @@ try
 catch (AnchorException e)
 {
     Console.Error.WriteLine($"anchor: {e.Message}");
+    return 1;
+}
+catch (Exception e)
+{
+    Console.Error.WriteLine($"anchor: {CrashLog.Record(e)}");
     return 1;
 }
 

@@ -58,10 +58,18 @@ anchor --json                                 # editor protocol
 | `OPENAI_API_KEY`    | Key for OpenAI models.                                                  |
 | `ANCHOR_HOME`       | Where config and sessions live, instead of `~/.anchor`.                 |
 | `NO_COLOR`          | Turn off colored output.                                                |
+| `ANCHOR_DEBUG`      | Set to `1` to also print a bug's stack trace on the terminal.           |
 
 A model on another OpenAI-compatible server reads its key from the variable named in
 `provider.apiKeyEnv`. When a key variable is unset, anchor uses the key `anchor setup` saved for it
 in the OS keychain, or in `~/.anchor/credentials` where there's no keychain. MCP server configs can reference any variable as `${NAME}`.
+
+## Crash logs
+
+When anchor hits a bug, it says so in one line and writes the details, including the stack trace,
+to a file in `~/.anchor/logs/`, such as `crash-20261009-221503-3fa9c1.log`. Only you can read it,
+and the newest 10 are kept. Please attach it if you report the problem. Failures that aren't bugs,
+such as a rejected key or a provider that's down, are only reported, not recorded.
 
 ## Exit codes
 

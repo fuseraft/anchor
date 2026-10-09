@@ -76,6 +76,12 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     }
 
     /// <summary>
+    /// How a turn that failed describes the error, given the exception; anchor records a bug in a crash log here and says
+    /// where. Null, or a null result, shows the exception's message.
+    /// </summary>
+    public Func<Exception, string?>? DescribeFailure { get; set; }
+
+    /// <summary>
     /// What the user's text points at (the files it mentions with @), as a note for the model to read right after it;
     /// null when there's nothing to add. Runs as each message the user typed joins the history.
     /// </summary>
@@ -272,7 +278,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
         catch (Exception e)
         {
             Recover(userMessage, streamed, results, "Not run: the turn failed.");
-            return await EndAsync(TurnEnd.Error, e.Message);
+            return await EndAsync(TurnEnd.Error, DescribeFailure?.Invoke(e) ?? e.Message);
         }
 
         // Nothing the turn started outlives it: whatever still runs is stopped, and reports not yet read are dropped.

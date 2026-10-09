@@ -47,9 +47,12 @@ public static class Startup
             gate.Allow(rule);
         var toolbox = new Toolbox([.. new FileTools(gate).All(), .. new EditTools(gate).All(), .. new PatchTool(gate).All(), .. new ShellTool(gate).All()]);
         var systemPrompt = SystemPrompt.Build(workspace, DateOnly.FromDateTime(DateTime.Now), skills);
+        // A bug that ends a turn is recorded in a crash log; a provider or network failure is just reported.
+        Func<Exception, string?> describeFailure = e => CrashLog.IsBug(e) ? CrashLog.Record(e) : null;
         var agent = new Agent(client, toolbox, systemPrompt, emit, Providers.Providers.Options(provider), compactor: new Compactor(window))
         {
             MaxRounds = options.MaxRounds,
+            DescribeFailure = describeFailure,
         };
 
         // Sub-agents use the main agent's current model unless their definition names one.
@@ -62,6 +65,7 @@ public static class Startup
         }, () => new Compactor(window), options.MaxRounds)
         {
             Report = agent.Notify,
+            DescribeFailure = describeFailure,
         };
         agent.Background = runner;
         toolbox.Add(new AgentTools(runner, agents, skills).All());

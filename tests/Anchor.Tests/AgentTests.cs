@@ -530,4 +530,18 @@ public class AgentTests
         agent.Clear();
         Assert.Empty(agent.History);
     }
+
+    [Fact]
+    public async Task AFailedTurn_IsDescribedByDescribeFailure_WhenItIsSet()
+    {
+        var events = new List<AgentEvent>();
+        var agent = new Agent(new FakeChatClient().Throws(new InvalidOperationException("boom")), new Toolbox([]), "system", events.Add)
+        {
+            DescribeFailure = e => $"recorded {e.Message}",
+        };
+
+        Assert.Equal(TurnEnd.Error, await agent.RunTurnAsync("hi", default));
+
+        Assert.Equal("recorded boom", events.OfType<TurnEnded>().Single().Detail);
+    }
 }

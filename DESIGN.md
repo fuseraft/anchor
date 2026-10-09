@@ -44,7 +44,8 @@ tests/Anchor.Tests/
    - Known limitation: masking matches exact values, so a deliberately re-encoded value
      (`base64 .env`) is not caught. The approval prompt is the guard for that case.
 5. **The core never prints.** It emits events, and a renderer draws them. `--json` is just a
-   second renderer.
+   second renderer. A bug is recorded in `~/.anchor/logs/crash-*.log` and reported in one line; the
+   core hands it to a `DescribeFailure` hook instead of writing the file itself.
 6. **Messages are typed.** Every message carries its kind (user, assistant, tool, summary, note), so
    anchor never parses string prefixes to tell them apart.
 

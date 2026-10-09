@@ -156,7 +156,7 @@ public sealed class JsonMode(JsonEvents json, JsonApprover approver, TextReader 
         }
         catch (Exception e)
         {
-            json.Error(e is IOException or UnauthorizedAccessException ? $"Couldn't save the session: {e.Message}" : $"The turn failed: {e}");
+            json.Error(e is IOException or UnauthorizedAccessException ? $"Couldn't save the session: {e.Message}" : $"The turn failed: {CrashLog.Record(e)}");
         }
         finally
         {
