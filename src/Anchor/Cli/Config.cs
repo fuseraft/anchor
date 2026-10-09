@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Anchor.Core;
 
 namespace Anchor.Cli;
 
@@ -35,7 +36,7 @@ public sealed class Config
         }
         catch (JsonException e)
         {
-            throw new InvalidOperationException($"{path} is not valid JSON: {e.Message}");
+            throw new AnchorException($"{path} is not valid JSON: {e.Message}");
         }
     }
 

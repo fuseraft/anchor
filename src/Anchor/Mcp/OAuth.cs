@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Web;
+using Anchor.Core;
 using ModelContextProtocol.Authentication;
 
 namespace Anchor.Mcp;
@@ -114,7 +115,7 @@ public sealed class TokenStore(string server, string url, IKeychain keychain) : 
         {
             return await keychain.GetAsync(_account) is { } json ? JsonSerializer.Deserialize<TokenContainer>(json) : _memory;
         }
-        catch (Exception e) when (e is JsonException or InvalidOperationException)
+        catch (Exception e) when (e is JsonException or KeychainException)
         {
             return _memory;
         }
@@ -127,7 +128,7 @@ public sealed class TokenStore(string server, string url, IKeychain keychain) : 
         {
             await keychain.SetAsync(_account, JsonSerializer.Serialize(tokens));
         }
-        catch (InvalidOperationException)
+        catch (KeychainException)
         {
             // No usable keychain: the in-memory copy lasts for this session.
         }
@@ -142,6 +143,9 @@ public sealed class TokenStore(string server, string url, IKeychain keychain) : 
         return $"mcp-oauth-{name}-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(url)))[..8].ToLowerInvariant()}";
     }
 }
+
+/// <summary>The OS keychain is missing, or refused to store a secret. Callers fall back to the credentials file or to memory.</summary>
+public sealed class KeychainException(string message) : AnchorException(message);
 
 public interface IKeychain
 {
@@ -181,7 +185,7 @@ public static class Keychain
             var (args, stdin) = set(account, secret);
             var (exit, output) = await RunAsync(args, stdin);
             if (exit != 0)
-                throw new InvalidOperationException($"{tool} could not store the secret: {output.Trim()}");
+                throw new KeychainException($"{tool} could not store the secret: {output.Trim()}");
         }
 
         public Task DeleteAsync(string account) => RunAsync(delete(account), null);
@@ -196,7 +200,7 @@ public static class Keychain
             }
             catch (System.ComponentModel.Win32Exception)
             {
-                throw new InvalidOperationException($"{tool} is not installed.");
+                throw new KeychainException($"{tool} is not installed.");
             }
             using (process)
             {
@@ -243,7 +247,7 @@ public static class Keychain
                 Marshal.Copy(blob, 0, blobPtr, blob.Length);
                 var cred = new Credential { Type = Generic, TargetName = target, BlobSize = (uint)blob.Length, Blob = blobPtr, Persist = 2 };
                 if (!CredWrite(ref cred, 0))
-                    throw new InvalidOperationException($"CredWrite failed ({Marshal.GetLastWin32Error()}).");
+                    throw new KeychainException($"CredWrite failed ({Marshal.GetLastWin32Error()}).");
             }
             finally
             {

@@ -61,7 +61,7 @@ public sealed class McpHub(Toolbox toolbox, Gate gate, Action<AgentEvent> emit, 
     {
         McpServer server;
         lock (_lock)
-            server = _servers.TryGetValue(name, out var s) ? s : throw new InvalidOperationException($"No MCP server named '{name}'.");
+            server = _servers.TryGetValue(name, out var s) ? s : throw new AnchorException($"No MCP server named '{name}'.");
         await DisconnectAsync(name);
         try
         {
@@ -88,7 +88,7 @@ public sealed class McpHub(Toolbox toolbox, Gate gate, Action<AgentEvent> emit, 
     {
         McpServer server;
         lock (_lock)
-            server = _servers.TryGetValue(name, out var s) ? s : throw new InvalidOperationException($"No MCP server named '{name}'.");
+            server = _servers.TryGetValue(name, out var s) ? s : throw new AnchorException($"No MCP server named '{name}'.");
         if (server.Config.Url is { } url)
             await TokenStore.ForgetAsync(name, McpConfig.Expand(url), keychain);
         await DisconnectAsync(name);

@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Anchor.Core;
 using Anchor.Mcp;
 using Anchor.Providers;
 
@@ -282,7 +283,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
             if (await keychain.GetAsync(Providers.Providers.KeychainAccount(env)) is { } key)
                 return key;
         }
-        catch (Exception e) when (e is InvalidOperationException or OperationCanceledException) { }
+        catch (Exception e) when (e is KeychainException or OperationCanceledException) { }
         try
         {
             return credentials.Get(env);
@@ -302,7 +303,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
             io.Note("Saved the key in your OS keychain.", ok: true);
             return;
         }
-        catch (InvalidOperationException) { }
+        catch (KeychainException) { }
         try
         {
             credentials.Set(env, key);
@@ -325,7 +326,8 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
         {
             return new(null, Rejected: $"{(int)e.StatusCode} {e.StatusCode}");
         }
-        catch (Exception e) when (e is HttpRequestException or InvalidOperationException or JsonException or TaskCanceledException)
+        // HttpClient throws InvalidOperationException for a request it can't send; ours say the reply wasn't a model list.
+        catch (Exception e) when (e is HttpRequestException or AnchorException or InvalidOperationException or JsonException or TaskCanceledException)
         {
             return new(null, Error: e.Message);
         }
@@ -364,7 +366,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
         if (!File.Exists(configPath))
             return [];
         return JsonNode.Parse(File.ReadAllText(configPath), NodeOptions, DocumentOptions) as JsonObject
-            ?? throw new InvalidOperationException($"{configPath} is not a JSON object.");
+            ?? throw new AnchorException($"{configPath} is not a JSON object.");
     }
 
     /// <summary>Edits the config in place, keeping every other setting; comments can't survive, so the original is kept beside it.</summary>

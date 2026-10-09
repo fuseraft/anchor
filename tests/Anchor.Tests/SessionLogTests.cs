@@ -102,8 +102,8 @@ public sealed class SessionLogTests : IDisposable
         var id = Save("/work", "x", DateTime.Now);
 
         Assert.Equal(id, SessionLog.Open(_dir, id[..15], "/work", "m").Log.Id);
-        Assert.Contains("No session matches", Assert.Throws<InvalidOperationException>(() => SessionLog.Open(_dir, "nope", "/work", "m")).Message);
-        Assert.Contains("No previous session", Assert.Throws<InvalidOperationException>(() => SessionLog.Open(_dir, null, "/empty", "m")).Message);
+        Assert.Contains("No session matches", Assert.Throws<AnchorException>(() => SessionLog.Open(_dir, "nope", "/work", "m")).Message);
+        Assert.Contains("No previous session", Assert.Throws<AnchorException>(() => SessionLog.Open(_dir, null, "/empty", "m")).Message);
     }
 
     string Save(string workspace, string request, DateTime when)

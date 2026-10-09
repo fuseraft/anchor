@@ -68,7 +68,7 @@ try
         return await new Repl(h.Agent, h.Gate, h.Session, renderer, screen, ReplOptions.From(h, options)).RunAsync();
     }
 }
-catch (InvalidOperationException e)
+catch (AnchorException e)
 {
     Console.Error.WriteLine($"anchor: {e.Message}");
     return 1;

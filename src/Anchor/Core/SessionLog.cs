@@ -39,7 +39,7 @@ public sealed class SessionLog
             ? List(dir, workspace).Take(1).Select(s => s.Id).ToList()
             : Files(dir).Select(Path.GetFileNameWithoutExtension).Where(f => f!.StartsWith(id, StringComparison.Ordinal)).ToList()!;
         if (candidates.Count != 1)
-            throw new InvalidOperationException(candidates.Count == 0
+            throw new AnchorException(candidates.Count == 0
                 ? id is null ? "No previous session in this directory." : $"No session matches '{id}'."
                 : $"'{id}' matches {candidates.Count} sessions; use more of the id.");
 

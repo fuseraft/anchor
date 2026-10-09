@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using Anchor.Core;
 using Anchor.Providers;
 using Microsoft.Extensions.AI;
 
@@ -31,7 +32,7 @@ public class ProvidersTests
     [Fact]
     public void Resolve_UnknownModelNeedsEndpointAndKey()
     {
-        var e = Assert.Throws<InvalidOperationException>(() => Providers.Providers.Resolve("llama-3"));
+        var e = Assert.Throws<AnchorException>(() => Providers.Providers.Resolve("llama-3"));
         Assert.Contains("provider.endpoint", e.Message);
 
         var s = Providers.Providers.Resolve("llama-3", endpoint: "http://localhost:11434/v1", apiKeyEnv: "OLLAMA_KEY");
@@ -41,7 +42,7 @@ public class ProvidersTests
     [Fact]
     public void Create_MissingKey_NamesTheVariable()
     {
-        var e = Assert.Throws<InvalidOperationException>(() =>
+        var e = Assert.Throws<AnchorException>(() =>
             Providers.Providers.Create(new ProviderSettings("openai", "gpt-4.1", null, "ANCHOR_TEST_UNSET_KEY")));
         Assert.Contains("ANCHOR_TEST_UNSET_KEY", e.Message);
     }
@@ -93,7 +94,7 @@ public class ProvidersTests
     [Fact]
     public void Resolve_UnknownPrefix_IsNotACustomProvider()
     {
-        var e = Assert.Throws<InvalidOperationException>(() => Providers.Providers.Resolve("home/llama-3", custom: Work));
+        var e = Assert.Throws<AnchorException>(() => Providers.Providers.Resolve("home/llama-3", custom: Work));
         Assert.Contains("providers", e.Message);
     }
 
@@ -109,7 +110,7 @@ public class ProvidersTests
             ["odd"] = new() { Endpoint = "http://x", Type = "gemini" },
         };
 
-        var e = Assert.Throws<InvalidOperationException>(() => Providers.Providers.Resolve(model, custom: custom));
+        var e = Assert.Throws<AnchorException>(() => Providers.Providers.Resolve(model, custom: custom));
         Assert.Contains(message, e.Message);
     }
 

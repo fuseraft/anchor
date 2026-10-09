@@ -128,6 +128,3 @@ public sealed class Workspace
         }
     }
 }
-
-/// <summary>A tool failure whose message is shown to the model.</summary>
-public sealed class ToolException(string message) : Exception(message);

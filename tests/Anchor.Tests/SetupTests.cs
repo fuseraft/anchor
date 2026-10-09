@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using Anchor.Cli;
+using Anchor.Core;
 using Anchor.Providers;
 
 namespace Anchor.Tests;
@@ -299,7 +300,7 @@ public class SetupTests : IDisposable
         var settings = new ProviderSettings("openai", "gpt-4.1", null, "ANCHOR_TEST_UNSET_KEY");
 
         Providers.Providers.Create(settings, env => env == "ANCHOR_TEST_UNSET_KEY" ? "stored" : null);
-        var e = Assert.Throws<InvalidOperationException>(() => Providers.Providers.Create(settings, _ => null));
+        var e = Assert.Throws<AnchorException>(() => Providers.Providers.Create(settings, _ => null));
         Assert.Contains("anchor setup", e.Message);
     }
 

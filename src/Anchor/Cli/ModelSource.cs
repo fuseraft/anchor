@@ -27,7 +27,7 @@ public sealed class ModelSource(Func<string, string?> storedKey, Func<Config> co
                     {
                         key = keychain.GetAsync(Providers.Providers.KeychainAccount(env)).GetAwaiter().GetResult();
                     }
-                    catch (Exception e) when (e is InvalidOperationException or OperationCanceledException)
+                    catch (Exception e) when (e is KeychainException or OperationCanceledException)
                     {
                         key = null;
                     }

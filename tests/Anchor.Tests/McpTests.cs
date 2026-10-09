@@ -11,12 +11,12 @@ sealed class MemoryKeychain : IKeychain
     public bool Broken { get; set; }
 
     public Task<string?> GetAsync(string account) =>
-        Broken ? throw new InvalidOperationException("no keychain") : Task.FromResult(Items.GetValueOrDefault(account));
+        Broken ? throw new KeychainException("no keychain") : Task.FromResult(Items.GetValueOrDefault(account));
 
     public Task SetAsync(string account, string secret)
     {
         if (Broken)
-            throw new InvalidOperationException("no keychain");
+            throw new KeychainException("no keychain");
         Items[account] = secret;
         return Task.CompletedTask;
     }

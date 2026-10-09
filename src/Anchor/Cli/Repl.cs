@@ -396,7 +396,7 @@ public sealed class Repl
                     else
                         renderer.Line(renderer.Error("Usage: /mcp, /mcp login <server>, /mcp logout <server>"));
                 }
-                catch (InvalidOperationException e)
+                catch (AnchorException e)
                 {
                     renderer.Line(renderer.Error(e.Message));
                 }
@@ -423,7 +423,7 @@ public sealed class Repl
                         renderer.Line(renderer.Muted("Saved as the default model."));
                     }
                 }
-                catch (InvalidOperationException e)
+                catch (AnchorException e)
                 {
                     renderer.Line(renderer.Error(e.Message));
                 }
@@ -433,7 +433,7 @@ public sealed class Repl
                 {
                     SwitchModel(parts[1]);
                 }
-                catch (InvalidOperationException e)
+                catch (AnchorException e)
                 {
                     renderer.Line(renderer.Error(e.Message));
                 }
@@ -458,7 +458,7 @@ public sealed class Repl
                         Theme.Current = Theme.Of(Config.Load());
                     }
                 }
-                catch (InvalidOperationException e)
+                catch (AnchorException e)
                 {
                     renderer.Line(renderer.Error(e.Message));
                 }

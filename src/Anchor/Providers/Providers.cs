@@ -1,5 +1,6 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
+using Anchor.Core;
 using Anthropic;
 using Microsoft.Extensions.AI;
 using OpenAI;
@@ -54,7 +55,7 @@ public static class Providers
         IReadOnlyDictionary<string, CustomProvider>? custom = null)
     {
         model ??= Fallbacks.FirstOrDefault(f => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(f.Env))).Model
-            ?? throw new InvalidOperationException(
+            ?? throw new AnchorException(
                 "No model is set up yet. Run anchor setup, or set ANTHROPIC_API_KEY or XAI_API_KEY, or pass --model.");
 
         // Only the first slash separates the provider, since proxies use names like "work/anthropic/claude-sonnet-5".
@@ -64,7 +65,7 @@ public static class Providers
 
         var preset = Presets.FirstOrDefault(p => model.StartsWith(p.Prefix, StringComparison.OrdinalIgnoreCase)).Preset;
         if (preset is null && (endpoint is null || apiKeyEnv is null))
-            throw new InvalidOperationException(
+            throw new AnchorException(
                 $"Unknown model '{model}'. Add the server under providers in ~/.anchor/config.json and use <provider>/{model}, " +
                 "or set provider.endpoint and provider.apiKeyEnv.");
 
@@ -78,11 +79,11 @@ public static class Providers
     static ProviderSettings FromCustom(string name, string model, CustomProvider p)
     {
         if (model.Length == 0)
-            throw new InvalidOperationException($"No model after '{name}/'. Use {name}/<model>.");
+            throw new AnchorException($"No model after '{name}/'. Use {name}/<model>.");
         if (string.IsNullOrEmpty(p.Endpoint))
-            throw new InvalidOperationException($"Provider '{name}' has no endpoint in ~/.anchor/config.json.");
+            throw new AnchorException($"Provider '{name}' has no endpoint in ~/.anchor/config.json.");
         if (p.Type is not ("openai" or "anthropic"))
-            throw new InvalidOperationException($"Provider '{name}' has type '{p.Type}'. Use 'openai' or 'anthropic'.");
+            throw new AnchorException($"Provider '{name}' has type '{p.Type}'. Use 'openai' or 'anthropic'.");
         return new(p.Type, model, p.Endpoint, p.ApiKeyEnv, p.Headers, p.ContextWindow, name);
     }
 
@@ -98,7 +99,7 @@ public static class Providers
             : Environment.GetEnvironmentVariable(settings.ApiKeyEnv) is { Length: > 0 } fromEnv ? fromEnv
             : storedKey?.Invoke(settings.ApiKeyEnv);
         if (string.IsNullOrEmpty(key))
-            throw new InvalidOperationException($"{settings.ApiKeyEnv} is not set (needed for {settings.Model}). Set it, or run anchor setup to save a key.");
+            throw new AnchorException($"{settings.ApiKeyEnv} is not set (needed for {settings.Model}). Set it, or run anchor setup to save a key.");
         var headers = (settings.Headers ?? new Dictionary<string, string>()).ToDictionary(h => h.Key, h => Anchor.Mcp.McpConfig.Expand(h.Value));
         var http = new HttpClient(new RetryHandler(onRetry)) { Timeout = NetworkTimeout };
 
@@ -128,7 +129,7 @@ public static class Providers
                 return new OpenAIClient(new ApiKeyCredential(key), options).GetChatClient(settings.Model).AsIChatClient();
 
             default:
-                throw new InvalidOperationException($"Unknown provider '{settings.Provider}'. Use 'anthropic' or 'openai'.");
+                throw new AnchorException($"Unknown provider '{settings.Provider}'. Use 'anthropic' or 'openai'.");
         }
     }
 
@@ -154,7 +155,7 @@ public static class Providers
             throw new HttpRequestException($"{url} answered {(int)response.StatusCode} {response.ReasonPhrase}.", null, response.StatusCode);
         using var json = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         if (!json.RootElement.TryGetProperty("data", out var data) || data.ValueKind != System.Text.Json.JsonValueKind.Array)
-            throw new InvalidOperationException($"{url} did not return a model list.");
+            throw new AnchorException($"{url} did not return a model list.");
         return [.. data.EnumerateArray()
             .Select(m => m.TryGetProperty("id", out var id) ? id.GetString() : null)
             .OfType<string>()
