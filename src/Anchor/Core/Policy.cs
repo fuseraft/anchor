@@ -22,10 +22,10 @@ public sealed class Policy(Workspace workspace, bool yolo = false, IEnumerable<s
     public bool Yolo { get; } = yolo;
 
     /// <summary>
-    /// Whether shell commands run as the bash that <see cref="ShellCommand"/> reads. On Windows they run
-    /// under cmd.exe, which splits and quotes differently, so nothing is judged read-only there.
+    /// Whether shell commands run as the bash that <see cref="ShellCommand"/> reads. On Windows without Git for Windows
+    /// they run under cmd.exe, which splits and quotes differently, so nothing is judged read-only there.
     /// </summary>
-    public bool ParsesShell { get; init; } = !OperatingSystem.IsWindows();
+    public bool ParsesShell { get; init; } = HostShell.IsBash;
 
     public Verdict Read(string literal, string real)
     {
@@ -54,10 +54,13 @@ public sealed class Policy(Workspace workspace, bool yolo = false, IEnumerable<s
             return Verdict.Deny(danger);
         if (ReachesSecretFile(command))
             return Verdict.Deny("it names a path that resolves to a secret or credential file");
-        if (Yolo || ParsesShell && ShellCommand.IsReadOnly(command, p => workspace.IsInside(workspace.Resolve(p))))
+        if (Yolo || ParsesShell && ShellCommand.IsReadOnly(command, IsInside))
             return Verdict.Allow;
         return Verdict.Ask("command");
     }
+
+    // Git Bash maps /c/... to C:\ and / to Git's own folder, which Resolve can't follow, so a /path there is outside.
+    bool IsInside(string path) => !(OperatingSystem.IsWindows() && path.StartsWith('/')) && workspace.IsInside(workspace.Resolve(path));
 
     // Catches symlinks: `cat notes.txt` where notes.txt -> .env names no secret file itself.
     bool ReachesSecretFile(string command) =>

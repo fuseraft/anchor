@@ -83,11 +83,14 @@ only. See [Scripting](/anchor/guides/scripting/).
 
 ## Windows
 
-anchor reads shell commands with bash's rules, but on Windows it runs them with `cmd.exe`, which
-splits and quotes differently. For example, `echo 'x & del /q foo'` is one harmless `echo` to bash,
-but cmd runs the `del`.
+On Windows, anchor runs shell commands with Git for Windows' bash, found from `git` on the `PATH` or
+under Program Files. The same rules apply as on Linux and macOS, with two additions: `C:/...` and
+`/c/...` paths count as outside the workspace, and `cmd`, `powershell` and `pwsh` count as
+interpreters, so "always" for them lasts only the session.
 
-So on Windows, until the rules understand cmd and PowerShell:
+Without Git for Windows, commands run with `cmd.exe`, which splits and quotes differently from bash.
+For example, `echo 'x & del /q foo'` is one harmless `echo` to bash, but cmd runs the `del`. So
+under cmd:
 
 - no shell command is treated as read-only, so every command asks, and
 - "always" is never offered for commands.

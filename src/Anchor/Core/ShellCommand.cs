@@ -14,7 +14,7 @@ public static partial class ShellCommand
     static readonly HashSet<string> Privileged = ["sudo", "sudoedit", "su", "doas", "pkexec", "run0"];
     static readonly HashSet<string> DiskTools = ["wipefs", "fdisk", "sfdisk", "parted", "mkswap"];
     static readonly HashSet<string> Fetchers = ["curl", "wget"];
-    static readonly HashSet<string> Interpreters = ["sh", "bash", "zsh", "dash", "ksh", "fish", "python", "python3", "perl", "ruby", "node", "php"];
+    static readonly HashSet<string> Interpreters = ["sh", "bash", "zsh", "dash", "ksh", "fish", "python", "python3", "perl", "ruby", "node", "php", "cmd", "powershell", "pwsh"];
     static readonly HashSet<string> Shells = ["sh", "bash", "zsh", "dash", "ksh", "fish"];
     static readonly HashSet<string> Wrappers = ["command", "builtin", "exec", "nohup", "time", "stdbuf", "then", "do", "else", "elif", "if", "while", "until", "!", "{", "}"];
     static readonly HashSet<string> XargsValueOptions = ["-I", "-n", "-P", "-d", "-L", "-s", "-a", "-E"];
@@ -93,9 +93,9 @@ public static partial class ShellCommand
         foreach (var arg in c.Args)
         {
             var value = arg.StartsWith('-') && arg.Contains('=') ? arg[(arg.IndexOf('=') + 1)..] : arg;
-            if (value.StartsWith('~') || value.Split('/').Contains(".."))
+            if (value.StartsWith('~') || value.Split('/', '\\').Contains(".."))
                 return false;
-            if (value.StartsWith('/') && value != "/dev/null" && !isInside(value))
+            if ((value.StartsWith('/') || DrivePath().IsMatch(value)) && value != "/dev/null" && !isInside(value))
                 return false;
         }
         return true;
@@ -123,11 +123,15 @@ public static partial class ShellCommand
         return SecretSamples.Any(s => FileSystemName.MatchesSimpleExpression(name, s, ignoreCase: false));
     }
 
-    [GeneratedRegex(@"^(/|/\*|~|~/|~/\*|\$HOME|\$\{HOME\}|\$HOME/\*?|\$\{HOME\}/\*?|/[^/]+/?\*?)$")]
+    [GeneratedRegex(@"^(/|/\*|~|~/|~/\*|\$HOME|\$\{HOME\}|\$HOME/\*?|\$\{HOME\}/\*?|/[^/]+/?\*?|[A-Za-z]:([/\\]([^/\\]+[/\\]?)?)?\*?)$")]
     private static partial Regex CriticalTarget();
 
     [GeneratedRegex(@"^/dev/(sd|nvme|hd|vd|xvd|disk|mmcblk)")]
     private static partial Regex RawDisk();
+
+    // C:, C:/ or C:\, which Windows programs read as absolute.
+    [GeneratedRegex(@"^[A-Za-z]:")]
+    private static partial Regex DrivePath();
 
     [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*=")]
     private static partial Regex Assignment();
@@ -288,7 +292,7 @@ public static partial class ShellCommand
 
             while (i < words.Count)
             {
-                var name = Path.GetFileName(words[i]);
+                var name = ProgramName(words[i]);
                 if (name == "env")
                 {
                     for (i++; i < words.Count && (words[i].StartsWith('-') || Assignment().IsMatch(words[i])); i++)
@@ -310,7 +314,7 @@ public static partial class ShellCommand
             if (i >= words.Count)
                 return;
 
-            var program = Path.GetFileName(words[i]);
+            var program = ProgramName(words[i]);
             var args = words.Skip(i + 1).ToList();
             Commands.Add(new SimpleCommand(program, words[i], args, writes, envPrefix, inSubstitution, pipeline, stage));
 
@@ -334,6 +338,16 @@ public static partial class ShellCommand
                         Expand(sub, [], inSubstitution, pipeline, stage);
                 }
             }
+        }
+
+        // Windows finds Git.EXE for git, so the name is compared without case or .exe there.
+        static string ProgramName(string word)
+        {
+            var name = Path.GetFileName(word);
+            if (!OperatingSystem.IsWindows())
+                return name;
+            name = name.ToLowerInvariant();
+            return name.EndsWith(".exe", StringComparison.Ordinal) ? name[..^4] : name;
         }
 
         // Pulls out $(...), <(...), >(...) and `...` bodies (outside single quotes) so each is parsed as its own command.

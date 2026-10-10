@@ -351,9 +351,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
 
     async Task<(int? ExitCode, string Output)> ExecuteAsync(string cmd, TimeSpan limit, CancellationToken token)
     {
-        var psi = OperatingSystem.IsWindows()
-            ? new ProcessStartInfo("cmd.exe", ["/c", cmd])
-            : new ProcessStartInfo(File.Exists("/bin/bash") ? "/bin/bash" : "/bin/sh", ["-c", cmd]);
+        var psi = HostShell.StartInfo(cmd, File.Exists("/bin/bash") ? "/bin/bash" : "/bin/sh");
         psi.WorkingDirectory = workspace.Root;
         psi.RedirectStandardInput = psi.RedirectStandardOutput = psi.RedirectStandardError = true;
         foreach (var (k, v) in new[] { ("TERM", "dumb"), ("NO_COLOR", "1"), ("PAGER", "cat"), ("GIT_PAGER", "cat"), ("GIT_TERMINAL_PROMPT", "0") })

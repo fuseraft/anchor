@@ -102,6 +102,48 @@ public sealed class GateTests : IDisposable
     }
 
     [Fact]
+    public async Task Run_DoubleQuotesGroupWordsIntoOneArgument()
+    {
+        var gate = NewGate(new FakeApprover(Answer.Yes), yolo: true);
+
+        // --sq-quote echoes the arguments git received, each in single quotes.
+        var output = await gate.RunAsync("git rev-parse --sq-quote \"docs: update README.md\" \"%H %s\"", TimeSpan.FromSeconds(10), default);
+
+        Assert.Contains("'docs: update README.md' '%H %s'", output);
+    }
+
+    [Fact]
+    public void FindGitBash_UsesTheBashBesideGitOnThePath()
+    {
+        var git = Path.Combine(_outside, "Git");
+        var files = new HashSet<string> { Path.Combine(git, "mingw64", "bin", "git.exe"), Path.Combine(git, "bin", "bash.exe") };
+
+        var bash = HostShell.FindGitBash([Path.Combine(_root, "bin"), Path.Combine(git, "mingw64", "bin")], Path.Combine(_root, "pf"),
+            p => files.Contains(Path.GetFullPath(p)));
+
+        Assert.Equal(Path.Combine(git, "bin", "bash.exe"), bash);
+    }
+
+    [Fact]
+    public void FindGitBash_FallsBackToProgramFiles_AndIgnoresOtherBashes()
+    {
+        var pf = Path.Combine(_outside, "pf");
+        var wsl = Path.Combine(_outside, "System32");
+        var files = new HashSet<string> { Path.Combine(wsl, "bash.exe") };
+        bool Exists(string p) => files.Contains(Path.GetFullPath(p));
+
+        Assert.Null(HostShell.FindGitBash([wsl], pf, Exists));
+        files.Add(Path.Combine(pf, "Git", "bin", "bash.exe"));
+        Assert.Equal(Path.Combine(pf, "Git", "bin", "bash.exe"), HostShell.FindGitBash([wsl], pf, Exists));
+    }
+
+    [Fact]
+    public void CmdArguments_PassTheCommandVerbatimInsideOneOuterPair()
+    {
+        Assert.Equal("/d /s /c \"git commit -m \"docs: update README.md\"\"", HostShell.CmdArguments("git commit -m \"docs: update README.md\""));
+    }
+
+    [Fact]
     public async Task Run_ReadOnlyCommandsDontAsk_OthersDo()
     {
         var approver = new FakeApprover(Answer.Yes);

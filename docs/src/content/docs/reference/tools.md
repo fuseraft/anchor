@@ -135,7 +135,8 @@ are looking at the diff, the patch is applied to its new content when it still f
 | `command`         |         | The command to run.          |
 | `timeout_seconds` | `120`   | Up to 600.                   |
 
-Runs in the working directory with bash (or `sh`), or `cmd.exe` on Windows. stdin is closed, and
+Runs in the working directory with bash (or `sh`). On Windows that's Git for Windows' bash, or
+`cmd.exe` without it. stdin is closed, and
 `TERM=dumb`, `NO_COLOR=1`, `PAGER=cat`, `GIT_PAGER=cat` and `GIT_TERMINAL_PROMPT=0` are set so
 commands don't wait for input. Output is stdout
 and stderr combined, followed by the exit code, with secrets masked. Long output keeps its first and
