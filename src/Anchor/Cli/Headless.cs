@@ -304,9 +304,12 @@ public sealed class JsonApprover(JsonEvents json) : IApprover
 /// <summary>For -p: nobody can answer, so anything that would ask is refused, and the reason is reported.</summary>
 public sealed class RefusingApprover(Action<string> report) : IApprover
 {
+    public const string Refused = "Refused: this run is non-interactive, so nothing that needs approval can run. Don't retry it or ask for approval; " +
+                                  "do what you can without it, and in your answer say what you couldn't do. The user can rerun with --allow or --yolo.";
+
     public Task<Answer> ApproveAsync(ApprovalRequest request, CancellationToken ct)
     {
         report($"Refused (no one to ask in -p mode; use --allow or --yolo): {request.Title}");
-        return Task.FromResult(Answer.No);
+        throw new ToolException(Refused);
     }
 }

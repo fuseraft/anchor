@@ -101,6 +101,9 @@ public sealed class HeadlessTests : IDisposable
 
         Assert.False(File.Exists(Path.Combine(_root, "a.txt")));
         Assert.Contains("--allow", Assert.Single(reports));
+        // The model hears it was refused, not that the user said no, so it doesn't tell the user they declined.
+        var result = client.Requests[1].SelectMany(m => m.Contents).OfType<FunctionResultContent>().Single();
+        Assert.Contains(RefusingApprover.Refused, Messages.ResultText(result));
     }
 
     [Fact]
