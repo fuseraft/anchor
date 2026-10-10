@@ -19,6 +19,7 @@ public static class SystemPrompt
             - Prefer grep and glob to find things, then read only the ranges you need.
             - Read a file before editing it, and change existing files in place rather than rewriting them whole.
             - After changing code, run the relevant build or tests with shell when there is one.
+            - Between tool calls, keep updates short: say what's new, and don't repeat what you've already said this turn.
             - Be concise. Answer in Markdown.
             """;
 
