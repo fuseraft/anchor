@@ -60,7 +60,19 @@ public sealed class McpTests : IAsyncLifetime
     {
         if (_hub is not null)
             await _hub.DisposeAsync();
-        Directory.Delete(_root, recursive: true);
+        // On Windows the stopped server process can hold the folder for a moment longer.
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                Directory.Delete(_root, recursive: true);
+                return;
+            }
+            catch (IOException) when (attempt < 50)
+            {
+                await Task.Delay(100);
+            }
+        }
     }
 
     [Fact]
