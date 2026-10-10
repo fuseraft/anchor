@@ -377,4 +377,46 @@ public sealed class GateTests : IDisposable
         Assert.Single(approver.Requests);
         Assert.Empty(Store().Load().Programs);
     }
+
+    [Theory]
+    [InlineData("cat docs/notes.txt")]
+    [InlineData("cd docs && cat notes.txt")]
+    [InlineData("cd src && cat docs/notes.txt")]
+    [InlineData("cat src/d*/notes.txt")]
+    [InlineData("grep -R x src")]
+    [InlineData("cat < docs/notes.txt")]
+    public void SymlinkLeadingOutside_IsNotReadOnly(string command)
+    {
+        Directory.CreateDirectory(At("src"));
+        File.WriteAllText(Path.Combine(_outside, "notes.txt"), "private");
+        Directory.CreateSymbolicLink(At("src/docs"), _outside);
+        Directory.CreateSymbolicLink(At("docs"), _outside);
+        var workspace = new Workspace(_root);
+
+        Assert.Equal(Decision.Ask, new Policy(workspace) { ParsesShell = true }.Run(command).Decision);
+    }
+
+    [Theory]
+    [InlineData("cat src/a.txt")]
+    [InlineData("cd src && ls *.txt")]
+    [InlineData("grep -r x src")]
+    public void SymlinkLeadingOutside_LeavesOtherCommandsReadOnly(string command)
+    {
+        Directory.CreateDirectory(At("src"));
+        File.WriteAllText(At("src/a.txt"), "x");
+        Directory.CreateSymbolicLink(At("docs"), _outside);
+        var workspace = new Workspace(_root);
+
+        Assert.Equal(Decision.Allow, new Policy(workspace) { ParsesShell = true }.Run(command).Decision);
+    }
+
+    [Fact]
+    public void LinkIntoIgnoredFolder_IsStillResolved()
+    {
+        Directory.CreateDirectory(At("node_modules/pkg"));
+        Directory.CreateSymbolicLink(At("node_modules/pkg/store"), _outside);
+        var workspace = new Workspace(_root);
+
+        Assert.Equal(Decision.Ask, new Policy(workspace) { ParsesShell = true }.Run("cat node_modules/pkg/store/x").Decision);
+    }
 }

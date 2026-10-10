@@ -54,7 +54,7 @@ public sealed class Policy(Workspace workspace, bool yolo = false, IEnumerable<s
             return Verdict.Deny(danger);
         if (ReachesSecretFile(command))
             return Verdict.Deny("it names a path that resolves to a secret or credential file");
-        if (Yolo || ParsesShell && ShellCommand.IsReadOnly(command, IsInside))
+        if (Yolo || ParsesShell && ShellCommand.IsReadOnly(command, IsInside, workspace.OutwardLinkNames()))
             return Verdict.Allow;
         return Verdict.Ask("command");
     }

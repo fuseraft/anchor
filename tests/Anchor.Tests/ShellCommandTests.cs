@@ -163,6 +163,26 @@ public class ShellCommandTests
         Assert.False(ShellCommand.IsReadOnly("cd link-out && cat passwd", p => p != "link-out"));
     }
 
+    [Theory]
+    [InlineData("cat docs/x", false)]
+    [InlineData("cat a/*/x", false)]
+    [InlineData("cat d?cs/x", false)]
+    [InlineData("cat {docs,src}/x", false)]
+    [InlineData("rg -L foo", false)]
+    [InlineData("find -L . -name x", false)]
+    [InlineData("ls -laL src", false)]
+    [InlineData("diff -r a b", false)]
+    [InlineData("cat src/x", true)]
+    [InlineData("ls *.cs", true)]
+    [InlineData("rg foo src", true)]
+    [InlineData("diff a b", true)]
+    public void ReadOnly_WithLinksLeadingOutside(string command, bool readOnly) =>
+        Assert.Equal(readOnly, ShellCommand.IsReadOnly(command, _ => true, new HashSet<string> { "docs" }));
+
+    [Fact]
+    public void ReadOnly_ResolvesRelativePaths() =>
+        Assert.False(ShellCommand.IsReadOnly("cat link/x", p => !p.StartsWith("link")));
+
     [Fact]
     public void ReadOnly_RejectsAbsolutePathsOutsideTheWorkspace()
     {
