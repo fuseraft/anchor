@@ -200,6 +200,7 @@ public sealed class JsonEvents(TextWriter output)
         ToolFinished t => new() { ["type"] = "tool_end", ["id"] = t.CallId, ["name"] = t.Name, ["ok"] = t.Ok, ["result"] = t.Result },
         FileChanged f => new() { ["type"] = "file_changed", ["path"] = f.Path, ["added"] = f.Added, ["removed"] = f.Removed },
         LoopWarning w => new() { ["type"] = "loop_warning", ["message"] = w.Message },
+        Compacting c => new() { ["type"] = "compacting", ["before"] = c.Before },
         Compacted c => Reduced("compacted", c.Before, c.After, null),
         Trimmed t => Reduced("trimmed", t.Before, t.After, t.Items),
         RoundsDropped d => Reduced("rounds_dropped", d.Before, d.After, d.Rounds),

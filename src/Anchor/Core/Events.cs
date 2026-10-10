@@ -13,6 +13,9 @@ public sealed record FileChanged(string Path, int Added, int Removed) : AgentEve
 
 public sealed record LoopWarning(string Message) : AgentEvent;
 
+/// <summary>Older turns are being summarized, which takes a model request; <see cref="Compacted"/> follows if it works.</summary>
+public sealed record Compacting(long Before) : AgentEvent;
+
 public sealed record Compacted(long Before, long After) : AgentEvent;
 
 public sealed record Trimmed(int Items, long Before, long After) : AgentEvent;
