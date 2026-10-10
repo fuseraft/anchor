@@ -3,7 +3,7 @@
 A minimal coding harness for the terminal: one model working in one workspace with a few
 tools, plus sub-agents, skills, and MCP. It is built on C# / .NET 10 and `Microsoft.Extensions.AI`.
 
-**Budget:** under 10k lines of source. A new feature has to justify every line it adds.
+**Budget:** under 15k lines of source. A new feature has to justify every line it adds.
 
 ## Shape
 
