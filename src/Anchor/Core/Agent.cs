@@ -151,7 +151,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     {
         if (compactor is null)
             return null;
-        var result = await compactor.CompactAsync(_client, _options, _history, ct);
+        var result = await compactor.CompactAsync(_client, _options, _history, ct, before => emit(new Compacting(before)));
         if (result.Outcome == CompactOutcome.Compacted)
         {
             LastContextTokens = null;

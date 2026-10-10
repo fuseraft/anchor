@@ -18,6 +18,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     bool _midLine;
     Markdown? _message; // the model's message being streamed into it, while it's being redrawn
     bool _marked; // whether the model's current message has its anchor yet
+    Action? _compacting; // takes the TUI's "compacting" line back out once whatever comes next is shown
     readonly bool _keeps = output is Transcript; // the TUI, which has a viewer for whole outputs
     readonly List<ToolOutput> _outputs = [];
     readonly Dictionary<string, string> _calls = []; // what each running call was started with, for its output's title
@@ -71,6 +72,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
 
     void Draw(AgentEvent e)
     {
+        EndCompacting();
         // Anything else the agent does ends its message; a sub-agent's lines go above it instead (see Line).
         if (e is not (TextDelta or SubAgentEvent))
         {
@@ -114,6 +116,13 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
                 break;
             case FileChanged f:
                 Line(Muted($"  ✎ {f.Path} ") + Success($"+{f.Added}") + " " + Error($"-{f.Removed}"));
+                break;
+            case Compacting c:
+                var line = Muted($"  ⟳ compacting older turns (~{c.Before:N0} tokens)…");
+                if (_transcript is null)
+                    Line(line); // a plain terminal can't take it back, so it stays
+                else
+                    _compacting = _transcript.Section(() => Line(line));
                 break;
             case Compacted c:
                 Line(Muted($"  ⟳ compacted older turns: ~{c.Before:N0} → ~{c.After:N0} tokens"));
@@ -230,6 +239,12 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     /// <summary>Set while the REPL waits for input, so background messages (MCP sign-in, failures) don't land on the prompt line.</summary>
     public bool AtPrompt { get; set; }
 
+    void EndCompacting()
+    {
+        _compacting?.Invoke();
+        _compacting = null;
+    }
+
     void EndMessage()
     {
         if (_message is null)
@@ -242,6 +257,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     {
         lock (_lock)
         {
+            EndCompacting();
             if (_styled is not null && _message is not null)
             {
                 _styled.WriteLineAbove(text);

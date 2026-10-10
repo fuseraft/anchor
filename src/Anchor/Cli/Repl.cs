@@ -247,12 +247,13 @@ public sealed class Repl
         return _queued.TryDequeue(out var queued) ? queued : null;
     }
 
-    void Status(bool working)
+    /// <param name="doing">What's running when it isn't a turn, such as /compact; it leaves the turn's growth alone.</param>
+    void Status(bool working, string? doing = null)
     {
         var tokens = agent.ContextTokens;
-        if (working)
+        if (doing is null && working)
             _turnStart = tokens;
-        else if (_turnStart is { } start)
+        else if (doing is null && _turnStart is { } start)
         {
             _lastGrowth = Math.Max(0, tokens - start);
             _turnStart = null;
@@ -265,7 +266,7 @@ public sealed class Repl
                 ContextLevel.Near => renderer.Warning(used),
                 _ => renderer.Success(used),
             };
-        var status = $"{renderer.Accent(_provider.Model)} · {used}" + (_until is null ? "" : $" · until {_until}");
+        var status = $"{renderer.Accent(_provider.Model)} · {used}" + (_until is null ? "" : $" · until {_until}") + (doing is null ? "" : $" · {doing}");
         _workingStatus = working ? status : null;
         screen.Status(status, working);
     }
@@ -341,6 +342,7 @@ public sealed class Repl
                 renderer.Line(renderer.Muted("History cleared."));
                 break;
             case "/compact":
+                Status(working: true, doing: "compacting");
                 await CancellableAsync(async ct =>
                 {
                     var result = await agent.CompactAsync(ct);

@@ -162,7 +162,9 @@ public sealed class Compactor(long contextWindow, double triggerRatio = 0.8, dou
     }
 
     /// <summary>Compacts <paramref name="history"/> in place. The last turn (the one in progress, mid-turn) is always kept verbatim.</summary>
-    public async Task<Compaction> CompactAsync(IChatClient client, ChatOptions options, List<ChatMessage> history, CancellationToken ct)
+    /// <param name="summarizing">Runs once there's something to summarize, just before the request that does it.</param>
+    public async Task<Compaction> CompactAsync(IChatClient client, ChatOptions options, List<ChatMessage> history, CancellationToken ct,
+        Action<long>? summarizing = null)
     {
         var before = Messages.EstimateTokens(history);
         var tailStart = TailStart(history);
@@ -170,6 +172,7 @@ public sealed class Compactor(long contextWindow, double triggerRatio = 0.8, dou
         if (!older.Any(Messages.IsUserInput))
             return new(CompactOutcome.NothingToCompact, before, before);
 
+        summarizing?.Invoke(before);
         var summary = await SummarizeAsync(client, options, older, ct);
         List<ChatMessage> candidate = [Messages.Create(MessageKind.Summary, $"[Earlier conversation, summarized]\n\n{summary}"), .. history[tailStart..]];
         var after = Messages.EstimateTokens(candidate);

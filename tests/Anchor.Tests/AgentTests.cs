@@ -218,6 +218,7 @@ public class AgentTests
         await agent.RunTurnAsync("second", CancellationToken.None);
 
         Assert.Contains(_events, e => e is Compacted);
+        Assert.InRange(_events.FindIndex(e => e is Compacting), 0, _events.FindIndex(e => e is Compacted));
         Assert.Equal(["[Earlier conversation, summarized]\n\nsummary of one", "second", "two"], agent.History.Select(m => m.Text));
         Assert.Null(agent.LastContextTokens);
     }

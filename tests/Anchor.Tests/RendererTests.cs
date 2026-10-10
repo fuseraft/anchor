@@ -86,6 +86,34 @@ public class RendererTests
     }
 
     [Fact]
+    public void InTheTui_CompactingShowsUntilWhatComesNext()
+    {
+        var t = new Transcript();
+        var renderer = new Renderer(t, color: true);
+        renderer.Render(new Compacting(90_000));
+
+        Assert.Equal("  ⟳ compacting older turns (~90,000 tokens)…", Text(t.Lines()[^2]));
+
+        renderer.Render(new Compacted(90_000, 20_000));
+        renderer.Render(new Compacting(30_000));
+        renderer.Line("  (cancelled)");
+
+        Assert.Equal(["  ⟳ compacted older turns: ~90,000 → ~20,000 tokens", "  (cancelled)", ""], t.Lines().Select(Text));
+    }
+
+    [Fact]
+    public void OnAPlainTerminal_CompactingStays()
+    {
+        var output = new StringWriter();
+        var renderer = new Renderer(output, color: false);
+        renderer.Render(new Compacting(90_000));
+        renderer.Render(new Compacted(90_000, 20_000));
+
+        Assert.Equal("  ⟳ compacting older turns (~90,000 tokens)…\n  ⟳ compacted older turns: ~90,000 → ~20,000 tokens\n",
+            output.ToString().ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
     public void OnAPlainTerminal_MarkdownIsShownAsWritten()
     {
         var output = new StringWriter();

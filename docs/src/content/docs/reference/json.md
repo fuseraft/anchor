@@ -14,6 +14,7 @@ With `--json`, anchor writes one JSON object per line to stdout. Every object ha
 | `tool_end`       | `id`, `name`, `ok`, `result`                                   | A tool call finishes.                          |
 | `file_changed`   | `path`, `added`, `removed`                                     | A file was written.                            |
 | `loop_warning`   | `message`                                                      | The loop guard warned or stopped the turn.    |
+| `compacting`     | `before`                                                       | Older turns are being summarized, which takes a model request. A `context_reduced` event with `kind` `compacted` follows if it works. |
 | `context_reduced` | `kind`, `before`, `after`, `count`                            | Context was reduced. `kind` is `compacted`, `trimmed` or `rounds_dropped`. |
 | `notice`         | `message`                                                      | Something worth telling the user.              |
 | `check`          | `command`, `round`, `passed`, `output`                         | An `--until` check ran.                        |
