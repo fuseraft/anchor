@@ -322,3 +322,6 @@ plugin registry. Any of these can be added later as a tool behind the gate.
 12. Quality of life in the TUI: `@path` attachments, Ctrl+O for a tool's whole output, `/copy`,
     Ctrl+F and Ctrl+R to search, completion for command arguments, a turn timer, and the bell
     when anchor needs you; then the v0.7.0 release.
+13. File editing: a file changed while its diff waits for approval is never overwritten, `edit_file`
+    takes several replacements, OpenAI's models edit with `apply_patch`, and writes are atomic and
+    keep a file's encoding. Bugs go to a crash log; then the v0.8.0 release.
