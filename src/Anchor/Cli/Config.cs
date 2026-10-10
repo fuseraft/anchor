@@ -23,6 +23,9 @@ public sealed class Config
     /// <summary>Whether the full screen rings the terminal bell when a turn ends or a question waits; on unless false.</summary>
     public bool? Bell { get; set; }
 
+    /// <summary>Whether anchor downloads new releases and installs them the next time it starts; on unless false.</summary>
+    public bool? AutoUpdate { get; set; }
+
     public static string Home => Anchor.Core.AnchorHome.Dir;
 
     public static Config Load()

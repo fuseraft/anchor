@@ -28,7 +28,9 @@ optional. Keys are case-insensitive, and comments and trailing commas are allowe
   "theme": "default",
   "colors": { "accent": "bold magenta" },
   // Ring the terminal bell when anchor needs you.
-  "bell": true
+  "bell": true,
+  // Download new releases and install them the next time anchor starts.
+  "autoUpdate": true
 }
 ```
 
@@ -156,3 +158,11 @@ The full-screen REPL rings the terminal bell when a turn ends or an approval or 
 waiting, if you haven't pressed a key or scrolled for 10 seconds. If you're watching, it stays
 quiet. How a bell shows up is up to the terminal: a sound, a flash, or a mark on the tab or
 window. `"bell": false` turns it off.
+
+## autoUpdate
+
+An interactive session checks for a new release once a day. If anchor was installed with an
+install script or from a release archive, it downloads the release into `~/.anchor/update`,
+checks it against the release's `SHA256SUMS`, and installs it the next time anchor starts. If
+Homebrew, Scoop or winget installed it, or anchor can't write to the folder it's in, anchor only
+tells you the release is out. `-p` and `--json` never check. `"autoUpdate": false` turns it off.

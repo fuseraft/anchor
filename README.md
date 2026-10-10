@@ -53,6 +53,10 @@ scoop bucket add fuseraft https://github.com/fuseraft/scoop-bucket  # Windows
 scoop install anchor
 ```
 
+An install from a script or a release archive updates itself: a session downloads a new release
+(verified against `SHA256SUMS`) and the next start runs it. Package-manager installs are left to the
+package manager. `"autoUpdate": false` in the config turns it off.
+
 Or download a release from the Releases page and put `anchor` on your `PATH`, or build it:
 
 ```sh

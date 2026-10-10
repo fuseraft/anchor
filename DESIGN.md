@@ -284,6 +284,18 @@ Config lives in `~/.anchor/config.json`. Sessions are stored in `~/.anchor/sessi
 - The user wrote the check, as with `!cmd`, so it runs through `Gate.CheckAsync` with no policy
   or approval. A REPL message and all its rounds are one turn for `/undo`.
 
+## Updates
+
+- An interactive session checks for a new release at most once a day: `/releases/latest`
+  redirects to the newest tag, without the API's rate limit. The release is downloaded into
+  `~/.anchor/update/<version>/` and checked against `SHA256SUMS`, like the install scripts do.
+- The next start runs the download instead, with the same arguments (`exec` on Unix, a child
+  process on Windows), and the download copies itself over the old binary. The old binary never
+  replaces its own file: a single-file program keeps reading it after it starts.
+- A copy installed by Homebrew, Scoop or winget, or in a folder anchor can't write to, is never
+  replaced; anchor says a release is out. Development builds and `-p`/`--json` never check.
+  `"autoUpdate": false` turns it off.
+
 ## Not in anchor
 
 Multi-agent orchestration (graphs, routing, validators), plans, memory, telemetry, and a
