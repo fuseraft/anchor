@@ -31,6 +31,9 @@ public static class Startup
         var client = await models.CreateAsync(provider);
         var window = Providers.Providers.ContextWindow(provider, config.Provider.ContextWindow);
 
+        if (output.Interactive)
+            Update.Start(config, m => emit(new Notice(m)));
+
         var workspace = new Workspace(Directory.GetCurrentDirectory());
 
         var (skills, skillWarnings) = Definitions.LoadSkills([Path.Combine(workspace.Root, ".agents", "skills"), Path.Combine(Config.Home, "skills")]);

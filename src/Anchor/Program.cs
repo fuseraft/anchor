@@ -2,6 +2,10 @@ using Anchor.Cli;
 using Anchor.Core;
 using Anchor.Mcp;
 
+// A release downloaded by an earlier session is swapped in and run instead.
+if (Update.ApplyStaged(args) is { } updated)
+    return updated;
+
 var (options, exitCode) = Options.Parse(args, Console.Out, Console.Error);
 if (options is null)
     return exitCode;

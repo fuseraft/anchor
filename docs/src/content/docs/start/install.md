@@ -21,7 +21,13 @@ curl -fsSL https://raw.githubusercontent.com/fuseraft/anchor/main/install.sh | b
 If `~/.local/bin` isn't on your `PATH`, the script prints the line to add to your shell's rc file.
 
 Both install scripts check the download against the release's `SHA256SUMS` and refuse to install
-an archive that doesn't match. To update, run the same command again.
+an archive that doesn't match.
+
+anchor installed this way updates itself. Once a day, a session checks for a new release and
+downloads it, checked against the same `SHA256SUMS`, and the next time anchor starts it runs the new
+version. `"autoUpdate": false` in the [config](/anchor/reference/config/#autoupdate) turns this off;
+to update by hand, run the install command again. A copy installed by Homebrew, Scoop or winget
+isn't touched: anchor tells you a new release is out and leaves the update to the package manager.
 
 ## Windows
 
