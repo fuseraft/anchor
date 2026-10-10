@@ -83,8 +83,31 @@ public sealed class EditToolsTests : IDisposable
         var e = await Assert.ThrowsAsync<ToolException>(() => _tools.EditFile("a.cs", "int z;", "int y;"));
         Assert.Contains("was not found", e.Message);
 
-        e = await Assert.ThrowsAsync<ToolException>(() => _tools.EditFile("a.cs", "\tint x;\n}", "int y;"));
+        e = await Assert.ThrowsAsync<ToolException>(() => _tools.EditFile("a.cs", "\tint x;\n};", "int y;"));
         Assert.Contains("line 3", e.Message);
+    }
+
+    [Fact]
+    public async Task EditFile_ToleratesWhitespaceAroundLines_WhenOnePlaceMatches()
+    {
+        File.WriteAllText(At("A.java"), "class A {\r\n\tString a = \"\";  \r\n\tString b = \"\";\r\n}\r\n");
+
+        // Spaces for the tab, and no trailing spaces.
+        var result = await _tools.EditFile("A.java", "    String a = \"\";\n    String b = \"\";\n", "\tString c = \"\";\n");
+
+        Assert.Equal("class A {\r\n\tString c = \"\";\r\n}\r\n", File.ReadAllText(At("A.java")));
+        Assert.StartsWith("Edited A.java at line 2", result);
+    }
+
+    [Fact]
+    public async Task EditFile_LooseMatchInTwoPlaces_IsAmbiguous()
+    {
+        File.WriteAllText(At("a.txt"), "\tx = 1\ny\n\tx = 1\n");
+
+        var e = await Assert.ThrowsAsync<ToolException>(() => _tools.EditFile("a.txt", "  x = 1", "x = 2"));
+
+        Assert.Contains("lines 1, 3", e.Message);
+        Assert.Equal("\tx = 1\ny\n\tx = 1\n", File.ReadAllText(At("a.txt")));
     }
 
     [Fact]
