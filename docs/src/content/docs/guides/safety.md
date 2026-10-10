@@ -23,6 +23,10 @@ A command is read-only only if every part of it is. `grep foo *.py | sort` quali
 `grep foo *.py > out.txt` does not, because it writes a file. `cd` into a folder inside the
 directory counts as read-only, so `cd src && ls` qualifies too.
 
+Symlinks are followed: `cat docs/x` asks if `docs` links outside the directory. When the directory
+has links that lead outside, a command that could pass through one asks too, such as
+`cd docs && cat x`, a glob like `cat */x`, or `grep -R`, which follows links as it recurses.
+
 ## What asks first
 
 - Every file write. You see the diff before anything touches disk. If you edit the file while the

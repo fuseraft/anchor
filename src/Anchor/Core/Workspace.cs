@@ -11,7 +11,8 @@ public sealed class Workspace
     static readonly TimeSpan SecretScanTtl = TimeSpan.FromSeconds(10);
 
     List<string> _secretFiles = [];
-    DateTime _secretScanAt = DateTime.MinValue;
+    HashSet<string> _outwardLinks = [];
+    DateTime _scanAt = DateTime.MinValue;
 
     public Workspace(string root) => Root = RealPath(Path.GetFullPath(root));
 
@@ -33,12 +34,41 @@ public sealed class Workspace
     /// <summary>Secret files anywhere in the workspace, including gitignored ones.</summary>
     public IReadOnlyList<string> SecretFiles()
     {
-        if (DateTime.UtcNow - _secretScanAt > SecretScanTtl)
-        {
-            _secretFiles = WalkFiles(Root).Where(Secrets.IsSecretPath).Take(200).ToList();
-            _secretScanAt = DateTime.UtcNow;
-        }
+        Scan();
         return _secretFiles;
+    }
+
+    /// <summary>
+    /// Names of symlinks in the workspace that resolve outside it. Shell commands that might pass through one aren't
+    /// read-only, since the bash reader can't follow every path a command reaches (after cd, through a glob).
+    /// </summary>
+    public IReadOnlySet<string> OutwardLinkNames()
+    {
+        Scan();
+        return _outwardLinks;
+    }
+
+    void Scan()
+    {
+        if (DateTime.UtcNow - _scanAt <= SecretScanTtl)
+            return;
+        var secrets = new List<string>();
+        var links = new HashSet<string>();
+        foreach (var entry in WalkFiles(Root, dirLinks: true))
+        {
+            if (secrets.Count < 200 && Secrets.IsSecretPath(entry))
+                secrets.Add(entry);
+            if (IsLink(entry) && !IsInside(RealPath(entry)))
+                links.Add(Path.GetFileName(entry));
+        }
+        (_secretFiles, _outwardLinks, _scanAt) = (secrets, links, DateTime.UtcNow);
+    }
+
+    static bool IsLink(string path)
+    {
+        try { return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0; }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 
     bool LinksAway(string file)
@@ -102,7 +132,8 @@ public sealed class Workspace
         }
     }
 
-    static IEnumerable<string> WalkFiles(string dir)
+    /// <summary>Files under <paramref name="dir"/>, skipping ignored folders; linked folders are yielded only with <paramref name="dirLinks"/>.</summary>
+    static IEnumerable<string> WalkFiles(string dir, bool dirLinks = false)
     {
         var pending = new Stack<string>([dir]);
         while (pending.Count > 0)
@@ -117,7 +148,12 @@ public sealed class Workspace
             {
                 if (Directory.Exists(entry))
                 {
-                    if (!IgnoredDirs.Contains(Path.GetFileName(entry)) && new DirectoryInfo(entry).LinkTarget is null)
+                    if (new DirectoryInfo(entry).LinkTarget is not null)
+                    {
+                        if (dirLinks)
+                            yield return entry;
+                    }
+                    else if (!IgnoredDirs.Contains(Path.GetFileName(entry)))
                         pending.Push(entry);
                 }
                 else

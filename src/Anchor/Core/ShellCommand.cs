@@ -61,13 +61,16 @@ public static partial class ShellCommand
         return null;
     }
 
-    /// <summary>True when every command only reads, and only inside the workspace (<paramref name="isInside"/>).</summary>
-    public static bool IsReadOnly(string command, Func<string, bool> isInside)
+    /// <summary>
+    /// True when every command only reads, and only inside the workspace (<paramref name="isInside"/>). A command that
+    /// might pass through one of <paramref name="outwardLinks"/> (names of symlinks that lead outside) isn't read-only.
+    /// </summary>
+    public static bool IsReadOnly(string command, Func<string, bool> isInside, IReadOnlySet<string>? outwardLinks = null)
     {
         if (command.Contains('$') || command.Contains('`'))
             return false;
         var commands = Parse(command);
-        return commands.Count > 0 && commands.All(c => IsReadOnly(c, isInside));
+        return commands.Count > 0 && commands.All(c => IsReadOnly(c, isInside, outwardLinks ?? EmptySet));
     }
 
     /// <summary>Whether approving the program approves arbitrary code: a shell, a script interpreter, eval or source.</summary>
@@ -80,7 +83,7 @@ public static partial class ShellCommand
     /// </summary>
     public static IReadOnlySet<string> Programs(string command) => Parse(command).Select(c => c.Program).Where(p => p != "cd").ToHashSet();
 
-    static bool IsReadOnly(SimpleCommand c, Func<string, bool> isInside)
+    static bool IsReadOnly(SimpleCommand c, Func<string, bool> isInside, IReadOnlySet<string> outwardLinks)
     {
         if (c.EnvPrefix || c.InSubstitution || c.RawProgram.Contains('/') || c.Writes.Any(w => w != "/dev/null"))
             return false;
@@ -92,20 +95,51 @@ public static partial class ShellCommand
             return false;
         if (c.Program == "git" && !IsReadOnlyGit(c.Args))
             return false;
-        // Bare cd and cd - go to $HOME and $OLDPWD; a relative target is checked too, since later paths resolve under it.
-        if (c.Program == "cd" && (c.Args.Count != 1 || c.Args[0] == "-" || !isInside(c.Args[0])))
+        // Bare cd and cd - go to $HOME and $OLDPWD; the target itself is checked with the other arguments below.
+        if (c.Program == "cd" && (c.Args.Count != 1 || c.Args[0] == "-"))
+            return false;
+
+        if (outwardLinks.Count > 0 && FollowsLinks(c))
             return false;
 
         foreach (var arg in c.Args)
         {
             var value = arg.StartsWith('-') && arg.Contains('=') ? arg[(arg.IndexOf('=') + 1)..] : arg;
-            if (value.StartsWith('~') || value.Split('/', '\\').Contains(".."))
+            var parts = value.Split('/', '\\');
+            if (value.StartsWith('~') || parts.Contains(".."))
                 return false;
-            if ((value.StartsWith('/') || DrivePath().IsMatch(value)) && value != "/dev/null" && !isInside(value))
+            // Relative paths are resolved too, so a symlink in them is followed; options and globs can't be resolved.
+            if (value != "/dev/null" && !value.StartsWith('-') && value.IndexOfAny(GlobChars) < 0 && !isInside(value))
+                return false;
+            // After cd or through a glob, a path may reach a link without naming it from the root, so match link names.
+            if (outwardLinks.Count > 0 && parts.Any(p => MayName(p, outwardLinks)))
                 return false;
         }
         return true;
     }
+
+    static readonly IReadOnlySet<string> EmptySet = new HashSet<string>();
+    static readonly char[] GlobChars = ['*', '?', '[', '{'];
+
+    static bool MayName(string part, IReadOnlySet<string> links) =>
+        links.Contains(part)
+        || part.IndexOfAny(['[', '{']) >= 0
+        || part.IndexOfAny(['*', '?']) >= 0 && links.Any(l => FileSystemName.MatchesSimpleExpression(part, l, ignoreCase: false));
+
+    // Recursive reads that follow symlinked folders they meet along the way.
+    static bool FollowsLinks(SimpleCommand c) => c.Program switch
+    {
+        "grep" or "egrep" or "fgrep" => HasFlag(c.Args, 'R', "--dereference-recursive"),
+        "rg" => HasFlag(c.Args, 'L', "--follow"),
+        "find" => c.Args.Any(a => a is "-L" or "-follow"),
+        "tree" => HasFlag(c.Args, 'l', "--follow"),
+        "du" or "ls" => HasFlag(c.Args, 'L', "--dereference"),
+        "diff" => HasFlag(c.Args, 'r', "--recursive"),
+        _ => false,
+    };
+
+    static bool HasFlag(IReadOnlyList<string> args, char flag, string longFlag) =>
+        args.Any(a => a == longFlag || a.Length > 1 && a[0] == '-' && a[1] != '-' && a.Contains(flag));
 
     static bool IsReadOnlyGit(IReadOnlyList<string> args) =>
         args.Count > 0 && ReadOnlyGit.Contains(args[0])
