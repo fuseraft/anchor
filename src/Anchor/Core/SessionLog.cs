@@ -68,7 +68,7 @@ public sealed class SessionLog
 
         var isNew = !File.Exists(_path);
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        using (var file = new StreamWriter(_path, append: true))
+        using (var file = new StreamWriter(OpenForAppend(_path)))
         {
             if (isNew)
                 file.WriteLine(new JsonObject { ["type"] = "session", ["id"] = Id, ["workspace"] = _workspace, ["model"] = _model }.ToJsonString());
@@ -79,12 +79,36 @@ public sealed class SessionLog
         _persisted = [.. history];
     }
 
+    // Another process may have the file open for a moment, such as a virus scanner or another anchor listing its sessions,
+    // so a write that's refused is tried again for a little while before it fails.
+    static FileStream OpenForAppend(string path)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+            }
+            catch (IOException) when (attempt < WriteAttempts)
+            {
+                Thread.Sleep(50 * attempt);
+            }
+        }
+    }
+
+    const int WriteAttempts = 6;
+
+    // Reads leave the file open to writers, so a session being listed or resumed never stops the one writing it.
+    static StreamReader OpenForRead(string path) =>
+        new(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete));
+
     static JsonNode Serialize(IEnumerable<ChatMessage> messages) => JsonSerializer.SerializeToNode(messages.ToList(), Json)!;
 
     static List<ChatMessage> Replay(string path)
     {
         var history = new List<ChatMessage>();
-        foreach (var line in File.ReadLines(path))
+        using var reader = OpenForRead(path);
+        for (var line = reader.ReadLine(); line is not null; line = reader.ReadLine())
         {
             var node = JsonNode.Parse(line)!;
             var type = (string?)node["type"];
@@ -115,7 +139,7 @@ public sealed class SessionLog
     {
         try
         {
-            using var reader = new StreamReader(path);
+            using var reader = OpenForRead(path);
             var header = JsonNode.Parse(reader.ReadLine() ?? "{}");
             var title = "";
             for (var line = reader.ReadLine(); line is not null && title.Length == 0; line = reader.ReadLine())
@@ -123,7 +147,7 @@ public sealed class SessionLog
             return new SessionInfo((string?)header?["id"] ?? Path.GetFileNameWithoutExtension(path), (string?)header?["workspace"] ?? "",
                 File.GetLastWriteTime(path), title.ReplaceLineEndings(" "));
         }
-        catch (JsonException)
+        catch (Exception e) when (e is JsonException or IOException) // unreadable, or held open by something that shares it with no one
         {
             return null;
         }

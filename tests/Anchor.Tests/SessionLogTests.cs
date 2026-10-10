@@ -66,6 +66,40 @@ public sealed class SessionLogTests : IDisposable
     }
 
     [Fact]
+    public async Task Sync_WaitsOutAFileHeldOpenForAMoment()
+    {
+        var log = SessionLog.Create(_dir, "/work", "m");
+        var history = Conversation();
+        log.Sync(history[..1]);
+        var path = Path.Combine(_dir, log.Id + ".jsonl");
+
+        var held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+        var release = Task.Delay(150).ContinueWith(_ => held.Dispose());
+        log.Sync(history);
+        await release;
+
+        Assert.Equal(history.Count, SessionLog.Open(_dir, log.Id, "/work", "m").History.Count);
+    }
+
+    [Fact]
+    public void Sync_ThatFails_LeavesNothingOutOfTheNextOne()
+    {
+        var log = SessionLog.Create(_dir, "/work", "m");
+        var history = Conversation();
+        log.Sync(history[..1]);
+        var path = Path.Combine(_dir, log.Id + ".jsonl");
+
+        using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.ThrowsAny<IOException>(() => log.Sync(history[..2]));
+            Assert.Empty(SessionLog.List(_dir, "/work")); // a session it can't read is left out, not a crash
+        }
+        log.Sync(history);
+
+        Assert.Equal(history.Select(m => m.Text), SessionLog.Open(_dir, log.Id, "/work", "m").History.Select(m => m.Text));
+    }
+
+    [Fact]
     public void NoFileUntilThereIsSomethingToSave()
     {
         SessionLog.Create(_dir, "/work", "m").Sync([]);

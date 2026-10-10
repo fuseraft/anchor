@@ -115,10 +115,24 @@ public sealed class Repl
             }
             else
                 await TurnAsync(line);
+            Save();
+        }
+        Save();
+        return 0;
+    }
+
+    // A session that can't be written right now isn't worth losing the conversation over: what's missing goes out with the
+    // next save.
+    void Save()
+    {
+        try
+        {
             session.Sync(agent.History);
         }
-        session.Sync(agent.History);
-        return 0;
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            renderer.Line(renderer.Warning($"  Couldn't save the session: {e.Message} It will be tried again after the next turn."));
+        }
     }
 
     async Task TurnAsync(string line)
