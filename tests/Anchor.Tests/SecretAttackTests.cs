@@ -33,7 +33,13 @@ public sealed class SecretAttackTests : IDisposable
         _toolbox = new Toolbox([.. new FileTools(gate).All(), .. new EditTools(gate).All(), .. new ShellTool(gate).All()]);
     }
 
-    public void Dispose() => Directory.Delete(_root, recursive: true);
+    public void Dispose()
+    {
+        // Git leaves its objects read-only, which Windows won't delete.
+        foreach (var file in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
+            File.SetAttributes(file, FileAttributes.Normal);
+        Directory.Delete(_root, recursive: true);
+    }
 
     public static TheoryData<string, string, string?> Attempts() => new()
     {
