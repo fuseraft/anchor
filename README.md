@@ -1,5 +1,9 @@
 # anchor
 
+[![CI](https://github.com/fuseraft/anchor/actions/workflows/ci.yml/badge.svg)](https://github.com/fuseraft/anchor/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/fuseraft/anchor)](https://github.com/fuseraft/anchor/releases)
+[![License: MIT](https://img.shields.io/github/license/fuseraft/anchor)](LICENSE)
+
 A small coding agent for the terminal. One model works in one directory through a handful of
 tools, and a deterministic harness decides what it may touch.
 
