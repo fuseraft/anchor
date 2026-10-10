@@ -24,7 +24,7 @@ public static partial class ShellCommand
     [
         "ls", "cat", "head", "tail", "wc", "grep", "egrep", "fgrep", "rg", "find", "pwd", "echo", "printf", "which", "file",
         "stat", "du", "df", "tree", "sort", "uniq", "cut", "diff", "cmp", "basename", "dirname", "realpath", "date",
-        "whoami", "uname", "true", "tr", "nl", "column", "printenv", "git",
+        "whoami", "uname", "true", "tr", "nl", "column", "printenv", "git", "cd",
     ];
 
     static readonly HashSet<string> ReadOnlyGit = ["status", "diff", "log", "show", "blame", "ls-files", "rev-parse", "describe", "shortlog"];
@@ -74,8 +74,11 @@ public static partial class ShellCommand
     public static bool RunsAnyCode(string program) =>
         Interpreters.Contains(program) || program is "eval" or "source" or "." || program.StartsWith("python", StringComparison.Ordinal);
 
-    /// <summary>Program names in the command, used for "always allow" approvals.</summary>
-    public static IReadOnlySet<string> Programs(string command) => Parse(command).Select(c => c.Program).ToHashSet();
+    /// <summary>
+    /// Program names in the command, used for "always allow" approvals. <c>cd</c> isn't one: it only moves the commands
+    /// after it, and those are what get approved.
+    /// </summary>
+    public static IReadOnlySet<string> Programs(string command) => Parse(command).Select(c => c.Program).Where(p => p != "cd").ToHashSet();
 
     static bool IsReadOnly(SimpleCommand c, Func<string, bool> isInside)
     {
@@ -88,6 +91,9 @@ public static partial class ShellCommand
         if (c.Program == "sort" && c.Args.Any(a => a == "-o" || a.StartsWith("--output", StringComparison.Ordinal)))
             return false;
         if (c.Program == "git" && !IsReadOnlyGit(c.Args))
+            return false;
+        // Bare cd and cd - go to $HOME and $OLDPWD; a relative target is checked too, since later paths resolve under it.
+        if (c.Program == "cd" && (c.Args.Count != 1 || c.Args[0] == "-" || !isInside(c.Args[0])))
             return false;
 
         foreach (var arg in c.Args)

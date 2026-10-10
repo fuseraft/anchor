@@ -20,7 +20,8 @@ The policy has three answers: **allow**, **ask**, or **deny**.
 - Files in installed skill directories.
 
 A command is read-only only if every part of it is. `grep foo *.py | sort` qualifies;
-`grep foo *.py > out.txt` does not, because it writes a file.
+`grep foo *.py > out.txt` does not, because it writes a file. `cd` into a folder inside the
+directory counts as read-only, so `cd src && ls` qualifies too.
 
 ## What asks first
 
@@ -37,6 +38,8 @@ Answering "always" to a command or an MCP tool saves it for this directory in
 `~/.anchor/approvals.json`. The file is yours, not the project's, so a cloned repository can't
 approve anything on your behalf. "Always" for file writes, and for commands that use an interpreter
 such as `bash`, `python3` or `node`, lasts only for the session. Saved approvals never lift a denial.
+Approvals cover the programs a command runs, not `cd`: approving `bash` also covers
+`cd scripts && bash build.sh`.
 
 ## What is always denied
 

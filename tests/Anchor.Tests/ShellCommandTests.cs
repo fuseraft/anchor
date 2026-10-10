@@ -125,6 +125,7 @@ public class ShellCommandTests
     [InlineData("find . -name '*.cs'")]
     [InlineData("wc -l src/*.cs && pwd")]
     [InlineData("ls > /dev/null")]
+    [InlineData("cd src && ls")]
     public void ReadOnly_IsRecognized(string command) =>
         Assert.True(ShellCommand.IsReadOnly(command, _ => true));
 
@@ -148,8 +149,19 @@ public class ShellCommandTests
     [InlineData("sort -o out in")]
     [InlineData("git status; rm x")]
     [InlineData("ls && npm install")]
+    [InlineData("cd && cat notes")]
+    [InlineData("cd - && cat notes")]
+    [InlineData("cd .. && cat notes")]
+    [InlineData("cd src && npm install")]
     public void NotReadOnly(string command) =>
         Assert.False(ShellCommand.IsReadOnly(command, _ => true));
+
+    [Fact]
+    public void ReadOnly_RejectsCdOutsideTheWorkspace()
+    {
+        Assert.False(ShellCommand.IsReadOnly("cd /etc && cat passwd", p => p.StartsWith("/work")));
+        Assert.False(ShellCommand.IsReadOnly("cd link-out && cat passwd", p => p != "link-out"));
+    }
 
     [Fact]
     public void ReadOnly_RejectsAbsolutePathsOutsideTheWorkspace()
@@ -179,4 +191,8 @@ public class ShellCommandTests
     [Fact]
     public void Programs_ListsEveryCommand() =>
         Assert.Equal(["git", "grep", "rm"], ShellCommand.Programs("git log | grep x && rm y").Order());
+
+    [Fact]
+    public void Programs_LeavesOutCd() =>
+        Assert.Equal(["bash"], ShellCommand.Programs("cd scripts && bash stamp.sh"));
 }
