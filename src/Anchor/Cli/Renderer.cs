@@ -17,6 +17,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     readonly Lock _lock = new();
     bool _midLine;
     Markdown? _message; // the model's message being streamed into it, while it's being redrawn
+    bool _marked; // whether the model's current message has its anchor yet
     readonly bool _keeps = output is Transcript; // the TUI, which has a viewer for whole outputs
     readonly List<ToolOutput> _outputs = [];
     readonly Dictionary<string, string> _calls = []; // what each running call was started with, for its output's title
@@ -72,7 +73,10 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     {
         // Anything else the agent does ends its message; a sub-agent's lines go above it instead (see Line).
         if (e is not (TextDelta or SubAgentEvent))
+        {
             EndMessage();
+            _marked = false;
+        }
         switch (e)
         {
             case TextDelta when !streamText:
@@ -85,11 +89,18 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
                     _message = new Markdown(Width());
                 }
                 var (settled, open) = _message.Add(t.Text);
+                // Settled lines stay put, so they take the anchor for good; the open line is redrawn, so it only borrows it.
+                if (!_marked)
+                {
+                    settled = Marked(settled);
+                    if (!_marked)
+                        open = Marked(open, keep: false);
+                }
                 _styled.Stream(settled, open);
                 _midLine = open.Length > 0 && !open.EndsWith('\n');
                 break;
             case TextDelta t:
-                output.Write(t.Text);
+                output.Write(_transcript is null || _marked ? t.Text : Marked(t.Text));
                 _midLine = !t.Text.EndsWith('\n');
                 break;
             case ToolStarted t:
@@ -263,7 +274,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
             if (calls > 0)
                 Line(Muted($"  ↳ {calls} tool call{(calls == 1 ? "" : "s")}"));
             if (answer.Length > 0)
-                Line(_styled is null ? answer.Trim() : Markdown.Render(answer.Trim(), Width()));
+                Line((_transcript is null ? "" : Mark) + (_styled is null ? answer.Trim() : Markdown.Render(answer.Trim(), Width())));
         }
     }
 
@@ -274,6 +285,21 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
             Line("    " + (line.StartsWith('+') ? Success(line) : line.StartsWith('-') ? Error(line) : line.StartsWith("@@") ? Muted(line) : line));
         if (lines.Length > maxLines)
             Line(Muted($"    ... {lines.Length - maxLines} more lines" + (_keeps ? " (Ctrl+O shows them all)" : "")));
+    }
+
+    /// <summary>What starts each of the model's messages in the TUI, so they stand apart from everything else.</summary>
+    string Mark => Accent("⚓\uFE0E") + " "; // the text style, which takes the accent color rather than drawing as an emoji
+
+    // The text with the anchor before its first line that isn't blank; unchanged while it's all blank.
+    string Marked(string text, bool keep = true)
+    {
+        var start = 0;
+        while (start < text.Length && text[start] is '\n' or '\r')
+            start++;
+        if (start == text.Length)
+            return text;
+        _marked = keep;
+        return text[..start] + Mark + text[start..];
     }
 
     /// <summary>The caret before what the user sends, in the accent color.</summary>

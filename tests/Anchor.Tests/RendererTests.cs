@@ -35,14 +35,14 @@ public class RendererTests
         var renderer = new Renderer(t, color: true);
         renderer.Render(new TextDelta("Use **bo"));
 
-        Assert.Equal("Use **bo", Text(t.Lines()[^1]));
+        Assert.Equal("⚓\uFE0E Use **bo", Text(t.Lines()[^1]));
 
         renderer.Render(new TextDelta("ld**\n- item"));
         renderer.Render(new ToolStarted("1", "grep", "x"));
         renderer.Render(new TextDelta("Found `it`"));
         renderer.Render(new TurnEnded(TurnEnd.Completed));
 
-        Assert.Equal(["Use bold", "• item", "  ↳ grep x", "Found it", ""], t.Lines().Select(Text));
+        Assert.Equal(["⚓\uFE0E Use bold", "• item", "  ↳ grep x", "⚓\uFE0E Found it", ""], t.Lines().Select(Text));
     }
 
     [Fact]
@@ -55,7 +55,34 @@ public class RendererTests
         renderer.Render(new TextDelta("| bbb |\n\nok"));
         renderer.Render(new TurnEnded(TurnEnd.Completed));
 
-        Assert.Equal(["    [explorer] ↳ grep x", "a", "bbb", "", "ok", ""], t.Lines().Select(Text));
+        Assert.Equal(["    [explorer] ↳ grep x", "⚓\uFE0E a", "bbb", "", "ok", ""], t.Lines().Select(Text));
+    }
+
+    [Fact]
+    public void InTheTui_TheAnchorGoesOnTheFirstLineThatIsntBlank()
+    {
+        var t = new Transcript();
+        var renderer = new Renderer(t, color: true);
+        renderer.Render(new TextDelta("\n"));
+        renderer.Render(new TextDelta("\nDone"));
+        renderer.Render(new TurnEnded(TurnEnd.Completed));
+
+        Assert.Single(t.Lines(), l => Text(l).Contains("⚓\uFE0E"));
+        Assert.Contains("⚓\uFE0E Done", t.Lines().Select(Text));
+    }
+
+    [Fact]
+    public void InTheTuiWithoutColor_MessagesStillGetTheAnchor()
+    {
+        var t = new Transcript();
+        var renderer = new Renderer(t, color: false);
+        renderer.Render(new TextDelta("Look"));
+        renderer.Render(new TextDelta("ing"));
+        renderer.Render(new ToolStarted("1", "grep", "x"));
+        renderer.Render(new TextDelta("Done"));
+        renderer.Render(new TurnEnded(TurnEnd.Completed));
+
+        Assert.Equal(["⚓\uFE0E Looking", "  ↳ grep x", "⚓\uFE0E Done", ""], t.Lines().Select(Text));
     }
 
     [Fact]
