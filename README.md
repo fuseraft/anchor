@@ -27,8 +27,8 @@ tools, and a deterministic harness decides what it may touch.
 - **Scriptable.** `-p` runs one prompt and prints the answer; `--json` streams events for
   editors and tools.
 
-Status: 0.8.0. Linux, macOS and Windows; Windows builds ask before every shell command, since
-the safety rules read bash, not cmd. Models: Claude (native API, prompt caching), and any
+Status: 0.8.0. Linux, macOS and Windows; on Windows, shell commands run in Git for Windows' bash,
+and without it every shell command asks, since the safety rules read bash, not cmd. Models: Claude (native API, prompt caching), and any
 OpenAI-compatible API (OpenAI, xAI, local servers).
 
 ## Install

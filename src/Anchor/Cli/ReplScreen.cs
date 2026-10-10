@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Anchor.Core;
 
 namespace Anchor.Cli;
 
@@ -111,9 +112,7 @@ public sealed class LineScreen : IReplScreen
 
     public static ProcessStartInfo Shell(string command, string directory)
     {
-        var psi = OperatingSystem.IsWindows()
-            ? new ProcessStartInfo("cmd.exe", ["/c", command])
-            : new ProcessStartInfo(Environment.GetEnvironmentVariable("SHELL") ?? "/bin/sh", ["-c", command]);
+        var psi = HostShell.StartInfo(command, Environment.GetEnvironmentVariable("SHELL") ?? "/bin/sh");
         psi.WorkingDirectory = directory;
         return psi;
     }

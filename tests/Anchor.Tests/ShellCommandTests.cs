@@ -43,6 +43,10 @@ public class ShellCommandTests
     [InlineData("rm --recursive --force /etc/")]
     [InlineData("rm -rf --no-preserve-root /")]
     [InlineData("cd /tmp && rm -Rf /home")]
+    [InlineData("rm -rf C:/")]
+    [InlineData("rm -rf 'C:\\'")]
+    [InlineData("rm -rf C:/Users")]
+    [InlineData("rm -rf /c/*")]
     public void CatastrophicDelete_IsDenied(string command) =>
         Assert.Contains("delete", ShellCommand.Danger(command));
 
@@ -153,6 +157,24 @@ public class ShellCommandTests
         Assert.False(ShellCommand.IsReadOnly("cat /etc/passwd", p => p.StartsWith("/work")));
         Assert.True(ShellCommand.IsReadOnly("cat /work/a.txt", p => p.StartsWith("/work")));
     }
+
+    [Theory]
+    [InlineData("cat C:/Windows/win.ini")]
+    [InlineData("cat 'D:\\notes.txt'")]
+    [InlineData("grep x --file=C:/list")]
+    public void ReadOnly_RejectsDrivePathsOutsideTheWorkspace(string command) =>
+        Assert.False(ShellCommand.IsReadOnly(command, p => p.StartsWith("/work")));
+
+    [Fact]
+    public void ReadOnly_RejectsBackslashParentSteps() =>
+        Assert.False(ShellCommand.IsReadOnly("cat '..\\outside'", _ => true));
+
+    [Theory]
+    [InlineData("cmd /c del x")]
+    [InlineData("powershell -c x")]
+    [InlineData("pwsh -c x")]
+    public void WindowsShells_RunAnyCode(string command) =>
+        Assert.True(ShellCommand.RunsAnyCode(ShellCommand.Parse(command)[0].Program));
 
     [Fact]
     public void Programs_ListsEveryCommand() =>
