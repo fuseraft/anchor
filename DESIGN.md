@@ -68,6 +68,9 @@ tests/Anchor.Tests/
   was read, and so does a session that is resumed.
 - `edit_file` takes one replacement, or several as `edits`. Several are made in order, each on the
   result of the one before: one call, one diff, one approval.
+- An `old_string` that isn't in the file exactly is looked for as whole lines, ignoring trailing
+  whitespace, then the whitespace around each line, as `apply_patch` does. The change is made only
+  if that finds one place; models often retype a tab as spaces or drop a trailing space.
 - Each model edits in the format it was trained on. OpenAI's models (`gpt`, `codex`, `o1`/`o3`/`o4`
   in the name) get `apply_patch` (one patch adds, updates, deletes and moves files); every other
   model gets `write_file` and `edit_file`. The agent picks the format on every request from the model

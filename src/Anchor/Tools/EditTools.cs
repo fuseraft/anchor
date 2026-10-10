@@ -125,7 +125,45 @@ public sealed partial class EditTools(Gate gate)
             @new = @new.ReplaceLineEndings("\r\n");
         }
         starts = Occurrences(text, old);
+        if (starts.Count == 0 && !replaceAll)
+            return Loosely(text, old, @new, out starts);
         return starts.Count == 1 || (starts.Count > 1 && replaceAll) ? text.Replace(old, @new, StringComparison.Ordinal) : null;
+    }
+
+    // Tried in order when old isn't in the text exactly, as apply_patch does: whole lines that differ only in trailing
+    // whitespace, then in the whitespace around them. A model that retypes a line often gets a tab or a trailing space wrong.
+    static readonly Func<string, string>[] Loosenings = [s => s.TrimEnd(), s => s.Trim()];
+
+    // text with the one run of whole lines that loosely matches old replaced by new. starts is where the matches begin; null
+    // when there's no match, or more than one.
+    static string? Loosely(string text, string old, string @new, out List<int> starts)
+    {
+        starts = [];
+        var newline = text.Contains("\r\n") ? "\r\n" : "\n";
+        var lines = text.Split(newline);
+        var wanted = old.Split(newline);
+        // An old_string that ends at a line break takes the break with it.
+        var throughBreak = wanted.Length > 1 && wanted[^1].Length == 0;
+        if (throughBreak)
+            wanted = wanted[..^1];
+        if (wanted.All(string.IsNullOrWhiteSpace))
+            return null;
+        foreach (var loose in Loosenings)
+        {
+            var at = Enumerable.Range(0, Math.Max(0, lines.Length - wanted.Length + 1))
+                .Where(i => wanted.Select((w, j) => loose(lines[i + j]) == loose(w)).All(same => same))
+                .ToList();
+            if (at.Count == 0)
+                continue;
+            starts = [.. at.Select(i => lines.Take(i).Sum(l => l.Length + newline.Length))];
+            if (at.Count > 1)
+                return null;
+            var length = lines.Skip(at[0]).Take(wanted.Length).Sum(l => l.Length + newline.Length) - newline.Length;
+            if (throughBreak && at[0] + wanted.Length < lines.Length)
+                length += newline.Length;
+            return text[..starts[0]] + @new + text[(starts[0] + length)..];
+        }
+        return null;
     }
 
     static List<int> Occurrences(string text, string value)
