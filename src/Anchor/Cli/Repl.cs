@@ -48,6 +48,8 @@ public sealed partial class Repl
         // Sub-agents change on their own threads, where the history may be changing under an estimate; they keep the last count.
         if (options.SubAgents is { } subAgents)
             subAgents.Changed += () => status.Redraw(status.ShownTokens);
+        // An update downloads in the background; the status line keeps it in view until anchor starts again.
+        Update.Ready += status.Refresh;
     }
 
     Workspace Workspace => gate.Workspace;

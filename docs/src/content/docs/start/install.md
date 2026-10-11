@@ -25,7 +25,7 @@ an archive that doesn't match.
 
 anchor installed this way updates itself. Once a day, a session checks for a new release and
 downloads it, checked against the same `SHA256SUMS`, and the next time anchor starts it runs the new
-version. `"autoUpdate": false` in the [config](/anchor/reference/config/#autoupdate) turns this off;
+version. Until then the status line shows `↑ <version> on restart`. `"autoUpdate": false` in the [config](/anchor/reference/config/#autoupdate) turns this off;
 to update by hand, run the install command again. A copy installed by Homebrew, Scoop or winget
 isn't touched: anchor tells you a new release is out and leaves the update to the package manager.
 

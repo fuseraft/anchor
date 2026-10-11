@@ -21,6 +21,12 @@ public static class Update
     const string TargetVariable = "ANCHOR_UPDATE_TARGET";
     static readonly TimeSpan Interval = TimeSpan.FromDays(1);
 
+    /// <summary>The release this session downloaded, which runs the next time anchor starts; null until there is one.</summary>
+    public static string? Downloaded { get; private set; }
+
+    /// <summary>Raised, on a background thread, once <see cref="Downloaded"/> is set.</summary>
+    public static event Action? Ready;
+
     static string Dir => Path.Combine(AnchorHome.Dir, "update");
     static string ExeName => OperatingSystem.IsWindows() ? "anchor.exe" : "anchor";
 
@@ -122,6 +128,8 @@ public static class Update
             File.SetUnixFileMode(temp, (UnixFileMode)0b111_101_101);
         var dir = Directory.CreateDirectory(Path.Combine(Dir, version)).FullName;
         File.Move(temp, Path.Combine(dir, ExeName), overwrite: true);
+        Downloaded = version;
+        Ready?.Invoke();
         return $"anchor {version} is downloaded, and replaces this version the next time anchor starts.";
     }
 
