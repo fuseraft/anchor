@@ -144,7 +144,9 @@ public sealed class McpHub(Toolbox toolbox, Gate gate, Action<AgentEvent> emit, 
                 TokenCache = new TokenStore(server.Name, url, keychain),
             },
         };
-        var http = new HttpClient(new SameOriginRedirects(config.Headers.Keys));
+        // Every server, and every reconnect, shares one connection pool; the transport disposes only the client. The
+        // timeout is HttpClient's default, as before.
+        var http = Http.Client(TimeSpan.FromSeconds(100), new SameOriginRedirects(config.Headers.Keys, Http.NoRedirects));
         var transport = new HttpClientTransport(options, http, ownsHttpClient: true);
         // A person reading a consent page needs longer than the default 60 seconds.
         return await McpClient.CreateAsync(transport, InitOptions(TimeSpan.FromMinutes(5)), cancellationToken: ct);

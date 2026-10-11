@@ -64,7 +64,7 @@ try
     {
         if (!options.Setup)
             Console.WriteLine("Welcome to anchor. First, let's connect it to a model.");
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        using var http = Http.Client(TimeSpan.FromSeconds(30));
         var model = await new Setup(new ConsoleSetupIO(), Keychain.Default(), new CredentialsFile(AnchorHome.Credentials), http,
             Path.Combine(Config.Home, "config.json")).RunAsync();
         if (options.Setup || model is null)

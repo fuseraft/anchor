@@ -14,7 +14,7 @@ public sealed partial class Repl
     }
 
     // Model lists for /model and /setup; one client serves every run of either.
-    static readonly HttpClient SetupHttp = new() { Timeout = TimeSpan.FromSeconds(30) };
+    static readonly HttpClient SetupHttp = Http.Client(TimeSpan.FromSeconds(30));
 
     Setup NewSetup() => new(screen.SetupIO, Anchor.Mcp.Keychain.Default(), new CredentialsFile(AnchorHome.Credentials),
         SetupHttp, Path.Combine(Config.Home, "config.json"));

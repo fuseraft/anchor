@@ -101,7 +101,7 @@ public static class Update
 
     static async Task<string?> DownloadAsync(string exe)
     {
-        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        using var http = Http.Client(TimeSpan.FromMinutes(5));
         // /releases/latest redirects to the latest release's tag, without the API's rate limit.
         string? tag;
         using (var latest = await http.SendAsync(new HttpRequestMessage(HttpMethod.Head, $"{Repo}/releases/latest")))
