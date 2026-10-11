@@ -227,7 +227,7 @@ tests/Anchor.Tests/
 anchor setup
 anchor [--yolo] [--allow rule]... [--resume [id]] [--model m] [-p "prompt"] [--until check]
        [--max-rounds n] [--timeout s] [--json] [--plain]
-/help /model /setup /theme /context /until /compact /approvals /copy /undo /sessions /clear /agents /skills /mcp /exit
+/help /model /setup /theme /dock /context /until /compact /approvals /copy /undo /sessions /clear /agents /skills /mcp /exit
 !cmd runs in your shell, outside the model's history; @path attaches a file to the message
 ```
 

@@ -26,6 +26,7 @@ public sealed partial class Repl
         ("/model [name]", "pick a model and save it as the default, or switch to one for this session"),
         ("/setup", "choose a provider, save its key and pick a model"),
         ("/theme [name]", "list color themes, or switch to one for this session"),
+        ("/dock [side]", "list where the prompt can go, or move it to the top or bottom for this session"),
         ("/context", "how full the context window is, and session token usage"),
         ("/agents", "list sub-agents"),
         ("/skills", "list skills"),
@@ -172,6 +173,20 @@ public sealed partial class Repl
                 break;
             case "/theme":
                 renderer.Line(renderer.Error($"Unknown theme {parts[1]}. Themes: {string.Join(", ", Theme.BuiltIn.Select(t => t.Name))}."));
+                break;
+            case "/dock" when !screen.FullScreen:
+                renderer.Line(renderer.Muted("Only the full screen has a prompt to move."));
+                break;
+            case "/dock" when parts.Length == 1:
+                foreach (var (dock, position, description) in Docks.All)
+                    renderer.Line((dock == screen.Docked ? renderer.Accent("› ") : "  ") + position.PadRight(8) + renderer.Muted(description));
+                break;
+            case "/dock" when Docks.Named(parts[1]) is { } docked:
+                screen.DockPrompt(docked);
+                renderer.Line(renderer.Muted($"Prompt: {Docks.Name(docked)}, for this session. To keep it, set \"dock\" in the config."));
+                break;
+            case "/dock":
+                renderer.Line(renderer.Error($"Unknown position {parts[1]}. Positions: {Docks.Names}."));
                 break;
             case "/setup":
                 if (await NewSetup().RunAsync() is { } model)

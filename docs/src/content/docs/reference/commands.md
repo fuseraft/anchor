@@ -39,6 +39,17 @@ key and pick a model. The session switches to the chosen model and keeps the con
 The switch lasts for the session and applies to what's drawn from then on. To keep a theme, pick it
 in [`/setup`](#setup), or set [`theme`](/anchor/reference/config/#theme-and-colors) in the config.
 
+### /dock
+
+```
+/dock           list where the prompt can go, the current place marked
+/dock top       move the prompt and status line to the top, with the conversation under them
+/dock bottom    move them back under the conversation
+```
+
+The move lasts for the session. To keep one, set [`dock`](/anchor/reference/config/#dock) in the
+config. Only the full screen has a prompt to move; `--plain` ignores it.
+
 ### /context
 
 Shows how full the context window is, the number of messages, token totals for the whole
