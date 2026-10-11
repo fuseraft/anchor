@@ -31,6 +31,7 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     IBackground? _background;
     bool _warnedFull;
     int _rounds;
+    long? _lastContextTokens;
     long _turnTokens;
 
     readonly List<ChatMessage> _history = [];
@@ -49,7 +50,18 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     public int? MaxRounds { get; set; }
 
     /// <summary>Size of the last request plus its reply, as reported by the provider; null when unknown.</summary>
-    public long? LastContextTokens { get; private set; }
+    public long? LastContextTokens
+    {
+        get => _lastContextTokens;
+        private set
+        {
+            _lastContextTokens = value;
+            ContextChanged?.Invoke();
+        }
+    }
+
+    /// <summary>Runs whenever <see cref="ContextTokens"/> may have changed: after each model reply, and after the history shrinks.</summary>
+    public Action? ContextChanged { get; set; }
 
     /// <summary>What shrinks the history as it fills up; null when nothing does.</summary>
     public Compactor? Compactor => compactor;
@@ -126,7 +138,11 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
     public string? LastReply => _history.LastOrDefault(m => m.Role == ChatRole.Assistant && m.Text.Trim().Length > 0)?.Text.Trim();
 
     /// <summary>Forgets the conversation, for /clear.</summary>
-    public void Clear() => _history.Clear();
+    public void Clear()
+    {
+        _history.Clear();
+        LastContextTokens = null;
+    }
 
     /// <summary>Adds a note from anchor between turns, such as that the user undid the agent's file changes. During a turn,
     /// <see cref="Notify"/> queues one for the model to read after its current step.</summary>

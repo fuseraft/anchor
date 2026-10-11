@@ -29,8 +29,11 @@ public sealed class Repl
     readonly ReplOptions options;
     readonly ConcurrentQueue<string> _queued = new();
     CancellationTokenSource? _turn;
-    // The status line as of the last time the REPL drew it; sub-agent changes redraw it from their own threads.
-    volatile string? _workingStatus;
+    // Whether the status line shows work running, and what's running when it isn't a turn; the agent's context changes
+    // and sub-agent changes redraw it from their own threads while it does.
+    volatile bool _working;
+    volatile string? _doing;
+    long _shownTokens;
     // Context at the start of the running turn, and how much the last turn added; they predict when compaction is near.
     long? _turnStart;
     long _lastGrowth;
@@ -46,12 +49,11 @@ public sealed class Repl
         screen.Interrupt = Interrupt;
         agent.Attachments = (text, ct) => Mentions.AttachAsync(text, gate,
             (what, ok) => renderer.Line(ok ? renderer.Muted($"  + attached {what}") : renderer.Warning($"  {what}")), ct);
+        // The status line follows the context through a turn, not just from one turn to the next.
+        agent.ContextChanged = () => Redraw(agent.ContextTokens);
+        // Sub-agents change on their own threads, where the history may be changing under an estimate; they keep the last count.
         if (options.SubAgents is { } subAgents)
-            subAgents.Changed += () =>
-            {
-                if (_workingStatus is { } status)
-                    screen.Status(status + SubAgentStatus(subAgents.Running), working: true);
-            };
+            subAgents.Changed += () => Redraw(Interlocked.Read(ref _shownTokens));
     }
 
     Workspace Workspace => gate.Workspace;
@@ -258,6 +260,20 @@ public sealed class Repl
             _lastGrowth = Math.Max(0, tokens - start);
             _turnStart = null;
         }
+        (_working, _doing) = (working, doing);
+        Draw(tokens, working, doing);
+    }
+
+    /// <summary>Draws the running status again with <paramref name="tokens"/> of context; it leaves the turn's growth alone.</summary>
+    void Redraw(long tokens)
+    {
+        if (_working)
+            Draw(tokens, working: true, _doing);
+    }
+
+    void Draw(long tokens, bool working, string? doing)
+    {
+        Interlocked.Exchange(ref _shownTokens, tokens);
         var used = $"{100.0 * tokens / options.ContextWindow:0}% context";
         if (agent.Compactor is { } c)
             used = ContextLevelOf(tokens, _lastGrowth, c.TriggerTokens) switch
@@ -267,7 +283,8 @@ public sealed class Repl
                 _ => renderer.Success(used),
             };
         var status = $"{renderer.Accent(_provider.Model)} · {used}" + (_until is null ? "" : $" · until {_until}") + (doing is null ? "" : $" · {doing}");
-        _workingStatus = working ? status : null;
+        if (working && options.SubAgents is { } subAgents)
+            status += SubAgentStatus(subAgents.Running);
         screen.Status(status, working);
     }
 

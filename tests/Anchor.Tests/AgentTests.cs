@@ -201,6 +201,29 @@ public class AgentTests
         Assert.DoesNotContain(_events, e => e is LoopWarning);
     }
 
+    [Fact]
+    public async Task ContextChanged_RunsAfterEachModelReply()
+    {
+        var agent = NewAgent(new FakeChatClient().Call("echo", new { text = "x" }).Text("done", input: 100));
+        List<long?> seen = [];
+        agent.ContextChanged = () => seen.Add(agent.LastContextTokens);
+
+        await agent.RunTurnAsync("hi", CancellationToken.None);
+
+        Assert.Equal([null, 105], seen);
+    }
+
+    [Fact]
+    public async Task Clear_ForgetsTheReportedContext()
+    {
+        var agent = NewAgent(new FakeChatClient().Text("hello", input: 100));
+        await agent.RunTurnAsync("hi", CancellationToken.None);
+
+        agent.Clear();
+
+        Assert.Null(agent.LastContextTokens);
+    }
+
     static readonly string Long = new('a', 2_000);
 
     Agent CompactingAgent(FakeChatClient client, long window = 1_000) =>
