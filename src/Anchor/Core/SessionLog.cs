@@ -68,7 +68,7 @@ public sealed class SessionLog
 
         var isNew = !File.Exists(_path);
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        using (var file = new StreamWriter(OpenForAppend(_path)))
+        using (var file = new StreamWriter(OpenForAppend(_path, Backoff)))
         {
             if (isNew)
                 file.WriteLine(new JsonObject { ["type"] = "session", ["id"] = Id, ["workspace"] = _workspace, ["model"] = _model }.ToJsonString());
@@ -81,7 +81,7 @@ public sealed class SessionLog
 
     // Another process may have the file open for a moment, such as a virus scanner or another anchor listing its sessions,
     // so a write that's refused is tried again for a little while before it fails.
-    static FileStream OpenForAppend(string path)
+    static FileStream OpenForAppend(string path, Action<int> backoff)
     {
         for (var attempt = 1; ; attempt++)
         {
@@ -91,12 +91,15 @@ public sealed class SessionLog
             }
             catch (IOException) when (attempt < WriteAttempts)
             {
-                Thread.Sleep(50 * attempt);
+                backoff(attempt);
             }
         }
     }
 
     const int WriteAttempts = 6;
+
+    /// <summary>The wait after the given refused attempt before the next one; tests replace it to stay off the clock.</summary>
+    internal Action<int> Backoff { get; set; } = attempt => Thread.Sleep(50 * attempt);
 
     // Reads leave the file open to writers, so a session being listed or resumed never stops the one writing it.
     static StreamReader OpenForRead(string path) =>

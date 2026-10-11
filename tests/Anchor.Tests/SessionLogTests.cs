@@ -73,22 +73,17 @@ public sealed class SessionLogTests : IDisposable
         log.Sync(history[..1]);
         var path = Path.Combine(_dir, log.Id + ".jsonl");
 
-        var held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
-        // Its own thread, not the thread pool: tests running in parallel can keep the pool busy for longer than Sync waits.
-        var release = new Thread(() =>
+        using var held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+        // The file is let go once a write has been refused, with no clock involved, so the test never races the retries.
+        var refused = 0;
+        log.Backoff = _ =>
         {
-            Thread.Sleep(150);
+            refused++;
             held.Dispose();
-        });
-        release.Start();
-        try
-        {
-            log.Sync(history);
-        }
-        finally
-        {
-            release.Join();
-        }
+        };
+        log.Sync(history);
+
+        Assert.Equal(1, refused);
 
         Assert.Equal(history.Count, SessionLog.Open(_dir, log.Id, "/work", "m").History.Count);
     }
