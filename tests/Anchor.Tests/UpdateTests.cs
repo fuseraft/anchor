@@ -93,4 +93,11 @@ public sealed class UpdateTests : IDisposable
             Assert.Equal((UnixFileMode)Convert.ToInt32("755", 8), File.GetUnixFileMode(exe));
         Assert.DoesNotContain(Directory.EnumerateFiles(_dir), f => f.EndsWith(".new"));
     }
+
+    [Fact]
+    public void StatusLine_ShowsADownloadedUpdate()
+    {
+        Assert.Equal("", Anchor.Cli.StatusLine.UpdateStatus(null));
+        Assert.Equal(" · ↑ 0.8.6 on restart", Anchor.Cli.StatusLine.UpdateStatus("0.8.6"));
+    }
 }

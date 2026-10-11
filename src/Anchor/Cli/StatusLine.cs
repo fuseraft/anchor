@@ -4,7 +4,7 @@ namespace Anchor.Cli;
 
 /// <summary>
 /// The REPL's status line: the model, how full the context is (colored by how near compaction is), the /until check,
-/// and while work runs, what it is and the sub-agents running under it.
+/// a downloaded update waiting for a restart, and while work runs, what it is and the sub-agents running under it.
 /// </summary>
 public sealed class StatusLine(Agent agent, Renderer renderer, IReplScreen screen, long contextWindow, SubAgentRunner? subAgents,
     Func<string> model, Func<string?> until)
@@ -43,6 +43,9 @@ public sealed class StatusLine(Agent agent, Renderer renderer, IReplScreen scree
             Draw(tokens, working: true, _doing);
     }
 
+    /// <summary>Draws the status again as it stands, such as when an update has finished downloading.</summary>
+    public void Refresh() => Draw(ShownTokens, _working, _doing);
+
     void Draw(long tokens, bool working, string? doing)
     {
         Interlocked.Exchange(ref _shownTokens, tokens);
@@ -54,7 +57,8 @@ public sealed class StatusLine(Agent agent, Renderer renderer, IReplScreen scree
                 ContextLevel.Near => renderer.Warning(used),
                 _ => renderer.Success(used),
             };
-        var status = $"{renderer.Accent(model())} · {used}" + (until() is { } check ? $" · until {check}" : "") + (doing is null ? "" : $" · {doing}");
+        var status = $"{renderer.Accent(model())} · {used}" + (until() is { } check ? $" · until {check}" : "")
+            + UpdateStatus(Update.Downloaded) + (doing is null ? "" : $" · {doing}");
         if (working && subAgents is not null)
             status += SubAgentStatus(subAgents.Running);
         screen.Status(status, working);
@@ -69,6 +73,9 @@ public sealed class StatusLine(Agent agent, Renderer renderer, IReplScreen scree
     /// </summary>
     public static ContextLevel ContextLevelOf(long tokens, long lastGrowth, long trigger) =>
         tokens > trigger ? ContextLevel.Compacting : tokens + lastGrowth > trigger ? ContextLevel.Near : ContextLevel.Clear;
+
+    /// <summary>A downloaded update for the status line, such as " · ↑ 0.8.6 on restart"; empty when there's none.</summary>
+    public static string UpdateStatus(string? version) => version is null ? "" : $" · ↑ {version} on restart";
 
     /// <summary>The running sub-agents for the status line, such as " · agent-1: 7 calls, 12k tokens"; empty when none run.</summary>
     public static string SubAgentStatus(IReadOnlyList<SubAgentStats> running) =>
