@@ -31,9 +31,9 @@ public class MentionsTests
             await Task.Delay(50);
         var completion = new PromptCompletion { Files = index };
 
-        var (start, items) = completion.Suggest("explain @src/Anchor/Cli/Tu");
+        var (start, items) = completion.Suggest("explain @src/Anchor/Cli/Hi");
         Assert.Equal(8, start);
-        Assert.Equal([new Suggestion("@src/Anchor/Cli/Tui.cs")], items);
+        Assert.Equal([new Suggestion("@src/Anchor/Cli/Highlighter.cs")], items);
         Assert.Contains(new Suggestion("@src/Anchor/Cli/Tui.cs"), completion.Suggest("x @Tui").Items);
         Assert.Contains(new Suggestion("@README.md"), completion.Suggest("@").Items);
         Assert.Equal([new Suggestion("/clear", "forget the conversation")], completion.Suggest("/cl").Items);

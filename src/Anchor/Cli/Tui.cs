@@ -16,7 +16,7 @@ namespace Anchor.Cli;
 /// The full-screen REPL: the transcript on top, the prompt below it, and a status line. The REPL runs on a background
 /// task and reaches the screen through IReplScreen and IApprover; everything that touches a view goes through Ui().
 /// </summary>
-public sealed class Tui : IReplScreen, IApprover
+public sealed partial class Tui : IReplScreen, IApprover
 {
     const int MaxPromptRows = 10;
 
@@ -50,6 +50,8 @@ public sealed class Tui : IReplScreen, IApprover
     Theme _theme = Theme.Current; // what the views were last drawn in
     int _redrawQueued;
 
+    static bool Colored => Environment.GetEnvironmentVariable("NO_COLOR") is null;
+
     public static bool Supported => !Console.IsInputRedirected && !Console.IsOutputRedirected;
 
     public Renderer Renderer { get; }
@@ -65,7 +67,7 @@ public sealed class Tui : IReplScreen, IApprover
     Tui(IApplication app)
     {
         _app = app;
-        Renderer = new Renderer(_transcript, color: Environment.GetEnvironmentVariable("NO_COLOR") is null);
+        Renderer = new Renderer(_transcript, color: Colored);
         SetupIO = new TuiSetupIO(this);
 
         var plain = new Attribute(Color.None, Color.None);
@@ -152,7 +154,7 @@ public sealed class Tui : IReplScreen, IApprover
             app.Run(tui._top);
             await work;
         }
-        Console.Out.Write(transcript.Ansi(color: Environment.GetEnvironmentVariable("NO_COLOR") is null));
+        Console.Out.Write(transcript.Ansi(color: Colored));
         failure?.Throw();
         return exit;
     }
@@ -251,371 +253,57 @@ public sealed class Tui : IReplScreen, IApprover
         }
     }
 
-    public async Task<Answer> ApproveAsync(ApprovalRequest request, CancellationToken ct)
-    {
-        Renderer.Line(Renderer.Warning($"  ? {request.Title}"));
-        Ui(Ring);
-        if (!string.IsNullOrEmpty(request.Detail))
-            Renderer.Keep(new ToolOutput(request.Title, request.Detail, Diff: true));
-        var hideDiff = string.IsNullOrEmpty(request.Detail) ? null : Renderer.Section(() => Renderer.Diff(request.Detail));
-        var key = await KeyAsync(Renderer.AllowPrompt(request.AlwaysLabel), request.AlwaysLabel is null ? "yn" : "yna", ct);
-        var answer = char.ToLowerInvariant(key) switch
-        {
-            'y' => Answer.Yes,
-            'a' when request.AlwaysLabel is not null => Answer.Always,
-            _ => Answer.No,
-        };
-        // An allowed change is summed up by the ✎ line that follows; a refused one stays, to say what was refused.
-        if (answer != Answer.No)
-            hideDiff?.Invoke();
-        Renderer.Line(Renderer.Answered(answer));
-        return answer;
-    }
-
-    public async Task<string?> AskAsync(Question question, CancellationToken ct)
-    {
-        Renderer.Line(Renderer.Warning($"  ? {question.Text}"));
-        Ui(Ring);
-        const string other = "Something else (type an answer)";
-        var answer = await ChooseAsync(null, question.AllowOther ? [.. question.Options, other] : question.Options, null, false, ct);
-        if (answer == other)
-            answer = await TextAsync("Your answer:", secret: false, ct);
-        Renderer.Line(Renderer.Muted($"  › {answer ?? "(dismissed)"}"));
-        return answer;
-    }
-
-    // One of a few keys, for approvals; anything else is ignored, so a stray key never answers. Esc counts as no.
-    // The prompt brings its own colors.
-    Task<char> KeyAsync(string prompt, string keys, CancellationToken ct) =>
-        PanelAsync<char>(ct, (panel, done) =>
-        {
-            panel.Show([(prompt, false)]);
-            panel.OnKey = key =>
-            {
-                if (key == Key.Esc)
-                    done('n');
-                else if (!key.IsCtrl && !key.IsAlt && key.AsRune.Value is > 0 and < char.MaxValue and var rune && keys.Contains(char.ToLowerInvariant((char)rune)))
-                    done(char.ToLowerInvariant((char)rune));
-                return true;
-            };
-        });
-
-    // The picker from anchor setup, drawn in the panel: ↑/↓, type to filter, Enter, Esc to dismiss (null).
-    internal Task<string?> ChooseAsync(string? title, IReadOnlyList<string> choices, string? selected, bool allowTyped, CancellationToken ct, bool quiet = true) =>
-        PanelAsync<string?>(ct, quiet: quiet, setup: (panel, done) =>
-        {
-            var picker = new Picker(choices, selected, allowTyped);
-            var hint = allowTyped || choices.Count > Picker.DefaultHeight ? "↑/↓ to move, type to filter, Enter to choose" : "↑/↓ to move, Enter to choose";
-            Draw();
-            panel.OnKey = key =>
-            {
-                if (ConsoleKeyOf(key) is not { } info)
-                    return false;
-                switch (picker.Handle(info))
-                {
-                    case Picker.Outcome.Chosen:
-                        done(picker.Result);
-                        break;
-                    case Picker.Outcome.Cancelled:
-                        done(null);
-                        break;
-                    default:
-                        Draw();
-                        break;
-                }
-                return true;
-            };
-
-            void Draw() => panel.Show([((title is null ? "" : title + " ") + $"({hint})", false), .. picker.Lines()]);
-        });
-
-    // A line of text; secret masks it. Esc dismisses (null).
-    internal Task<string?> TextAsync(string prompt, bool secret, CancellationToken ct) =>
-        PanelAsync<string?>(ct, (panel, done) =>
-        {
-            panel.Show([(prompt, true)]);
-            var field = new TextField { X = 0, Y = 1, Width = Dim.Fill(), Secret = secret };
-            panel.Add(field);
-            field.SetFocus();
-            field.Accepting += (_, e) =>
-            {
-                e.Handled = true;
-                done(field.Text.Trim() is { Length: > 0 } text ? text : null);
-            };
-            field.KeyDown += (_, key) =>
-            {
-                if (key == Key.Esc)
-                {
-                    key.Handled = true;
-                    done(null);
-                }
-            };
-            panel.OnKey = key =>
-            {
-                if (key != Key.Esc)
-                    return false;
-                done(null);
-                return true;
-            };
-        }, rows: 2);
-
-    // Shows the panel in place of the prompt (whose draft is kept) until the answer comes, or until ct, which throws.
-    // Keys arriving as it appears were meant for the prompt; they're thrown away until typing stops, unless the user
-    // opened the panel (not quiet), when they're meant for it.
-    async Task<T> PanelAsync<T>(CancellationToken ct, Action<PanelView, Action<T>> setup, int rows = 0, bool quiet = true)
-    {
-        await _panelTurn.WaitAsync(ct);
-        try
-        {
-            var answer = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-            await using var _ = ct.Register(() => answer.TrySetCanceled(ct));
-            Ui(() =>
-            {
-                _panel.Reset(quiet ? DateTime.UtcNow : default, Quiet);
-                setup(_panel, value => answer.TrySetResult(value));
-                _panel.Rows = rows;
-                _panel.Visible = true;
-                _prompt.Visible = _caret.Visible = false;
-                Layout();
-                if (_panel.SubViews.Count == 0)
-                    _panel.SetFocus();
-            });
-            try
-            {
-                return await answer.Task;
-            }
-            finally
-            {
-                Ui(() =>
-                {
-                    _panel.Reset(default, Quiet);
-                    _panel.Visible = false;
-                    _prompt.Visible = _caret.Visible = true;
-                    Layout();
-                    _prompt.SetFocus();
-                });
-            }
-        }
-        finally
-        {
-            _panelTurn.Release();
-        }
-    }
-
     // Keys that mean the same everywhere: Ctrl+C, Ctrl+D, Esc (never quits), scrolling the transcript, and Ctrl+O.
     void OnKey(object? sender, Key key)
     {
         _lastKey = DateTime.UtcNow;
-        if (key.KeyCode != (KeyCode.C | KeyCode.CtrlMask))
+        var ctrlC = key.KeyCode == (KeyCode.C | KeyCode.CtrlMask);
+        if (!ctrlC)
         {
             // Any other key disarms a pending Ctrl+C exit, and a hint shown for the last key no longer applies.
             _lastInterrupt = default;
             _status.ClearFlash();
         }
-        if (key.KeyCode == (KeyCode.C | KeyCode.CtrlMask))
+        key.Handled = ctrlC ? Run(CtrlC)
+            : key.KeyCode == (KeyCode.O | KeyCode.CtrlMask) ? Run(ToggleOutput)
+            : _find is { } find ? FindKey(key, find)
+            : _output is { } shown ? OutputKey(key, shown)
+            : key.KeyCode == (KeyCode.F | KeyCode.CtrlMask) ? Run(OpenFind)
+            : key.KeyCode == (KeyCode.Home | KeyCode.CtrlMask) ? Run(_view.ScrollToTop)
+            : key.KeyCode == (KeyCode.R | KeyCode.CtrlMask) && !_panel.Visible ? Run(() => _ = SearchHistoryAsync())
+            : key.KeyCode == (KeyCode.D | KeyCode.CtrlMask) && !_panel.Visible && _prompt.Text.Length == 0 ? Run(() => _sent.Writer.TryWrite(null))
+            : key == Key.Esc && !_panel.Visible ? Run(_prompt.Dismiss)
+            : key == Key.PageUp || key == Key.PageDown ? Run(() => _view.Page(key == Key.PageUp ? -1 : 1))
+            : key.KeyCode == (KeyCode.End | KeyCode.CtrlMask) ? Run(_view.Follow)
+            : key.Handled;
+
+        static bool Run(Action action)
         {
-            key.Handled = true;
-            if (Interrupt?.Invoke() == true)
-                return;
-            if (_find is not null)
-                CloseFind();
-            else if (_output is not null)
-                CloseOutput();
-            else if (_panel.Visible)
-                _panel.Dismiss();
-            else if (_prompt.Text.Length > 0)
-                _prompt.Text = "";
-            else if (DateTime.UtcNow - _lastInterrupt < TimeSpan.FromSeconds(2))
-                _sent.Writer.TryWrite(null);
-            else
-            {
-                _lastInterrupt = DateTime.UtcNow;
-                _status.Flash("Press Ctrl+C again to exit", TimeSpan.FromSeconds(2));
-            }
-        }
-        else if (key.KeyCode == (KeyCode.O | KeyCode.CtrlMask))
-        {
-            key.Handled = true;
-            if (_output is null)
-                ShowOutput(int.MaxValue);
-            else
-                CloseOutput();
-        }
-        else if (_find is { } find)
-            key.Handled = FindKey(key, find);
-        else if (_output is { } shown)
-            key.Handled = OutputKey(key, shown);
-        else if (key.KeyCode == (KeyCode.F | KeyCode.CtrlMask))
-        {
-            key.Handled = true;
-            _find = "";
-            Find(older: null);
-        }
-        else if (key.KeyCode == (KeyCode.Home | KeyCode.CtrlMask))
-        {
-            key.Handled = true;
-            _view.ScrollToTop();
-        }
-        else if (key.KeyCode == (KeyCode.R | KeyCode.CtrlMask) && !_panel.Visible)
-        {
-            key.Handled = true;
-            _ = SearchHistoryAsync();
-        }
-        else if (key.KeyCode == (KeyCode.D | KeyCode.CtrlMask) && !_panel.Visible && _prompt.Text.Length == 0)
-        {
-            key.Handled = true;
-            _sent.Writer.TryWrite(null);
-        }
-        else if (key == Key.Esc && !_panel.Visible)
-        {
-            key.Handled = true;
-            _prompt.Dismiss();
-        }
-        else if (key == Key.PageUp || key == Key.PageDown)
-        {
-            key.Handled = true;
-            _view.Page(key == Key.PageUp ? -1 : 1);
-        }
-        else if (key.KeyCode == (KeyCode.End | KeyCode.CtrlMask))
-        {
-            key.Handled = true;
-            _view.Follow();
+            action();
+            return true;
         }
     }
 
-    // While Ctrl+F is open it has the keys: typing narrows the search, Enter or ↑ goes to an older match and ↓ to a
-    // newer one, and Esc closes it where it is. PgUp/PgDn still scroll.
-    bool FindKey(Key key, string find)
+    // Ctrl+C cancels the running turn, or else closes or clears what's open; twice in a row on an empty prompt exits.
+    void CtrlC()
     {
-        if (key == Key.Esc)
+        if (Interrupt?.Invoke() == true)
+            return;
+        if (_find is not null)
             CloseFind();
-        else if (key.KeyCode == KeyCode.Enter || key == Key.CursorUp || key.KeyCode == (KeyCode.F | KeyCode.CtrlMask))
-            Find(older: true);
-        else if (key == Key.CursorDown)
-            Find(older: false);
-        else if (key == Key.PageUp || key == Key.PageDown)
-            _view.Page(key == Key.PageUp ? -1 : 1);
-        else if (key == Key.Backspace)
-        {
-            if (find.Length > 0)
-                (_find, _found) = (find[..^1], null);
-            Find(older: null);
-        }
-        else if (!key.IsCtrl && !key.IsAlt && key.AsRune.Value is >= ' ' and var rune)
-        {
-            (_find, _found) = (find + char.ConvertFromUtf32(rune), null);
-            Find(older: null);
-        }
-        return true;
-    }
-
-    // Moves to the next match older or newer than the one it's on; null starts again from the newest.
-    void Find(bool? older)
-    {
-        var find = _find ?? "";
-        var matches = find.Length == 0 ? [] : Matches(_transcript.Lines(), find);
-        if (matches.Count > 0)
-        {
-            var at = _found is { } found ? matches.IndexOf(found) : -1;
-            at = older switch
-            {
-                null => matches.Count - 1,
-                _ when at < 0 => matches.Count - 1,
-                true => Math.Max(0, at - 1),
-                false => Math.Min(matches.Count - 1, at + 1),
-            };
-            _found = matches[at];
-            _view.ShowLine(matches[at]);
-            _rule.Note = $" find: {find} · {at + 1} of {matches.Count} · Enter older · ↓ newer · Esc to close ";
-        }
-        else
-            _rule.Note = find.Length == 0 ? " find: type to search the conversation · Esc to close " : $" find: {find} · no matches · Esc to close ";
-        _view.Highlight = find.Length == 0 ? null : find;
-    }
-
-    /// <summary>The transcript lines holding <paramref name="find"/>, ignoring case, oldest first.</summary>
-    internal static List<int> Matches(List<List<Span>> lines, string find) =>
-        [.. lines.Select((line, i) => (Text: string.Concat(line.Select(s => s.Text)), i))
-            .Where(l => l.Text.Contains(find, StringComparison.OrdinalIgnoreCase)).Select(l => l.i)];
-
-    void CloseFind()
-    {
-        (_find, _found) = (null, null);
-        _view.Highlight = null;
-        _rule.Note = null;
-    }
-
-    // Ctrl+R: earlier messages, newest first, filtered as the user types; the chosen one replaces the draft. A
-    // multi-line message is shown on one line, and matched on all of it.
-    async Task SearchHistoryAsync()
-    {
-        Dictionary<string, string> messages = [];
-        foreach (var message in _prompt.History.Reverse())
-            messages.TryAdd(message.ReplaceLineEndings(" ⏎ "), message);
-        if (messages.Count == 0)
-        {
-            _status.Flash("No messages to search yet");
-            return;
-        }
-        if (await ChooseAsync("History, newest first; type to search", [.. messages.Keys], null, false, CancellationToken.None, quiet: false) is { } chosen)
-            Ui(() => _prompt.Replace(messages[chosen]));
-    }
-
-    // While the viewer is open it has the keys, so they scroll it rather than edit the draft or answer an approval
-    // behind it. Esc closes it; anything else is ignored.
-    bool OutputKey(Key key, int shown)
-    {
-        if (key == Key.Esc || key == Key.Q)
+        else if (_output is not null)
             CloseOutput();
-        else if (key == Key.CursorLeft)
-            ShowOutput(shown - 1);
-        else if (key == Key.CursorRight)
-            ShowOutput(shown + 1);
-        else if (key == Key.CursorUp || key == Key.CursorDown)
-            _outputView.ScrollBy(key == Key.CursorUp ? -1 : 1);
-        else if (key == Key.PageUp || key == Key.PageDown || key == Key.Space)
-            _outputView.Page(key == Key.PageUp ? -1 : 1);
-        else if (key == Key.Home)
-            _outputView.ScrollToTop();
-        else if (key == Key.End)
-            _outputView.Follow();
-        return true;
-    }
-
-    // Opens the viewer on output <paramref name="index"/> (clamped, so int.MaxValue is the newest), over the transcript.
-    void ShowOutput(int index)
-    {
-        var outputs = Renderer.Outputs;
-        if (outputs.Count == 0)
-        {
-            _status.Flash("No tool output yet");
-            return;
-        }
-        index = Math.Clamp(index, 0, outputs.Count - 1);
-        if (index == _output)
-            return;
-        _output = index;
-        var output = outputs[index];
-        _outputText.Clear();
-        var renderer = new Renderer(_outputText, color: Environment.GetEnvironmentVariable("NO_COLOR") is null);
-        if (output.Diff)
-            renderer.Diff(output.Text, int.MaxValue);
+        else if (_panel.Visible)
+            _panel.Dismiss();
+        else if (_prompt.Text.Length > 0)
+            _prompt.Text = "";
+        else if (DateTime.UtcNow - _lastInterrupt < TimeSpan.FromSeconds(2))
+            _sent.Writer.TryWrite(null);
         else
-            foreach (var line in output.Text.TrimEnd('\n').Split('\n'))
-                renderer.Line(line.Replace("\t", "    "));
-        _outputView.ScrollToTop();
-        _outputView.Visible = true;
-        _view.Visible = false;
-        _rule.Note = $" {output.Title} · {index + 1} of {outputs.Count} · ←/→ older/newer · Esc to close ";
-    }
-
-    void CloseOutput()
-    {
-        _output = null;
-        _outputView.Visible = false;
-        _view.Visible = true;
-        _rule.Note = null;
-        _outputText.Clear();
+        {
+            _lastInterrupt = DateTime.UtcNow;
+            _status.Flash("Press Ctrl+C again to exit", TimeSpan.FromSeconds(2));
+        }
     }
 
     // The bottom area grows with the draft (or the panel): rule, prompt or panel, status line.
@@ -647,45 +335,4 @@ public sealed class Tui : IReplScreen, IApprover
     }
 
     void Ui(Action action) => _app.Invoke(action);
-
-    // The keys Picker understands, as the ConsoleKeyInfo it takes.
-    static ConsoleKeyInfo? ConsoleKeyOf(Key key)
-    {
-        var plain = key.NoShift;
-        ConsoleKey? special = plain == Key.Enter ? ConsoleKey.Enter
-            : plain == Key.Esc ? ConsoleKey.Escape
-            : plain == Key.CursorUp ? ConsoleKey.UpArrow
-            : plain == Key.CursorDown ? ConsoleKey.DownArrow
-            : plain == Key.PageUp ? ConsoleKey.PageUp
-            : plain == Key.PageDown ? ConsoleKey.PageDown
-            : plain == Key.Home ? ConsoleKey.Home
-            : plain == Key.End ? ConsoleKey.End
-            : plain == Key.Backspace ? ConsoleKey.Backspace
-            : null;
-        if (special is { } k)
-            return new ConsoleKeyInfo('\0', k, false, false, false);
-        if (key.IsCtrl || key.IsAlt || key.AsRune.Value is <= 0 or > char.MaxValue)
-            return null;
-        return new ConsoleKeyInfo((char)key.AsRune.Value, ConsoleKey.NoName, key.IsShift, false, false);
-    }
-
-    /// <summary>anchor setup's questions, asked in the panel.</summary>
-    sealed class TuiSetupIO(Tui tui) : ISetupIO
-    {
-        public Task<string?> AskAsync(string prompt, CancellationToken ct = default) => tui.TextAsync(prompt.Trim(), false, ct);
-
-        public Task<string?> AskSecretAsync(string prompt, CancellationToken ct = default) => tui.TextAsync(prompt.Trim(), true, ct);
-
-        public async Task<string?> SelectAsync(string title, IReadOnlyList<string> choices, string? selected = null, bool allowTyped = false, CancellationToken ct = default)
-        {
-            tui.Renderer.Line(title);
-            var answer = await tui.ChooseAsync(null, choices, selected, allowTyped, ct);
-            tui.Renderer.Line(tui.Renderer.Muted($"  › {answer ?? "(cancelled)"}"));
-            return answer;
-        }
-
-        public void Line(string text = "") => tui.Renderer.Line(text);
-
-        public void Note(string text, bool? ok = null) => SetupNotes.Write(tui.Renderer, Line, text, ok);
-    }
 }
