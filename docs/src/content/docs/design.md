@@ -5,8 +5,9 @@ description: anchor's architecture and the rules it's built on - one loop, one g
 
 anchor is a minimal coding harness: one model working in one directory through a few tools, plus
 sub-agents, skills and MCP. It's written in C# on .NET 10 and
-[`Microsoft.Extensions.AI`](https://learn.microsoft.com/dotnet/ai/microsoft-extensions-ai), and it
-stays under 15,000 lines of source. A new feature has to justify every line it adds.
+[`Microsoft.Extensions.AI`](https://learn.microsoft.com/dotnet/ai/microsoft-extensions-ai). A new
+feature has to justify every line it adds, and each part has its own line budget: 4,000 for the
+core, 6,500 for the terminal UI, and 2,500 for tools, MCP and providers together.
 
 The full design notes are in
 [`DESIGN.md`](https://github.com/fuseraft/anchor/blob/main/DESIGN.md). This page is the short

@@ -3,7 +3,19 @@
 A minimal coding harness for the terminal: one model working in one workspace with a few
 tools, plus sub-agents, skills, and MCP. It is built on C# / .NET 10 and `Microsoft.Extensions.AI`.
 
-**Budget:** under 15k lines of source. A new feature has to justify every line it adds.
+**Budget:** a new feature has to justify every line it adds. Each area has its own limit, so the terminal UI
+can't grow at the core's expense, or the other way round (lines of source, `wc -l`):
+
+| Area | Budget | What it holds |
+|---|---|---|
+| `Core/` and `Program.cs` | 4,000 | loop, gate, policy, compaction, sessions, sub-agents |
+| `Tools/` | 1,000 | the model's tools |
+| `Mcp/` | 1,000 | MCP connections, OAuth, keychain |
+| `Providers/` | 500 | model clients and retries |
+| `Cli/` | 6,500 | REPL, TUI, rendering, setup, updates |
+
+An area that reaches its budget makes room before it grows: by removing or simplifying code, not by moving it to
+another area or by raising the number.
 
 ## Shape
 
@@ -220,8 +232,10 @@ anchor [--yolo] [--allow rule]... [--resume [id]] [--model m] [-p "prompt"] [--u
 ```
 
 The REPL is full screen (`Cli/Tui.cs`, with its views in `TranscriptView.cs`, `PromptView.cs` and
-`Views.cs`, on Terminal.Gui and its Editor view for the prompt). `Repl` is the controller and talks
-to an `IReplScreen`; `--plain`, or a stdin or stdout that isn't a terminal, gets the line-based
+`Views.cs`, on Terminal.Gui and its Editor view for the prompt; questions in the panel are in
+`Tui.Panel.cs`, and Ctrl+F, Ctrl+R and Ctrl+O in `Tui.Viewers.cs`). `Repl` is the controller, with
+its slash commands in `Repl.Commands.cs` and the status line in `StatusLine.cs`, and talks to an
+`IReplScreen`; `--plain`, or a stdin or stdout that isn't a terminal, gets the line-based
 `LineScreen` instead. The Renderer is unchanged: in the TUI it writes
 its ANSI text into a `Transcript`, which reads the styles back, so commands and events look the
 same in both. The one difference is the model's text: in the TUI, `Cli/Markdown.cs` styles it as it
