@@ -204,6 +204,7 @@ sealed class PromptCompletion
     IEnumerable<Suggestion> Arguments(string command, string[] words) => (command, words.Length) switch
     {
         ("/theme", 1) => Theme.BuiltIn.Select(t => new Suggestion(t.Name, t.Description)),
+        ("/dock", 1) => Docks.All.Select(d => new Suggestion(d.Name, d.Description)),
         ("/mcp", 1) => [new("login", "sign in to a server"), new("logout", "sign out of a server")],
         ("/mcp", 2) when words[0] is "login" or "logout" => (Servers?.Invoke() ?? []).Select(s => new Suggestion(s)),
         ("/until", 1) => [new("off", "stop checking")],

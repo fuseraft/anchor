@@ -29,6 +29,8 @@ optional. Keys are case-insensitive, and comments and trailing commas are allowe
   "colors": { "accent": "bold magenta" },
   // Ring the terminal bell when anchor needs you.
   "bell": true,
+  // Where the full screen puts the prompt: "bottom" or "top".
+  "dock": "bottom",
   // Download new releases and install them the next time anchor starts.
   "autoUpdate": true
 }
@@ -158,6 +160,13 @@ The full-screen REPL rings the terminal bell when a turn ends or an approval or 
 waiting, if you haven't pressed a key or scrolled for 10 seconds. If you're watching, it stays
 quiet. How a bell shows up is up to the terminal: a sound, a flash, or a mark on the tab or
 window. `"bell": false` turns it off.
+
+## dock
+
+Where the full-screen REPL puts the prompt and status line. `"bottom"`, the default, puts them
+under the conversation. `"top"` puts them at the top of the screen, with the conversation under
+them and suggestions opening below the prompt. [`/dock`](/anchor/reference/commands/#dock)
+switches for a session. An unknown value is reported when anchor starts, and the bottom is used.
 
 ## autoUpdate
 

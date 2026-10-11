@@ -66,7 +66,7 @@ Looking at the failing target first.
 | Ctrl+D                      | Exit, when the message is empty.                              |
 
 Typing `/` suggests slash commands with what each does, then the words some of them take (a
-theme for `/theme`, a server for `/mcp login`), and `@` suggests files (see below). ↑/↓ choose a
+theme for `/theme`, a side for `/dock`, a server for `/mcp login`), and `@` suggests files (see below). ↑/↓ choose a
 suggestion, Tab or Enter takes it, and Esc hides the list.
 
 anchor's replies are Markdown, and the screen styles them as they arrive: headings, **bold**,
@@ -83,6 +83,10 @@ red once it's past, meaning anchor compacts before its next request. `/context` 
 If you've left anchor working and switched away, the terminal bell rings when the turn ends or
 a question is waiting for you. It doesn't ring while you're typing or scrolling. `"bell": false`
 in the [config](/anchor/reference/config/#bell) turns it off.
+
+The prompt sits under the conversation. `/dock top` moves it and the status line to the top of
+the screen instead, and `"dock": "top"` in the [config](/anchor/reference/config/#dock) keeps it
+there.
 
 When you exit, the conversation is printed to the terminal, so it stays in your scrollback.
 `anchor --plain` runs the older line-by-line REPL instead, and anchor uses it on its own when

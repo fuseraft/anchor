@@ -13,7 +13,7 @@ using Attribute = Terminal.Gui.Drawing.Attribute;
 namespace Anchor.Cli;
 
 /// <summary>
-/// The full-screen REPL: the transcript on top, the prompt below it, and a status line. The REPL runs on a background
+/// The full-screen REPL: the transcript, the prompt below it (or above it, after /dock top), and a status line. The REPL runs on a background
 /// task and reaches the screen through IReplScreen and IApprover; everything that touches a view goes through Ui().
 /// </summary>
 public sealed partial class Tui : IReplScreen, IApprover
@@ -47,6 +47,7 @@ public sealed partial class Tui : IReplScreen, IApprover
     DateTime _lastInterrupt;
     DateTime _lastKey = DateTime.UtcNow;
     bool _bell = true;
+    Dock _dock;
     Theme _theme = Theme.Current; // what the views were last drawn in
     int _redrawQueued;
 
@@ -81,7 +82,7 @@ public sealed partial class Tui : IReplScreen, IApprover
         _prompt = new PromptView { X = 2, Width = Dim.Fill() };
         _suggest = new SuggestView { X = 0, Width = Dim.Fill(), Visible = false };
         _panel = new PanelView { X = 0, Width = Dim.Fill(), Visible = false };
-        _status = new StatusView { X = 0, Width = Dim.Fill(), Height = 1, Y = Pos.AnchorEnd(1) };
+        _status = new StatusView { X = 0, Width = Dim.Fill(), Height = 1 };
         _top.Add(_view, _outputView, _suggest, _rule, _caret, _prompt, _panel, _status);
 
         _view.Scrolled = () => _rule.Below = _view.Below;
@@ -161,6 +162,14 @@ public sealed partial class Tui : IReplScreen, IApprover
 
     async Task<int> RunReplAsync(Options options)
     {
+        // Docked before startup prints anything, so the prompt doesn't jump once it's done.
+        if (Config.Load().Dock is { } dock)
+        {
+            if (Docks.Named(dock) is { } docked)
+                DockPrompt(docked);
+            else
+                Renderer.Line(Renderer.Warning($"Unknown dock '{dock}'; using the bottom. Positions: {Docks.Names}."));
+        }
         var h = await Startup.BuildAsync(options, new Output(Renderer.Render, this, m => Renderer.Line(Renderer.Warning(m)), Interactive: true));
         await using var _ = h.Mcp;
         _completion.Files = new FileIndex(h.Gate.Workspace).Warm();
@@ -170,6 +179,14 @@ public sealed partial class Tui : IReplScreen, IApprover
             Ui(() => _prompt.Remember(message.Text));
         return await new Repl(h.Agent, h.Gate, h.Session, Renderer, this, ReplOptions.From(h, options)).RunAsync();
     }
+
+    public Dock Docked => _dock;
+
+    public void DockPrompt(Dock dock) => Ui(() =>
+    {
+        _dock = dock;
+        Layout();
+    });
 
     public async Task<string?> ReadAsync(CancellationToken ct) => await _sent.Reader.ReadAsync(ct);
 
@@ -306,22 +323,40 @@ public sealed partial class Tui : IReplScreen, IApprover
         }
     }
 
-    // The bottom area grows with the draft (or the panel): rule, prompt or panel, status line.
+    // The prompt's area grows with the draft (or the panel), and the transcript gets what's left.
     void Layout()
     {
         if (_prompt.Viewport.Y > 0 && _prompt.Rows(_app.Screen.Width - 2) <= MaxPromptRows)
             _prompt.Viewport = _prompt.Viewport with { Y = 0 };
         var rows = _panel.Visible ? _panel.Needed() : Math.Clamp(_prompt.Rows(_app.Screen.Width - 2), 1, MaxPromptRows);
-        var bottom = rows + 2;
         var suggested = _panel.Visible ? 0 : Math.Min(_prompt.Suggestions.Count, PromptCompletion.MaxShown);
+        var frame = Arrange(_dock, _app.Screen.Height, rows, suggested);
         _suggest.Visible = suggested > 0;
-        _suggest.Y = Pos.AnchorEnd(bottom + suggested);
+        _suggest.Y = frame.Suggest;
         _suggest.Height = suggested;
-        _view.Height = _outputView.Height = Dim.Fill(bottom + suggested);
-        _rule.Y = Pos.AnchorEnd(bottom);
-        _caret.Y = _prompt.Y = _panel.Y = Pos.AnchorEnd(bottom - 1);
+        _view.Y = _outputView.Y = frame.Transcript;
+        _view.Height = _outputView.Height = frame.TranscriptHeight;
+        _rule.Y = frame.Rule;
+        _caret.Y = _prompt.Y = _panel.Y = frame.Prompt;
         _prompt.Height = _panel.Height = rows;
+        _status.Y = frame.Status;
         _top.SetNeedsLayout();
+    }
+
+    /// <summary>The row each part starts on, and how many rows the transcript gets.</summary>
+    internal readonly record struct Frame(int Transcript, int TranscriptHeight, int Suggest, int Rule, int Prompt, int Status);
+
+    /// <summary>
+    /// Lays out a screen <paramref name="height"/> rows tall, with <paramref name="rows"/> for the prompt (or panel) and
+    /// <paramref name="suggested"/> suggestions. Docked at the bottom: transcript, suggestions, rule, prompt, status line.
+    /// At the top it's the mirror image: status line, prompt, rule, suggestions, transcript.
+    /// </summary>
+    internal static Frame Arrange(Dock dock, int height, int rows, int suggested)
+    {
+        var transcript = Math.Max(0, height - rows - 2 - suggested);
+        return dock == Dock.Top
+            ? new(rows + 2 + suggested, transcript, rows + 2, rows + 1, 1, 0)
+            : new(0, transcript, transcript, transcript + suggested, transcript + suggested + 1, height - 1);
     }
 
     void Redraw()

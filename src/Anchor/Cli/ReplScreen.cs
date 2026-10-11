@@ -35,6 +35,12 @@ public interface IReplScreen
         return Clipboard.CopyNatively(text);
     }
 
+    /// <summary>Where the prompt is, for /dock.</summary>
+    Dock Docked => Dock.Bottom;
+
+    /// <summary>Moves the prompt, for /dock. Only the full screen has one to move.</summary>
+    void DockPrompt(Dock dock) { }
+
     /// <summary>Shows where things stand: the model, how full the context is, and whether a turn is running.</summary>
     void Status(string text, bool working);
 

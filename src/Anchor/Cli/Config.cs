@@ -23,6 +23,9 @@ public sealed class Config
     /// <summary>Whether the full screen rings the terminal bell when a turn ends or a question waits; on unless false.</summary>
     public bool? Bell { get; set; }
 
+    /// <summary>Where the full screen puts the prompt: "bottom" (the default) or "top"; see <see cref="Cli.Dock"/>.</summary>
+    public string? Dock { get; set; }
+
     /// <summary>Whether anchor downloads new releases and installs them the next time it starts; on unless false.</summary>
     public bool? AutoUpdate { get; set; }
 
