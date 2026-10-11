@@ -278,9 +278,9 @@ public sealed class SubAgentTests : IDisposable
     [Fact]
     public void StatusLine_ListsRunningSubAgentsCompactly()
     {
-        Assert.Equal("", Anchor.Cli.Repl.SubAgentStatus([]));
+        Assert.Equal("", Anchor.Cli.StatusLine.SubAgentStatus([]));
         Assert.Equal(" · agent-1: 7 calls, 12k tokens · reviewer-2: 1 call, 950 tokens · agent-3: 40 calls, 1.2M tokens · agent-4: 2 calls, 4.1k tokens",
-            Anchor.Cli.Repl.SubAgentStatus([new("agent-1", 7, 12_345), new("reviewer-2", 1, 950), new("agent-3", 40, 1_234_567), new("agent-4", 2, 4_100)]));
+            Anchor.Cli.StatusLine.SubAgentStatus([new("agent-1", 7, 12_345), new("reviewer-2", 1, 950), new("agent-3", 40, 1_234_567), new("agent-4", 2, 4_100)]));
     }
 
     [Fact]
