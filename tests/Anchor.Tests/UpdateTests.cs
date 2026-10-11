@@ -88,7 +88,7 @@ public sealed class UpdateTests : IDisposable
 
         Assert.Equal("new", File.ReadAllText(exe));
         if (OperatingSystem.IsWindows())
-            Assert.Equal("old", File.ReadAllText(exe + ".old"));
+            Assert.Equal("old", File.ReadAllText($"{exe}.{Environment.ProcessId}.old"));
         else
             Assert.Equal((UnixFileMode)Convert.ToInt32("755", 8), File.GetUnixFileMode(exe));
         Assert.DoesNotContain(Directory.EnumerateFiles(_dir), f => f.EndsWith(".new"));
