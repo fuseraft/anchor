@@ -54,7 +54,7 @@ public static class Update
         if (Release() is not { } exe)
             return null;
         CleanUp(exe);
-        if (Staged() is not var (_, staged))
+        if (Staged() is not var (version, staged))
             return null;
         // Claimed first, so two starts at the same moment don't both install it.
         var claimed = Path.Combine(Dir, $"claimed-{Environment.ProcessId}");
@@ -66,7 +66,15 @@ public static class Update
         {
             return null;
         }
-        return Run(Path.Combine(claimed, ExeName), args, exe);
+        var next = Path.Combine(claimed, ExeName);
+        // Checked again before it takes over this start, in case it was damaged on disk since it was downloaded.
+        if (!RunsAsync(next, version).GetAwaiter().GetResult())
+        {
+            Console.Error.WriteLine($"anchor: the download of {version} doesn't run, so it won't be installed.");
+            TryDelete(claimed, recursive: true);
+            return null;
+        }
+        return Run(next, args, exe);
     }
 
     /// <summary>Looks for a newer release in the background, unless that was done in the last day, and downloads it.</summary>
@@ -101,7 +109,7 @@ public static class Update
         if (tag is not ['v', .. var version] || !IsNewer(version, Options.Version) || Staged()?.Version == version)
             return null;
 
-        if (PackageManager(File.ResolveLinkTarget(exe, returnFinalTarget: true)?.FullName ?? exe) is { } command)
+        if (PackageManager(exe) is { } command)
             return $"anchor {version} is out: update with {command}.";
         if (!CanWrite(Path.GetDirectoryName(exe)!))
             return $"anchor {version} is out: install it with the install script (see {Repo}).";
@@ -115,27 +123,85 @@ public static class Update
         if (!string.Equals(Expected(sums, archive), Convert.ToHexString(SHA256.HashData(bytes)), StringComparison.OrdinalIgnoreCase))
             return $"The download of anchor {version} didn't match its checksum, so it won't be installed.";
 
-        var temp = Path.Combine(Dir, "download.tmp");
-        bool found;
-        using (var file = File.Create(temp))
-            found = Extract(bytes, zip, file);
-        if (!found)
+        // Its own folder, so two sessions downloading at once never write the same file, and named like the binary so
+        // it can run before it's kept.
+        var temp = Directory.CreateDirectory(Path.Combine(Dir, $"download-{Environment.ProcessId}")).FullName;
+        try
         {
-            File.Delete(temp);
-            return null;
+            var download = Path.Combine(temp, ExeName);
+            using (var file = File.Create(download))
+                if (!Extract(bytes, zip, file))
+                    return null;
+            if (!zip)
+                File.SetUnixFileMode(download, (UnixFileMode)0b111_101_101);
+            // A release that can't start here (a newer C library, a missing signature) would otherwise fail the next start.
+            if (!await RunsAsync(download, version))
+                return $"anchor {version} is out, but the download doesn't run here, so it won't be installed.";
+            var dir = Directory.CreateDirectory(Path.Combine(Dir, version)).FullName;
+            File.Move(download, Path.Combine(dir, ExeName), overwrite: true);
         }
-        if (!zip)
-            File.SetUnixFileMode(temp, (UnixFileMode)0b111_101_101);
-        var dir = Directory.CreateDirectory(Path.Combine(Dir, version)).FullName;
-        File.Move(temp, Path.Combine(dir, ExeName), overwrite: true);
+        finally
+        {
+            TryDelete(temp, recursive: true);
+        }
         Downloaded = version;
         Ready?.Invoke();
         return $"anchor {version} is downloaded, and replaces this version the next time anchor starts.";
     }
 
-    /// <summary>The running binary, if it's a release build of anchor (not a development build or the tests).</summary>
+    /// <summary>
+    /// The running binary, if it's a release build of anchor (not a development build or the tests). A symbolic link is
+    /// followed to the file it names, so an update replaces that file instead of the link.
+    /// </summary>
     static string? Release() =>
-        Environment.ProcessPath is { } exe && Path.GetFileName(exe) == ExeName && Parse(Options.Version) is not null ? exe : null;
+        Environment.ProcessPath is { } exe && Path.GetFileName(exe) == ExeName && Parse(Options.Version) is not null
+            ? File.ResolveLinkTarget(exe, returnFinalTarget: true)?.FullName ?? exe
+            : null;
+
+    /// <summary>
+    /// Whether <paramref name="exe"/> starts and says it's <paramref name="version"/>. It runs with an empty anchor home
+    /// of its own, so it can't install itself or clear away anything in this one.
+    /// </summary>
+    internal static async Task<bool> RunsAsync(string exe, string version)
+    {
+        var home = Directory.CreateTempSubdirectory("anchor-check-").FullName;
+        try
+        {
+            var start = new ProcessStartInfo(exe) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+            start.ArgumentList.Add("--version");
+            start.Environment["ANCHOR_HOME"] = home;
+            start.Environment.Remove(TargetVariable);
+            using var process = Process.Start(start)!;
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var output = process.StandardOutput.ReadToEndAsync(timeout.Token);
+            _ = process.StandardError.ReadToEndAsync(timeout.Token);
+            try
+            {
+                await process.WaitForExitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (InvalidOperationException)
+                {
+                    // It ended in the meantime.
+                }
+                return false;
+            }
+            return process.ExitCode == 0 && Parse((await output).Trim()) is { } ran && ran == Parse(version);
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+        finally
+        {
+            TryDelete(home, recursive: true);
+        }
+    }
 
     /// <summary>The newest download that's newer than this version.</summary>
     static (string Version, string Path)? Staged()
@@ -153,14 +219,15 @@ public static class Update
         return newest;
     }
 
-    // Removes what earlier updates left: downloads that aren't newer (claimed ones included) and Windows' renamed binary.
+    // Removes what earlier updates left: downloads that aren't newer, ones whose session has ended, and Windows'
+    // renamed binaries.
     static void CleanUp(string exe)
     {
         if (OperatingSystem.IsWindows())
-            TryDelete(exe + ".old");
+            RemoveOld(exe);
         if (!Directory.Exists(Dir))
             return;
-        foreach (var dir in Directory.EnumerateDirectories(Dir).Where(d => !IsNewer(Path.GetFileName(d), Options.Version)))
+        foreach (var dir in Directory.EnumerateDirectories(Dir).Where(d => Stale(Path.GetFileName(d), Options.Version, Running)))
         {
             try
             {
@@ -171,6 +238,36 @@ public static class Update
                 // A session still running from it; next time.
             }
         }
+    }
+
+    /// <summary>
+    /// Whether a folder in the update folder can go: a release that isn't newer than <paramref name="current"/>, or one
+    /// a session claimed or was downloading into that has ended. One whose session is still running is left alone,
+    /// since it may be about to start from it.
+    /// </summary>
+    internal static bool Stale(string name, string current, Func<int, bool> running) =>
+        name.Split('-', 2) is ["claimed" or "download", var id] ? !int.TryParse(id, out var pid) || !running(pid) : !IsNewer(name, current);
+
+    static bool Running(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return !process.HasExited;
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Deletes the binaries Windows' updates renamed aside, except those a session is still running.</summary>
+    internal static void RemoveOld(string exe)
+    {
+        var dir = Path.GetDirectoryName(exe)!;
+        var name = Path.GetFileName(exe);
+        foreach (var old in Directory.EnumerateFiles(dir, name + ".*old").Where(f => f.EndsWith(".old", StringComparison.OrdinalIgnoreCase)))
+            TryDelete(old);
     }
 
     /// <summary>Replaces <paramref name="exe"/> with a copy of <paramref name="source"/>, keeping its permissions.</summary>
@@ -185,15 +282,17 @@ public static class Update
                 File.SetUnixFileMode(temp, File.GetUnixFileMode(exe));
             if (OperatingSystem.IsWindows())
             {
-                // Windows won't replace a program that's running, but it will rename one.
-                File.Move(exe, exe + ".old", overwrite: true);
+                // Windows won't replace a program that's running, but it will rename one. The name is this process's own,
+                // since an older binary renamed aside by an earlier update may still be running too.
+                var old = $"{exe}.{Environment.ProcessId}.old";
+                File.Move(exe, old, overwrite: true);
                 try
                 {
                     File.Move(temp, exe);
                 }
                 catch
                 {
-                    File.Move(exe + ".old", exe);
+                    File.Move(old, exe);
                     throw;
                 }
             }
@@ -303,11 +402,19 @@ public static class Update
         }
     }
 
-    static void TryDelete(string path)
+    static void TryDelete(string path, bool recursive = false)
     {
         try
         {
-            File.Delete(path);
+            if (recursive)
+            {
+                if (Directory.Exists(path))
+                    Directory.Delete(path, recursive: true);
+            }
+            else
+            {
+                File.Delete(path);
+            }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

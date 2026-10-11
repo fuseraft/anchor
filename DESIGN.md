@@ -307,6 +307,8 @@ Config lives in `~/.anchor/config.json`. Sessions are stored in `~/.anchor/sessi
   redirects to the newest tag, without the API's rate limit. The release is downloaded into
   `~/.anchor/update/<version>/` and checked against `SHA256SUMS`, like the install scripts do.
 - Once it's downloaded, the status line shows `↑ <version> on restart` for the rest of the session.
+- A download has to start and report its version (`--version`, with an empty `ANCHOR_HOME`) before it's kept,
+  and again before it takes over a start, so a release that can't run here never replaces one that can.
 - The next start runs the download instead, with the same arguments (`exec` on Unix, a child
   process on Windows), and the download copies itself over the old binary. The old binary never
   replaces its own file: a single-file program keeps reading it after it starts.
