@@ -306,6 +306,7 @@ Config lives in `~/.anchor/config.json`. Sessions are stored in `~/.anchor/sessi
 - An interactive session checks for a new release at most once a day: `/releases/latest`
   redirects to the newest tag, without the API's rate limit. The release is downloaded into
   `~/.anchor/update/<version>/` and checked against `SHA256SUMS`, like the install scripts do.
+- Once it's downloaded, the status line shows `↑ <version> on restart` for the rest of the session.
 - The next start runs the download instead, with the same arguments (`exec` on Unix, a child
   process on Windows), and the download copies itself over the old binary. The old binary never
   replaces its own file: a single-file program keeps reading it after it starts.
