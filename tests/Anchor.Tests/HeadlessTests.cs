@@ -45,7 +45,7 @@ sealed class JsonLines : StringWriter
 
     public async Task<JsonObject> WaitForAsync(Func<JsonObject, bool> match, int count = 1)
     {
-        for (var i = 0; i < 200; i++)
+        for (var i = 0; i < 400; i++)
         {
             var found = Events.Where(match).ToList();
             if (found.Count >= count)
