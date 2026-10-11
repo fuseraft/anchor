@@ -66,7 +66,7 @@ public sealed class SessionLogTests : IDisposable
     }
 
     [Fact]
-    public async Task Sync_WaitsOutAFileHeldOpenForAMoment()
+    public void Sync_WaitsOutAFileHeldOpenForAMoment()
     {
         var log = SessionLog.Create(_dir, "/work", "m");
         var history = Conversation();
@@ -74,9 +74,21 @@ public sealed class SessionLogTests : IDisposable
         var path = Path.Combine(_dir, log.Id + ".jsonl");
 
         var held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
-        var release = Task.Delay(150).ContinueWith(_ => held.Dispose());
-        log.Sync(history);
-        await release;
+        // Its own thread, not the thread pool: tests running in parallel can keep the pool busy for longer than Sync waits.
+        var release = new Thread(() =>
+        {
+            Thread.Sleep(150);
+            held.Dispose();
+        });
+        release.Start();
+        try
+        {
+            log.Sync(history);
+        }
+        finally
+        {
+            release.Join();
+        }
 
         Assert.Equal(history.Count, SessionLog.Open(_dir, log.Id, "/work", "m").History.Count);
     }
