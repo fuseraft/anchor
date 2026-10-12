@@ -12,6 +12,12 @@ public sealed record Theme
 {
     public string Name { get; init; } = "default";
 
+    /// <summary>
+    /// Plain text and the screen behind it ("#e8e0d8 on #1c1714"); empty for the terminal's own. Only the full screen
+    /// draws it: a plain terminal would show the background only behind the text, and keep it in the scrollback.
+    /// </summary>
+    public string Text { get; init; } = "";
+
     public string Description { get; init; } = "anchor's usual colors";
 
     /// <summary>anchor's own color: the caret, the title, the spinner, the picker's choice.</summary>
@@ -39,8 +45,14 @@ public sealed record Theme
 
     public string Link { get; init; } = "4";
 
+    /// <summary>The chosen suggestion and search matches, on top of what they mark; empty for the accent and reversed colors.</summary>
+    public string Selection { get; init; } = "";
+
     /// <summary>Inline code, and code blocks in a language the highlighter doesn't know.</summary>
     public string Code { get; init; } = "36";
+
+    /// <summary>Under a whole code block, to the edge of the screen ("on #2a201b"); full screen only, like <see cref="Text"/>.</summary>
+    public string CodeBlock { get; init; } = "";
 
     public string Comment { get; init; } = "2";
 
@@ -132,6 +144,7 @@ public sealed record Theme
     /// <summary>Every role a theme colors, by the name configs and theme files give it, in the order they're listed.</summary>
     public static readonly IReadOnlyList<(string Name, Func<Theme, string> Get, Func<Theme, string, Theme> Set)> Roles =
     [
+        ("text", t => t.Text, (t, v) => t with { Text = v }),
         ("accent", t => t.Accent, (t, v) => t with { Accent = v }),
         ("tool", t => t.Tool, (t, v) => t with { Tool = v }),
         ("agent", t => t.Agent, (t, v) => t with { Agent = v }),
@@ -142,7 +155,9 @@ public sealed record Theme
         ("border", t => t.Border, (t, v) => t with { Border = v }),
         ("heading", t => t.Heading, (t, v) => t with { Heading = v }),
         ("link", t => t.Link, (t, v) => t with { Link = v }),
+        ("selection", t => t.Selection, (t, v) => t with { Selection = v }),
         ("code", t => t.Code, (t, v) => t with { Code = v }),
+        ("codeblock", t => t.CodeBlock, (t, v) => t with { CodeBlock = v }),
         ("comment", t => t.Comment, (t, v) => t with { Comment = v }),
         ("string", t => t.String, (t, v) => t with { String = v }),
         ("constant", t => t.Constant, (t, v) => t with { Constant = v }),
@@ -159,7 +174,7 @@ public sealed record Theme
         ["bold"] = "1", ["dim"] = "2", ["italic"] = "3", ["underline"] = "4",
     };
 
-    const string ColorHelp = "Use words like red, bright-blue, gray, bold, dim, italic, underline, a 256-color number from 0 to 255, a hex color such as #ff8800, or none.";
+    const string ColorHelp = "Use words like red, bright-blue, gray, bold, dim, italic, underline, a 256-color number from 0 to 255, a hex color such as #ff8800, \"on\" and a color for the background, or none.";
 
     /// <summary>
     /// The theme a config asks for: one of <paramref name="themes"/> (by default the built-in ones) by <paramref name="name"/>,
@@ -198,28 +213,48 @@ public sealed record Theme
 
     /// <summary>
     /// Color words ("bold bright-cyan", a 256-color number such as "208", a hex color such as "#ff8800", or a name from
-    /// <paramref name="palette"/>) as an SGR code, "" for "none", or null when a word isn't one.
+    /// <paramref name="palette"/>) as an SGR code, "" for "none", or null when a word isn't one. "on" makes the color
+    /// after it the background: "#e8e0d8 on #1c1714".
     /// </summary>
     public static string? Sgr(string words, IReadOnlyDictionary<string, string>? palette = null)
     {
         List<string> codes = [];
+        var on = false;
         foreach (var word in words.Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
-            if (word.Equals("none", StringComparison.OrdinalIgnoreCase))
+            if (word.Equals("none", StringComparison.OrdinalIgnoreCase) && !on)
                 continue;
-            if (Words.TryGetValue(word, out var code))
-                codes.Add(code);
-            else if (word.All(char.IsAsciiDigit) && int.TryParse(word, out var n) && n <= 255)
-                codes.Add($"38;5;{n}");
-            else if (Hex(word) is var (r, g, b))
-                codes.Add($"38;2;{r};{g};{b}");
-            else if (palette is not null && palette.TryGetValue(word, out var named) && Sgr(named) is { Length: > 0 } color)
-                codes.Add(color);
-            else
+            if (word.Equals("on", StringComparison.OrdinalIgnoreCase) && !on)
+            {
+                on = true;
+                continue;
+            }
+            var code = Words.TryGetValue(word, out var known) ? known
+                : word.All(char.IsAsciiDigit) && int.TryParse(word, out var n) && n <= 255 ? $"38;5;{n}"
+                : Hex(word) is var (r, g, b) ? $"38;2;{r};{g};{b}"
+                : palette is not null && palette.TryGetValue(word, out var named) && Sgr(named) is { Length: > 0 } color ? color
+                : null;
+            if (on)
+            {
+                // One color, as a background.
+                if (code is null || Background(code) is not { } background)
+                    return null;
+                codes.Add(background);
+                on = false;
+            }
+            else if (code is null)
                 return null;
+            else
+                codes.Add(code);
         }
-        return string.Join(';', codes);
+        return on ? null : string.Join(';', codes);
     }
+
+    // A foreground color's code as the background's: 31 is 41, 91 is 101, 38;... is 48;.... Null for anything else.
+    static string? Background(string code) =>
+        code.StartsWith("38;") ? "48" + code[2..]
+        : int.TryParse(code, out var n) && n is >= 30 and <= 37 or >= 90 and <= 97 ? (n + 10).ToString()
+        : null;
 
     // #rrggbb or #rgb.
     static (int R, int G, int B)? Hex(string word)
@@ -238,30 +273,34 @@ public sealed record Theme
         List<string> words = [];
         for (var i = 0; i < codes.Length; i++)
         {
-            if (codes[i] == 38 && i + 2 < codes.Length && codes[i + 1] == 5)
+            var on = codes[i] is 48 or >= 40 and <= 47 or >= 100 and <= 107 ? "on " : "";
+            if (codes[i] is 38 or 48 && i + 2 < codes.Length && codes[i + 1] == 5)
             {
-                words.Add(codes[i + 2].ToString());
+                words.Add(on + codes[i + 2]);
                 i += 2;
             }
-            else if (codes[i] == 38 && i + 4 < codes.Length && codes[i + 1] == 2)
+            else if (codes[i] is 38 or 48 && i + 4 < codes.Length && codes[i + 1] == 2)
             {
-                words.Add($"#{codes[i + 2]:x2}{codes[i + 3]:x2}{codes[i + 4]:x2}");
+                words.Add($"{on}#{codes[i + 2]:x2}{codes[i + 3]:x2}{codes[i + 4]:x2}");
                 i += 4;
             }
             else
-                words.Add(Words.First(w => w.Value == codes[i].ToString()).Key);
+            {
+                var code = (on.Length > 0 ? codes[i] - 10 : codes[i]).ToString();
+                words.Add(on + Words.First(w => w.Value == code).Key);
+            }
         }
         return words.Count == 0 ? "none" : string.Join(' ', words);
     }
 
-    /// <summary>The theme with its hex colors as the nearest 256-colors, for terminals that don't show 24-bit color.</summary>
+    /// <summary>The theme with its hex colors (foreground and background) as the nearest 256-colors, for terminals that don't show 24-bit color.</summary>
     public Theme To256() => Roles.Aggregate(this, (theme, role) => role.Set(theme, To256(role.Get(theme))));
 
     static string To256(string sgr)
     {
         var codes = sgr.Split(';', StringSplitOptions.RemoveEmptyEntries);
         for (var i = 0; i + 4 < codes.Length; i++)
-            if (codes[i] == "38" && codes[i + 1] == "2")
+            if (codes[i] is "38" or "48" && codes[i + 1] == "2")
                 codes = [.. codes[..(i + 1)], "5", Nearest256(int.Parse(codes[i + 2]), int.Parse(codes[i + 3]), int.Parse(codes[i + 4])).ToString(), .. codes[(i + 5)..]];
         return string.Join(';', codes);
     }

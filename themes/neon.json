@@ -12,6 +12,7 @@
     "grid": "#3d2a6b"
   },
   "colors": {
+    "text": "#f0e6ff on #120b1f",
     "accent": "bold pink",
     "tool": "electric",
     "agent": "violet",
@@ -22,7 +23,9 @@
     "border": "grid",
     "heading": "bold electric",
     "link": "underline pink",
+    "selection": "on #2e1a4d",
     "code": "electric",
+    "codeblock": "on #1b1030",
     "comment": "haze italic",
     "string": "acid",
     "constant": "sunset",

@@ -33,10 +33,13 @@ That writes every role out in words you can edit. anchor reads theme files again
     "ash": "#a89080"
   },
   "colors": {
+    "text": "#eadfd4 on #1c1512",
     "accent": "bold ember",
     "border": "coal",
     "muted": "ash",
-    "comment": "ash italic"
+    "comment": "ash italic",
+    "selection": "on #3a2a22",
+    "codeblock": "on #261c18"
   }
 }
 ```
@@ -59,10 +62,30 @@ A color is one or more words separated by spaces:
 - **Styles:** `bold`, `dim`, `italic`, `underline`.
 - **Palette names** from the same file. A palette name can't be a color word, so `red` can't be
   redefined.
+- `on` and a color for the background: `sand on #2a201b`. Any of the colors above can follow it.
 - `none` for plain text.
 
 Comments and trailing commas are allowed. If part of a file can't be read, anchor reports it when
 it starts, and when you switch to that theme, and uses the rest of the file.
+
+## Backgrounds
+
+Any role can have a background with `on`, but three roles exist for the background and are where it
+does the most:
+
+| Role        | What it colors                                                                   |
+| ----------- | -------------------------------------------------------------------------------- |
+| `text`      | Plain text, and the whole screen behind everything. `"#eadfd4 on #1c1512"` puts light text on charcoal. |
+| `codeblock` | A code block in a reply, shaded to the edge of the screen. Pick a shade a little lighter or darker than the `text` background. |
+| `selection` | The chosen suggestion and search matches. Without it they use the accent color and reversed colors. |
+
+`text` and `codeblock` only show in the full-screen REPL. In a plain terminal (`--plain`), a
+background would cover only the characters themselves and stay in the scrollback after anchor
+exits, so plain mode leaves them out. Neither one changes your terminal's own settings, so
+everything goes back to normal when anchor exits.
+
+When a theme sets a `text` background, choose every other color to read on that background, not on
+your terminal's. The [sample themes](#sample-themes) all set one.
 
 ## Hex colors on other terminals
 

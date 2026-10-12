@@ -135,6 +135,7 @@ A color in `colors` is one or more of these words, separated by spaces:
 `bright-green`, `bright-yellow`, `bright-blue`, `bright-magenta`, `bright-cyan`, `bright-white`,
 `bold`, `dim`, `italic`, `underline`, a [256-color](https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit)
 number from `0` to `255` (`208` is orange), a hex color such as `#ff6a1f`, or `none` for plain text.
+`on` makes the color after it the background: `"sand on #2a201b"`.
 Hex colors are drawn as the closest 256-color on terminals that don't show 24-bit color; see
 [Hex colors on other terminals](/anchor/guides/themes/#hex-colors-on-other-terminals).
 
@@ -147,6 +148,7 @@ Hex colors are drawn as the closest 256-color on terminals that don't show 24-bi
 
 | Role       | Used for                                                          |
 | ---------- | ----------------------------------------------------------------- |
+| `text`     | Plain text and the screen behind it, such as `"#eadfd4 on #1c1512"`. Full screen only; unset, it's the terminal's own. |
 | `accent`   | The prompt caret, the title, the spinner and the picker's choice. |
 | `tool`     | A tool call's name.                                               |
 | `agent`    | A sub-agent's tag.                                                |
@@ -157,7 +159,9 @@ Hex colors are drawn as the closest 256-color on terminals that don't show 24-bi
 | `border`   | The line above the prompt and the status line.                    |
 | `heading`  | Markdown headings.                                                |
 | `link`     | Markdown links.                                                   |
+| `selection` | The chosen suggestion and search matches, such as `"on #3a2a22"`. Unset, they're the accent and reversed colors. |
 | `code`     | Inline code, and code blocks in a language anchor can't highlight. |
+| `codeblock` | The background of a whole code block, to the edge of the screen, such as `"on #261c18"`. Full screen only. |
 | `comment`, `string`, `constant`, `keyword`, `function`, `type` | Syntax highlighting in code blocks. |
 
 An unknown theme, role or color word is reported when anchor starts, and the rest still applies. So

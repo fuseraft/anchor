@@ -247,7 +247,7 @@ sealed class SuggestView : View
             var (item, chosen) = (_items[i], i == _selected);
             var note = item.Note.Length == 0 ? "" : new string(' ', width - item.Text.GetColumns() + 3) + item.Note;
             Styled.Draw(this, row, [new((chosen ? "› " : "  ") + item.Text, chosen ? default : muted), new(note, muted),
-                new(chosen ? "   Tab to complete" : "", muted)], chosen ? Styled.Accent : Styled.Plain);
+                new(chosen ? "   Tab to complete" : "", muted)], chosen ? Styled.Selected : Styled.Plain);
         }
         return true;
     }

@@ -71,14 +71,12 @@ public sealed partial class Tui : IReplScreen, IApprover
         Renderer = new Renderer(_transcript, color: Colored);
         SetupIO = new TuiSetupIO(this);
 
-        var plain = new Attribute(Color.None, Color.None);
         _top = new Runnable { Width = Dim.Fill(), Height = Dim.Fill() };
-        _top.SetScheme(new Scheme(plain) { Focus = plain, Editable = plain, Active = plain });
         _view = new TranscriptView(_transcript) { X = 0, Y = 0, Width = Dim.Fill() };
         _outputView = new TranscriptView(_outputText) { X = 0, Y = 0, Width = Dim.Fill(), Visible = false };
         _rule = new RuleView { X = 0, Width = Dim.Fill(), Height = 1 };
         _caret = new Label { X = 0, Text = "›", Width = 2, Height = 1 };
-        _caret.SetScheme(new Scheme(Styled.Accent));
+        Paint();
         _prompt = new PromptView { X = 2, Width = Dim.Fill() };
         _suggest = new SuggestView { X = 0, Width = Dim.Fill(), Visible = false };
         _panel = new PanelView { X = 0, Width = Dim.Fill(), Visible = false };
@@ -196,7 +194,7 @@ public sealed partial class Tui : IReplScreen, IApprover
         if (_theme != Theme.Current)
         {
             _theme = Theme.Current;
-            _caret.SetScheme(new Scheme(Styled.Accent));
+            Paint();
             _top.SetNeedsDraw();
         }
         if (_status.Working && !working)
@@ -370,4 +368,12 @@ public sealed partial class Tui : IReplScreen, IApprover
     }
 
     void Ui(Action action) => _app.Invoke(action);
+
+    // The screen in the theme's text colors, which the views inherit, and the caret in its accent.
+    void Paint()
+    {
+        var plain = Styled.Plain;
+        _top.SetScheme(new Scheme(plain) { Focus = plain, Editable = plain, Active = plain });
+        _caret.SetScheme(new Scheme(Styled.Accent));
+    }
 }

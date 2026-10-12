@@ -9,11 +9,19 @@ namespace Anchor.Cli;
 /// <summary>Draws the Renderer's ANSI-styled text in a view, for the lines outside the transcript.</summary>
 static class Styled
 {
-    public static readonly Attribute Plain = new(Color.None, Color.None);
+    /// <summary>Plain text on the screen: the theme's text color and background, or the terminal's own.</summary>
+    public static Attribute Plain => Of(Theme.StyleOf(Theme.Current.Text), new(Color.None, Color.None));
 
     public static Attribute Accent => Of(Theme.StyleOf(Theme.Current.Accent) with { Bold = true }, Plain);
 
     public static Attribute Border => Of(Theme.StyleOf(Theme.Current.Border), Plain);
+
+    /// <summary>The chosen suggestion: the theme's selection on top of the accent.</summary>
+    public static Attribute Selected => Theme.Current.Selection.Length == 0 ? Accent : Of(Theme.StyleOf(Theme.Current.Selection), Accent);
+
+    /// <summary>A search match in text drawn in <paramref name="attribute"/>: the theme's selection on top, or reversed.</summary>
+    public static Attribute Marked(Attribute attribute) => Theme.Current.Selection.Length == 0
+        ? attribute with { Style = attribute.Style | TextStyle.Reverse } : Of(Theme.StyleOf(Theme.Current.Selection), attribute);
 
     public static List<Span> Parse(string ansi)
     {
@@ -55,12 +63,19 @@ static class Styled
         view.AddStr(new string(' ', Math.Max(0, width - used)));
     }
 
+    /// <summary>A style as an attribute; the colors it leaves unset are <paramref name="plain"/>'s.</summary>
     public static Attribute Of(Style style, Attribute plain)
     {
         if (style == default)
             return plain;
+        var text = (style.Bold ? TextStyle.Bold : TextStyle.None) | (style.Dim ? TextStyle.Faint : TextStyle.None)
+            | (style.Italic ? TextStyle.Italic : TextStyle.None) | (style.Underline ? TextStyle.Underline : TextStyle.None);
+        return new Attribute(style.Color == 0 ? plain.Foreground : ColorOf(style.Color), style.Background == 0 ? plain.Background : ColorOf(style.Background), text);
+    }
+
+    static Color ColorOf(int code) =>
         // 256-colors 0-15 are the terminal's own 16, so they go through the same names.
-        var fg = (style.Color is >= 256 and < 272 ? style.Color - 256 + (style.Color < 264 ? 30 : 82) : style.Color) switch
+        (code is >= 256 and < 272 ? code - 256 + (code < 264 ? 30 : 82) : code) switch
         {
             30 => new Color(ColorName16.Black),
             31 => new Color(ColorName16.Red),
@@ -78,14 +93,10 @@ static class Styled
             95 => new Color(ColorName16.BrightMagenta),
             96 => new Color(ColorName16.BrightCyan),
             97 => new Color(ColorName16.White),
-            >= 256 and < 512 => Rgb(Theme.Rgb(style.Color - 256)),
-            >= Style.Rgb => Rgb(((style.Color >> 16) & 255, (style.Color >> 8) & 255, style.Color & 255)),
+            >= 256 and < 512 => Rgb(Theme.Rgb(code - 256)),
+            >= Style.Rgb => Rgb(((code >> 16) & 255, (code >> 8) & 255, code & 255)),
             _ => Color.None,
         };
-        var text = (style.Bold ? TextStyle.Bold : TextStyle.None) | (style.Dim ? TextStyle.Faint : TextStyle.None)
-            | (style.Italic ? TextStyle.Italic : TextStyle.None) | (style.Underline ? TextStyle.Underline : TextStyle.None);
-        return new Attribute(fg, Color.None, text);
-    }
 
     static Color Rgb((int R, int G, int B) c) => new(c.R, c.G, c.B);
 }

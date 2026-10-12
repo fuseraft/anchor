@@ -29,6 +29,19 @@ public class TranscriptTests
     }
 
     [Fact]
+    public void Write_ReadsBackgrounds_AndAnErasedLineFillsEveryRowItWrapsTo()
+    {
+        var t = new Transcript();
+        t.Write("\e[41ma\e[49mb \e[1;48;5;236mcode here\e[K\e[0m");
+
+        var shaded = new Style(0, true, false, Background: 256 + 236);
+        var line = t.Lines()[0];
+        Assert.Equal([new Span("a", new Style(0, false, false, Background: 31)), new Span("b ", Plain), new Span("code here", shaded), new Span("", shaded)], line);
+        Assert.All(Transcript.Wrap(line, 7), row => Assert.Equal(new Span("", shaded), row[^1]));
+        Assert.EndsWith("\e[1;48;5;236mcode here\e[0m\e[1;48;5;236m\e[K\e[0m", Transcript.Ansi(line));
+    }
+
+    [Fact]
     public void Clear_StartsOver_AndTellsTheViewToRebuild()
     {
         var t = new Transcript();

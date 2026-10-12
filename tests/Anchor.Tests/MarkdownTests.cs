@@ -207,4 +207,15 @@ public class MarkdownTests
 
     [Fact]
     public void CodeBlocks_IsEmptyWithoutFences() => Assert.Empty(Markdown.CodeBlocks("just `inline` code"));
+
+    [Fact]
+    public void Shade_PutsACodeBlocksBackgroundUnderEveryTokenAndToTheEndOfTheRow()
+    {
+        var t = new Transcript();
+        t.Write(Markdown.Shade("  \e[35mint\e[0m x", "48;5;236"));
+
+        var shaded = new Style(0, false, false, Background: 256 + 236);
+        Assert.Equal([new Span("  ", shaded), new Span("int", shaded with { Color = 35 }), new Span(" x", shaded), new Span("", shaded)], t.Lines()[0]);
+        Assert.Equal("  x", Markdown.Shade("  x", ""));
+    }
 }

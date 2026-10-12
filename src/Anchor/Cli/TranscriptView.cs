@@ -96,21 +96,23 @@ sealed class TranscriptView(Transcript transcript) : View
     {
         Sync();
         var height = Viewport.Height;
+        var plain = Styled.Plain;
         // Following, or the transcript shrank (a hidden diff) under where the user had scrolled to.
         _top = _follow ? Math.Max(0, _rows.Count - height) : Math.Min(_top, Math.Max(0, _rows.Count - height));
         for (var i = 0; i < height; i++)
         {
             Move(0, i);
             var used = 0;
-            if (_top + i < _rows.Count)
-                foreach (var (text, style, marked) in Marked(_rows[_top + i], _highlight))
-                {
-                    var attribute = Styled.Of(style, Styled.Plain);
-                    SetAttribute(marked ? attribute with { Style = attribute.Style | TextStyle.Reverse } : attribute);
-                    AddStr(text);
-                    used += text.GetColumns();
-                }
-            SetAttribute(new Attribute(Color.None, Color.None));
+            var row = _top + i < _rows.Count ? _rows[_top + i] : [];
+            foreach (var (text, style, marked) in Marked(row, _highlight))
+            {
+                var attribute = Styled.Of(style, plain);
+                SetAttribute(marked ? Styled.Marked(attribute) : attribute);
+                AddStr(text);
+                used += text.GetColumns();
+            }
+            // A row that ends in an empty span is filled with its background, as a code block is.
+            SetAttribute(row is [.., { Text.Length: 0 } fill] ? Styled.Of(fill.Style, plain) : plain);
             if (used < Viewport.Width)
                 AddStr(new string(' ', Viewport.Width - used));
         }
