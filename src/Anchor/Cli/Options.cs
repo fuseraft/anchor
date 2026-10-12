@@ -3,17 +3,20 @@ namespace Anchor.Cli;
 /// <summary>Command-line options. <see cref="Parse"/> returns an exit code instead when it handled the request itself.</summary>
 public sealed record Options(string? Model, bool Yolo, bool Resume, string? ResumeId, bool Print, string? Prompt, bool Json, string? Until = null,
     IReadOnlyList<string>? Allow = null, int? MaxRounds = null, int? Timeout = null, bool Setup = false, bool Plain = false,
-    string? SetUpModel = null, string? Theme = null)
+    string? SetUpModel = null, string? Theme = null, string? Effort = null)
 {
     public const string Usage = """
         usage: anchor setup
-               anchor [--model <name>] [--yolo] [--allow <rule>]... [--resume [id]] [-p [prompt]] [--until <check>]
-                      [--max-rounds <n>] [--timeout <seconds>] [--json] [--plain] [--theme <name>]
+               anchor [--model <name>] [--effort <level>] [--yolo] [--allow <rule>]... [--resume [id]]
+                      [-p [prompt]] [--until <check>] [--max-rounds <n>] [--timeout <seconds>] [--json] [--plain]
+                      [--theme <name>]
 
         Starts an interactive coding agent in the current directory.
         anchor setup chooses a provider, saves its API key and picks a model.
 
           -m, --model <name>   model to use (default: provider.model in the config)
+          --effort <level>     how hard the model thinks: none, low, medium, high, xhigh
+                               (default: provider.effort in the config, else the model's own)
           --yolo               don't ask before writes, commands and reads outside the directory
                                (secret files and dangerous commands are always denied)
           --allow <rule>       don't ask for this, for this run only; repeatable. <rule> is a program
@@ -38,7 +41,7 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
         if (args is ["setup"])
             return (new Options(null, false, false, null, false, null, false, Setup: true), 0);
 
-        string? model = null, resumeId = null, prompt = null, until = null, theme = null;
+        string? model = null, resumeId = null, prompt = null, until = null, theme = null, effort = null;
         bool yolo = false, resume = false, print = false, json = false, plain = false;
         List<string> allow = [];
         int? maxRounds = null, timeout = null;
@@ -49,6 +52,14 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
             {
                 case "--model" or "-m" when HasValue():
                     model = args[++i];
+                    break;
+                case "--effort" when HasValue():
+                    effort = args[++i];
+                    if (Providers.Providers.Efforts.All(e => !string.Equals(e.Name, effort, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        error.WriteLine($"anchor: unknown effort '{effort}'. Use one of: {Providers.Providers.EffortNames}.");
+                        return (null, 2);
+                    }
                     break;
                 case "--yolo":
                     yolo = true;
@@ -115,7 +126,7 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
             error.WriteLine("anchor: --max-rounds and --timeout need -p.");
             return (null, 2);
         }
-        return (new Options(model, yolo, resume, resumeId, print, prompt, json, until, allow.Count > 0 ? allow : null, maxRounds, timeout, Plain: plain, Theme: theme), 0);
+        return (new Options(model, yolo, resume, resumeId, print, prompt, json, until, allow.Count > 0 ? allow : null, maxRounds, timeout, Plain: plain, Theme: theme, Effort: effort), 0);
     }
 
     public static string Version

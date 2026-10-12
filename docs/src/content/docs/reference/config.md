@@ -14,7 +14,8 @@ optional. Keys are case-insensitive, and comments and trailing commas are allowe
     "name": "anthropic",
     "endpoint": null,
     "apiKeyEnv": "ANTHROPIC_API_KEY",
-    "contextWindow": 200000
+    "contextWindow": 200000,
+    "effort": "high"
   },
   // Named servers; use their models as "work/<model>".
   "providers": {
@@ -45,6 +46,7 @@ optional. Keys are case-insensitive, and comments and trailing commas are allowe
 | `endpoint`      | string | The API base URL, for OpenAI-compatible servers other than OpenAI and xAI.                   |
 | `apiKeyEnv`     | string | The environment variable that holds the API key. When it's unset, a key saved for it by `anchor setup` is read from the OS keychain or `~/.anchor/credentials`. |
 | `contextWindow` | number | The model's context window in tokens.                                                        |
+| `effort`        | string | How hard the model thinks: `none`, `low`, `medium`, `high` or `xhigh`. Unset leaves it to the model. `--effort` overrides it. See [Reasoning effort](#reasoning-effort). |
 
 A model name anchor doesn't recognize needs both `endpoint` and `apiKeyEnv`. Recognized prefixes and
 their defaults:
@@ -56,6 +58,22 @@ their defaults:
 | `gpt-`, `o1`, `o3`, `o4` | `openai`    | OpenAI's API              | `OPENAI_API_KEY`    | 128,000         |
 
 Any other model defaults to a 128,000-token window.
+
+### Reasoning effort
+
+`effort` sets how much the model thinks before it answers, using the parameter each provider takes:
+
+- **Anthropic models** get adaptive thinking (`thinking.type: adaptive`) with the level as
+  `output_config.effort`. The model decides how much to think, up to that level. Thinking counts
+  against the output cap, so anchor raises the cap from 16,000 to 64,000 tokens when an effort is
+  set. `none` turns thinking off; models that always think refuse that, so leave `effort` unset for
+  them.
+- **OpenAI-compatible servers** get `reasoning_effort`. Which levels a model accepts depends on the
+  model, and a server that doesn't support the parameter refuses the request.
+
+Without `effort`, nothing is sent and the model's own default applies. `--effort` and
+[`/effort`](/anchor/reference/commands/#effort) change it for one run or session. Sub-agents use the
+main agent's effort. The setup wizard keeps `effort` when it replaces the rest of `provider`.
 
 ## providers
 

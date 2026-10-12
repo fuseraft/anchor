@@ -37,8 +37,8 @@ The file accepts comments and trailing commas. The full schema is in the
 
 anchor offers the wizard when you start it interactively with no model configured and no API key
 set. Running it again replaces the whole `provider` section with the new `model` (so a
-`provider.endpoint`, `apiKeyEnv` or `contextWindow` you set by hand is removed), updates the named
-provider for another server, and keeps the rest of your config. The config's comments can't be
+`provider.endpoint`, `apiKeyEnv` or `contextWindow` you set by hand is removed; `effort` is kept),
+updates the named provider for another server, and keeps the rest of your config. The config's comments can't be
 kept, so a commented file is first copied to `config.json.bak`.
 
 A key saved by the wizard stands in for its environment variable: the one the model name implies

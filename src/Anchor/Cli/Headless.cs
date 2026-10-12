@@ -169,6 +169,7 @@ public sealed class JsonMode(JsonEvents json, JsonApprover approver, TextReader 
         ["type"] = "ready",
         ["session"] = h.Session.Id,
         ["model"] = h.Provider.Model,
+        ["effort"] = h.Agent.Options.Reasoning is { } r ? Providers.Providers.EffortName(r.Effort) : null,
         ["tools"] = new JsonArray([.. h.Agent.Options.Tools?.Select(t => (JsonNode)t.Name) ?? []]),
     };
 }

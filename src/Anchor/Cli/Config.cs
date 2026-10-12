@@ -65,4 +65,7 @@ public sealed class ProviderConfig
     public string? ApiKeyEnv { get; set; }
 
     public long? ContextWindow { get; set; }
+
+    /// <summary>How hard the model thinks: none, low, medium, high or xhigh; unset leaves it to the model.</summary>
+    public string? Effort { get; set; }
 }

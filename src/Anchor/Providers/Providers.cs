@@ -175,11 +175,41 @@ public static class Providers
         };
 
     /// <summary>Options every request carries; Anthropic requires an explicit output cap.</summary>
-    public static ChatOptions Options(ProviderSettings settings) => new()
+    /// <remarks>An effort is sent as the provider takes it: Anthropic gets adaptive thinking with <c>output_config.effort</c>,
+    /// OpenAI-compatible servers <c>reasoning_effort</c>. Anthropic counts thinking against the output cap, so thinking raises
+    /// it. With no effort, the model's own default applies.</remarks>
+    public static ChatOptions Options(ProviderSettings settings, ReasoningEffort? effort = null) => new()
     {
         ModelId = settings.Model,
-        MaxOutputTokens = settings.Provider == "anthropic" ? 16_000 : null,
+        MaxOutputTokens = settings.Provider != "anthropic" ? null : effort is null or ReasoningEffort.None ? 16_000 : 64_000,
+        Reasoning = effort is { } e ? new ReasoningOptions { Effort = e } : null,
     };
+
+    /// <summary>The effort levels, as config, --effort and /effort write them; "default" leaves it to the model.</summary>
+    public static readonly (string Name, ReasoningEffort? Effort)[] Efforts =
+    [
+        ("none", ReasoningEffort.None),
+        ("low", ReasoningEffort.Low),
+        ("medium", ReasoningEffort.Medium),
+        ("high", ReasoningEffort.High),
+        ("xhigh", ReasoningEffort.ExtraHigh),
+        ("default", null),
+    ];
+
+    public static string EffortNames => string.Join(", ", Efforts.Select(e => e.Name));
+
+    /// <summary>The effort a level's name stands for; null for none given, or "default".</summary>
+    public static ReasoningEffort? ParseEffort(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+        foreach (var (n, effort) in Efforts)
+            if (string.Equals(n, name.Trim(), StringComparison.OrdinalIgnoreCase))
+                return effort;
+        throw new AnchorException($"Unknown effort '{name}'. Use one of: {EffortNames}.");
+    }
+
+    public static string EffortName(ReasoningEffort? effort) => Efforts.First(e => e.Effort == effort).Name;
 }
 
 /// <summary>Adds configured headers to every OpenAI request.</summary>

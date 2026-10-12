@@ -8,10 +8,15 @@ public sealed partial class Repl
     async Task SwitchModelAsync(string name)
     {
         var next = options.Models.Resolve(name);
-        agent.Use(await options.Models.CreateAsync(next), Providers.Providers.Options(next));
+        agent.Use(await options.Models.CreateAsync(next), Providers.Providers.Options(next, Effort));
         _provider = next;
-        renderer.Line(renderer.Muted($"Model: {next.Model}"));
+        renderer.Line(renderer.Muted($"Model: {ModelLabel}"));
     }
+
+    Microsoft.Extensions.AI.ReasoningEffort? Effort => agent.Options.Reasoning?.Effort;
+
+    /// <summary>The model, with the effort when one is set: claude-opus-5-5 (high).</summary>
+    string ModelLabel => Effort is null ? _provider.Model : $"{_provider.Model} ({Providers.Providers.EffortName(Effort)})";
 
     // Model lists for /model and /setup; one client serves every run of either.
     static readonly HttpClient SetupHttp = Http.Client(TimeSpan.FromSeconds(30));
@@ -24,6 +29,7 @@ public sealed partial class Repl
     [
         ("/help", "list commands"),
         ("/model [name]", "pick a model and save it as the default, or switch to one for this session"),
+        ("/effort [level]", "show how hard the model thinks, or set it for this session: none, low, medium, high, xhigh, default"),
         ("/setup", "choose a provider, save its key and pick a model"),
         ("/theme [name]", "list color themes, switch to one for this session, or save <name> the current colors as a theme file"),
         ("/dock [side]", "list where the prompt can go, or move it to the top or bottom for this session"),
@@ -162,6 +168,14 @@ public sealed partial class Repl
                 break;
             case "/model":
                 await SwitchModelAsync(parts[1]);
+                break;
+            case "/effort" when parts.Length == 1:
+                renderer.Line(renderer.Muted($"Effort: {Providers.Providers.EffortName(Effort)}. Levels: {Providers.Providers.EffortNames}."));
+                break;
+            case "/effort":
+                agent.Use(agent.Client, Providers.Providers.Options(_provider, Providers.Providers.ParseEffort(parts[1])));
+                status.Refresh();
+                renderer.Line(renderer.Muted($"Effort: {Providers.Providers.EffortName(Effort)}, for this session. To keep it, set \"effort\" under provider in the config."));
                 break;
             case "/theme" when parts.Length == 1:
             {

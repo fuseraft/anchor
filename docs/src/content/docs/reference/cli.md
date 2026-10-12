@@ -5,8 +5,9 @@ description: Every anchor command-line option, environment variable and exit cod
 
 ```
 anchor setup
-anchor [--model <name>] [--yolo] [--allow <rule>]... [--resume [id]] [-p [prompt]] [--until <check>]
-       [--max-rounds <n>] [--timeout <seconds>] [--json] [--plain] [--theme <name>]
+anchor [--model <name>] [--effort <level>] [--yolo] [--allow <rule>]... [--resume [id]]
+       [-p [prompt]] [--until <check>] [--max-rounds <n>] [--timeout <seconds>] [--json] [--plain]
+       [--theme <name>]
 ```
 
 With no options, anchor starts an [interactive session](/anchor/guides/repl/) in the current
@@ -18,6 +19,7 @@ exits.
 | Option                 | Description                                                                                             |
 | ---------------------- | ------------------------------------------------------------------------------------------------------- |
 | `-m`, `--model <name>` | The model to use. Overrides `provider.model` in the config.                                             |
+| `--effort <level>`     | How hard the model thinks: `none`, `low`, `medium`, `high` or `xhigh`. Overrides [`provider.effort`](/anchor/reference/config/#reasoning-effort) in the config. |
 | `--yolo`               | Don't ask before writes, commands and reads outside the directory. Hard denials still apply. [More](/anchor/guides/safety/#yolo) |
 | `--allow <rule>`       | Don't ask for this, for this run only. Repeatable. `<rule>` is a program (`dotnet`), an MCP tool (`mcp__server__tool`), or `edits` for file writes in the directory. Hard denials still apply. [More](/anchor/guides/scripting/#approvals-in--p) |
 | `-r`, `--resume [id]`  | Continue the latest session in this directory, or the session with this id or id prefix.               |

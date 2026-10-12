@@ -340,6 +340,17 @@ public class OptionsTests
     }
 
     [Fact]
+    public void Parse_Effort_TakesAKnownLevel()
+    {
+        Assert.Equal("high", Parse("--effort", "high")?.Effort);
+        Assert.Equal("XHigh", Parse("--effort", "XHigh", "-p", "hi")?.Effort);
+
+        var error = new StringWriter();
+        Assert.Equal((null, 2), Options.Parse(["--effort", "max"], TextWriter.Null, error));
+        Assert.Contains("unknown effort 'max'", error.ToString());
+    }
+
+    [Fact]
     public void Parse_UnknownArgumentsAndHelp_ReturnExitCodes()
     {
         var error = new StringWriter();

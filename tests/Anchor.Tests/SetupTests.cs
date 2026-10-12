@@ -74,7 +74,7 @@ public class SetupTests : IDisposable
         File.WriteAllText(ConfigPath, """
             {
               // mine
-              "provider": { "model": "old", "endpoint": "http://old", "contextWindow": 9 },
+              "provider": { "model": "old", "endpoint": "http://old", "contextWindow": 9, "effort": "high" },
               "providers": { "work": { "endpoint": "http://old/v1", "headers": { "X-Team": "a" } } },
               "mcpServers": { "files": { "command": "npx" } },
             }
@@ -85,7 +85,7 @@ public class SetupTests : IDisposable
         await Run(io);
 
         var config = ReadConfig();
-        Assert.Equal("""{"model":"work/m1"}""", config["provider"]!.ToJsonString());
+        Assert.Equal("""{"effort":"high","model":"work/m1"}""", config["provider"]!.ToJsonString());
         Assert.Equal("https://new.example/v1", (string?)config["providers"]!["work"]!["endpoint"]);
         Assert.Equal("a", (string?)config["providers"]!["work"]!["headers"]!["X-Team"]);
         Assert.Equal("npx", (string?)config["mcpServers"]!["files"]!["command"]);
