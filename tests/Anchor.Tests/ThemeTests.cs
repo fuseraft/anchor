@@ -186,4 +186,21 @@ public sealed class ThemeTests : IDisposable
     [InlineData("TERM", "xterm-256color", false)]
     public void ShowsTrueColor_ReadsTheEnvironment(string name, string value, bool shows) =>
         Assert.Equal(shows, Theme.ShowsTrueColor(n => n == name ? value : null));
+
+    [Fact]
+    public void TheSampleThemes_LoadWithoutWarnings_AndSetEveryRole()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (!File.Exists(Path.Combine(dir.FullName, "anchor.slnx")))
+            dir = dir.Parent!;
+        var samples = Path.Combine(dir.FullName, "themes");
+
+        var (themes, warnings) = Theme.Load(samples);
+
+        Assert.Empty(warnings);
+        Assert.Equal(Directory.GetFiles(samples, "*.json").Length, themes.Count);
+        foreach (var file in Directory.GetFiles(samples, "*.json"))
+            foreach (var role in Theme.Roles)
+                Assert.Contains($"\"{role.Name}\":", File.ReadAllText(file));
+    }
 }
