@@ -72,6 +72,12 @@ iTerm2, WezTerm, VS Code, Ghostty, kitty, Alacritty and mintty. Anywhere else, e
 drawn as the closest 256-color, so a theme still looks close to how it was meant to. If your terminal
 can show 24-bit color but anchor doesn't recognize it, set `COLORTERM=truecolor`.
 
+## Sample themes
+
+The [`themes` folder](https://github.com/fuseraft/anchor/tree/main/themes) in anchor's repository has
+a few themes to use or start from: `ember`, `tide`, `forest`, `neon` and `phosphor` for dark
+backgrounds, and `paper` for light ones. To use one, copy its file into `~/.anchor/themes/`.
+
 ## Sharing a theme
 
 A theme is one self-contained file. To share yours, send the file or post it. To use someone

@@ -1,0 +1,36 @@
+{
+  // Moss, bark and berries.
+  "description": "moss and bark, for dark backgrounds",
+  "palette": {
+    "moss": "#8fbf5a",
+    "fern": "#5f9e6e",
+    "sprout": "#a7c080",
+    "lichen": "#b8c9a3",
+    "soil": "#4a3b2c",
+    "stone": "#9a9486",
+    "acorn": "#d69a5c",
+    "plum": "#b48ead",
+    "pollen": "#e6c35c",
+    "blight": "#e05252",
+    "sky": "#7fb2c9"
+  },
+  "colors": {
+    "accent": "bold moss",
+    "tool": "sky",
+    "agent": "plum",
+    "success": "fern",
+    "warning": "pollen",
+    "error": "blight",
+    "muted": "stone",
+    "border": "soil",
+    "heading": "bold moss",
+    "link": "underline sky",
+    "code": "lichen",
+    "comment": "stone italic",
+    "string": "sprout",
+    "constant": "pollen",
+    "keyword": "acorn",
+    "function": "sky",
+    "type": "lichen"
+  }
+}

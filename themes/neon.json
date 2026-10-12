@@ -1,0 +1,33 @@
+{
+  // Synthwave: hot pink and cyan on a purple grid.
+  "description": "hot pink and cyan, for dark backgrounds",
+  "palette": {
+    "pink": "#ff2a6d",
+    "electric": "#05d9e8",
+    "violet": "#a855f7",
+    "acid": "#3cf281",
+    "sunset": "#ffb86c",
+    "laser": "#ff4d4d",
+    "haze": "#9d8ec4",
+    "grid": "#3d2a6b"
+  },
+  "colors": {
+    "accent": "bold pink",
+    "tool": "electric",
+    "agent": "violet",
+    "success": "acid",
+    "warning": "sunset",
+    "error": "laser",
+    "muted": "haze",
+    "border": "grid",
+    "heading": "bold electric",
+    "link": "underline pink",
+    "code": "electric",
+    "comment": "haze italic",
+    "string": "acid",
+    "constant": "sunset",
+    "keyword": "pink",
+    "function": "electric",
+    "type": "violet"
+  }
+}
