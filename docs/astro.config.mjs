@@ -31,6 +31,7 @@ export default defineConfig({
 						'guides/mcp',
 						'guides/sessions',
 						'guides/scripting',
+						'guides/themes',
 					],
 				},
 				{

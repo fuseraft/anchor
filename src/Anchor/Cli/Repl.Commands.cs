@@ -25,7 +25,7 @@ public sealed partial class Repl
         ("/help", "list commands"),
         ("/model [name]", "pick a model and save it as the default, or switch to one for this session"),
         ("/setup", "choose a provider, save its key and pick a model"),
-        ("/theme [name]", "list color themes, or switch to one for this session"),
+        ("/theme [name]", "list color themes, switch to one for this session, or save <name> the current colors as a theme file"),
         ("/dock [side]", "list where the prompt can go, or move it to the top or bottom for this session"),
         ("/context", "how full the context window is, and session token usage"),
         ("/agents", "list sub-agents"),
@@ -164,15 +164,36 @@ public sealed partial class Repl
                 await SwitchModelAsync(parts[1]);
                 break;
             case "/theme" when parts.Length == 1:
-                foreach (var theme in Theme.BuiltIn)
-                    renderer.Line((theme.Name == Theme.Current.Name ? renderer.Accent("› ") : "  ") + theme.Name.PadRight(8) + renderer.Muted(theme.Description));
+            {
+                // Theme files are read again each time, so a change to one shows on the next /theme.
+                var (files, warnings) = Theme.Load(Theme.Dir);
+                List<Theme> themes = [.. Theme.BuiltIn, .. files];
+                var width = themes.Max(t => t.Name.Length) + 2;
+                foreach (var theme in themes)
+                    renderer.Line((theme.Name == Theme.Current.Name ? renderer.Accent("› ") : "  ") + renderer.Swatch(theme, width) + "  " + renderer.Muted(theme.Description));
+                foreach (var warning in warnings)
+                    renderer.Line(renderer.Warning(warning));
+                renderer.Line(renderer.Muted($"Theme files go in {Renderer.ShortPath(Theme.Dir)}; /theme save <name> starts one from the current colors."));
                 break;
-            case "/theme" when Theme.Named(parts[1]) is { } named:
+            }
+            case "/theme" when parts[1].Split(' ', 2) is ["save", var saveAs]:
+            {
+                saveAs = saveAs.Trim().ToLowerInvariant();
+                var (file, problem) = Theme.Save(Theme.Chosen, saveAs, Theme.Dir);
+                renderer.Line(file is not null ? renderer.Muted($"Saved {Renderer.ShortPath(file)}. Change it, then /theme {saveAs} to see it.") : renderer.Error(problem!));
+                break;
+            }
+            case "/theme" when parts[1] == "save":
+                renderer.Line(renderer.Error("Name the theme: /theme save <name>."));
+                break;
+            case "/theme" when Theme.Load(Theme.Dir) is var (files, warnings) && Theme.Named(parts[1], [.. Theme.BuiltIn, .. files]) is { } named:
                 Theme.Current = named;
+                foreach (var warning in warnings.Where(w => w.StartsWith($"themes/{named.Name}.", StringComparison.OrdinalIgnoreCase)))
+                    renderer.Line(renderer.Warning(warning));
                 renderer.Line(renderer.Muted($"Theme: {named.Name}, for this session. To keep a theme, pick it in /setup."));
                 break;
             case "/theme":
-                renderer.Line(renderer.Error($"Unknown theme {parts[1]}. Themes: {string.Join(", ", Theme.BuiltIn.Select(t => t.Name))}."));
+                renderer.Line(renderer.Error($"Unknown theme {parts[1]}. Themes: {string.Join(", ", Theme.All().Select(t => t.Name))}."));
                 break;
             case "/dock" when !screen.FullScreen:
                 renderer.Line(renderer.Muted("Only the full screen has a prompt to move."));

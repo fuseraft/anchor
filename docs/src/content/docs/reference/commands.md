@@ -32,12 +32,15 @@ key and pick a model. The session switches to the chosen model and keeps the con
 ### /theme
 
 ```
-/theme          list the color themes, the current one marked
-/theme mono     switch themes
+/theme              list the color themes with a sample of their colors, the current one marked
+/theme mono         switch themes
+/theme save ember   save the current colors as ~/.anchor/themes/ember.json
 ```
 
 The switch lasts for the session and applies to what's drawn from then on. To keep a theme, pick it
 in [`/setup`](#setup), or set [`theme`](/anchor/reference/config/#theme-and-colors) in the config.
+`/theme` reads [theme files](/anchor/guides/themes/) again each time, so a file you just changed
+shows up the next time you switch to it. `/theme save` won't overwrite a file that's already there.
 
 ### /dock
 

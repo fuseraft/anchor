@@ -3,8 +3,14 @@ using Terminal.Gui.Text;
 
 namespace Anchor.Cli;
 
-/// <summary>How a run of transcript text looks: an SGR foreground (31-37, or 0 for the default), bold, dim, italic, underline.</summary>
-public readonly record struct Style(int Color, bool Bold, bool Dim, bool Italic = false, bool Underline = false);
+/// <summary>
+/// How a run of transcript text looks: an SGR foreground (30-37 or 90-97, 256 + n for 256-color n,
+/// <see cref="Style.Rgb"/> + 0xrrggbb for a 24-bit color, or 0 for the default), bold, dim, italic, underline.
+/// </summary>
+public readonly record struct Style(int Color, bool Bold, bool Dim, bool Italic = false, bool Underline = false)
+{
+    public const int Rgb = 0x1000000;
+}
 
 public readonly record struct Span(string Text, Style Style);
 
@@ -49,7 +55,15 @@ public sealed class Transcript : TextWriter
         string.Concat(line.Select(span => span.Style == default ? span.Text : $"{Sgr(span.Style)}{span.Text}\e[0m"));
 
     static string Sgr(Style style) =>
-        "\e[" + string.Join(';', new[] { style.Bold ? "1" : null, style.Dim ? "2" : null, style.Italic ? "3" : null, style.Underline ? "4" : null, style.Color > 0 ? style.Color.ToString() : null }.OfType<string>()) + "m";
+        "\e[" + string.Join(';', new[] { style.Bold ? "1" : null, style.Dim ? "2" : null, style.Italic ? "3" : null, style.Underline ? "4" : null, ColorCode(style.Color) }.OfType<string>()) + "m";
+
+    static string? ColorCode(int color) => color switch
+    {
+        >= Style.Rgb => $"38;2;{(color >> 16) & 255};{(color >> 8) & 255};{color & 255}",
+        >= 256 => $"38;5;{color - 256}",
+        > 0 => color.ToString(),
+        _ => null,
+    };
 
     /// <summary>
     /// Writes a whole line above what's still being streamed (the open line, or the whole message while
@@ -254,12 +268,14 @@ public sealed class Transcript : TextWriter
         text.Clear();
     }
 
-    // The subset of SGR the Renderer, Markdown and Picker use: reset, bold, dim, italic, underline, their resets, and the foreground colors.
+    // The subset of SGR the Renderer, Markdown and Picker use: reset, bold, dim, italic, underline, their resets, and the
+    // foreground colors: 16, 256 (38;5;n) and 24-bit (38;2;r;g;b).
     void Apply(string parameters)
     {
-        foreach (var p in parameters.Split(';'))
+        var ps = parameters.Split(';').Select(p => int.TryParse(p, out var n) ? n : 0).ToArray();
+        for (var i = 0; i < ps.Length; i++)
         {
-            _style = (int.TryParse(p, out var n) ? n : 0) switch
+            _style = ps[i] switch
             {
                 0 => default,
                 1 => _style with { Bold = true },
@@ -271,9 +287,14 @@ public sealed class Transcript : TextWriter
                 24 => _style with { Underline = false },
                 >= 30 and <= 37 and var color => _style with { Color = color },
                 >= 90 and <= 97 and var bright => _style with { Color = bright },
+                38 when i + 2 < ps.Length && ps[i + 1] == 5 && ps[i + 2] is >= 0 and <= 255 => _style with { Color = 256 + ps[i + 2] },
+                38 when i + 4 < ps.Length && ps[i + 1] == 2 && ps[(i + 2)..(i + 5)].All(c => c is >= 0 and <= 255)
+                    => _style with { Color = Style.Rgb + (ps[i + 2] << 16) + (ps[i + 3] << 8) + ps[i + 4] },
                 39 => _style with { Color = 0 },
                 _ => _style,
             };
+            if (ps[i] == 38 && i + 1 < ps.Length)
+                i += ps[i + 1] == 5 ? 2 : ps[i + 1] == 2 ? 4 : 1;
         }
     }
 

@@ -59,7 +59,8 @@ static class Styled
     {
         if (style == default)
             return plain;
-        var fg = style.Color switch
+        // 256-colors 0-15 are the terminal's own 16, so they go through the same names.
+        var fg = (style.Color is >= 256 and < 272 ? style.Color - 256 + (style.Color < 264 ? 30 : 82) : style.Color) switch
         {
             30 => new Color(ColorName16.Black),
             31 => new Color(ColorName16.Red),
@@ -77,12 +78,16 @@ static class Styled
             95 => new Color(ColorName16.BrightMagenta),
             96 => new Color(ColorName16.BrightCyan),
             97 => new Color(ColorName16.White),
+            >= 256 and < 512 => Rgb(Theme.Rgb(style.Color - 256)),
+            >= Style.Rgb => Rgb(((style.Color >> 16) & 255, (style.Color >> 8) & 255, style.Color & 255)),
             _ => Color.None,
         };
         var text = (style.Bold ? TextStyle.Bold : TextStyle.None) | (style.Dim ? TextStyle.Faint : TextStyle.None)
             | (style.Italic ? TextStyle.Italic : TextStyle.None) | (style.Underline ? TextStyle.Underline : TextStyle.None);
         return new Attribute(fg, Color.None, text);
     }
+
+    static Color Rgb((int R, int G, int B) c) => new(c.R, c.G, c.B);
 }
 
 /// <summary>Takes the prompt's place for approvals, ask_user and setup: a few lines of text, and a key handler.</summary>

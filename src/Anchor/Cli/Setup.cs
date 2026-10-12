@@ -120,9 +120,10 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
     async Task PickThemeAsync(CancellationToken ct)
     {
         var key = Load().Select(p => p.Key).FirstOrDefault(k => k.Equals("theme", StringComparison.OrdinalIgnoreCase)) ?? "theme";
-        var current = Theme.Named(Load()[key]?.GetValue<string>() ?? "") ?? Theme.BuiltIn[0];
-        var width = Theme.BuiltIn.Max(t => t.Name.Length) + 2;
-        var labels = Theme.BuiltIn.ToDictionary(t => t.Name.PadRight(width) + t.Description);
+        var themes = Theme.All(Path.Combine(Path.GetDirectoryName(configPath)!, "themes"));
+        var current = Theme.Named(Load()[key]?.GetValue<string>() ?? "", themes) ?? Theme.BuiltIn[0];
+        var width = themes.Max(t => t.Name.Length) + 2;
+        var labels = themes.ToDictionary(t => t.Name.PadRight(width) + t.Description);
         var choice = await io.SelectAsync("Which colors? (Esc keeps the current ones)", [.. labels.Keys], current.Name.PadRight(width) + current.Description, ct: ct);
         if (choice is null || !labels.TryGetValue(choice, out var theme) || theme == current)
             return;
