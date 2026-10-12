@@ -85,6 +85,13 @@ public sealed class ThemeTests : IDisposable
     [InlineData("#ff88", null)]
     [InlineData("#gg0000", null)]
     [InlineData("orange", null)]
+    [InlineData("on red", "41")]
+    [InlineData("on bright-blue", "104")]
+    [InlineData("bold on 238", "1;48;5;238")]
+    [InlineData("#e8e0d8 on #1c1714", "38;2;232;224;216;48;2;28;23;20")]
+    [InlineData("on", null)]
+    [InlineData("on bold", null)]
+    [InlineData("on on red", null)]
     public void Sgr_ReadsColorWords(string words, string? sgr) => Assert.Equal(sgr, Theme.Sgr(words));
 
     [Fact]
@@ -102,8 +109,8 @@ public sealed class ThemeTests : IDisposable
             {
               "description": "embers on charcoal",
               "base": "rust",
-              "palette": { "ember": "#ff6a1f", "ash": "245", },
-              "colors": { "accent": "bold ember", "muted": "ash", "error": "bright-red" },
+              "palette": { "ember": "#ff6a1f", "ash": "245", "night": "#1c1714" },
+              "colors": { "accent": "bold ember", "muted": "ash", "error": "bright-red", "text": "ash on night" },
             }
             """);
 
@@ -115,6 +122,7 @@ public sealed class ThemeTests : IDisposable
         Assert.Equal("1;38;2;255;106;31", ember.Accent);
         Assert.Equal("38;5;245", ember.Muted);
         Assert.Equal("91", ember.Error);
+        Assert.Equal("38;5;245;48;2;28;23;20", ember.Text);
         Assert.Equal(Theme.Named("rust")!.Tool, ember.Tool);
         Assert.Equal(ember, Theme.Named("EMBER", Theme.All(_dir)));
     }
@@ -165,6 +173,17 @@ public sealed class ThemeTests : IDisposable
     }
 
     [Theory]
+    [InlineData("38;2;232;224;216;48;2;28;23;20", "#e8e0d8 on #1c1714")]
+    [InlineData("1;104", "bold on bright-blue")]
+    [InlineData("48;5;238", "on 238")]
+    [InlineData("", "none")]
+    public void WordsOf_WritesBackgroundsWithOn(string sgr, string words)
+    {
+        Assert.Equal(words, Theme.WordsOf(sgr));
+        Assert.Equal(sgr, Theme.Sgr(words));
+    }
+
+    [Theory]
     [InlineData(255, 135, 0, 208)]   // orange, in the cube
     [InlineData(128, 128, 128, 244)] // gray, on the ramp
     [InlineData(0, 0, 0, 16)]
@@ -173,9 +192,9 @@ public sealed class ThemeTests : IDisposable
     [Fact]
     public void To256_TurnsHexColorsInto256Colors_AndLeavesTheRest()
     {
-        var theme = new Theme { Accent = "1;38;2;255;135;0", Tool = "38;5;33" }.To256();
+        var theme = new Theme { Accent = "1;38;2;255;135;0", Tool = "38;5;33", Text = "38;2;255;135;0;48;2;28;23;20" }.To256();
 
-        Assert.Equal(("1;38;5;208", "38;5;33", "32"), (theme.Accent, theme.Tool, theme.Success));
+        Assert.Equal(("1;38;5;208", "38;5;33", "32", "38;5;208;48;5;234"), (theme.Accent, theme.Tool, theme.Success, theme.Text));
     }
 
     [Theory]

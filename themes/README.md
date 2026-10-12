@@ -18,7 +18,8 @@ mkdir -p ~/.anchor/themes
 curl -fsSL https://raw.githubusercontent.com/fuseraft/anchor/main/themes/ember.json -o ~/.anchor/themes/ember.json
 ```
 
-All of them except `phosphor` use hex colors. On a terminal that doesn't show 24-bit color, anchor
+Each one paints the full screen in its own background, with shaded code blocks, so it looks the same
+whatever your terminal's colors are. All of them except `phosphor` use hex colors. On a terminal that doesn't show 24-bit color, anchor
 draws each hex color as the closest 256-color.
 
 [Making a theme](https://fuseraft.ai/anchor/guides/themes/) explains the file format. Each

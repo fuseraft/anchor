@@ -242,7 +242,7 @@ same in both. The one difference is the model's text: in the TUI, `Cli/Markdown.
 streams, and the Renderer hands it to `Transcript.Stream`, which redraws the open part of the
 message (the line being written, or a table, which is held until it ends) while settled lines stay
 put. Code blocks are colored by `Cli/Highlighter.cs`, with the TextMate grammars that Terminal.Gui
-already brings, mapped onto the 16 terminal colors rather than a theme's. Anything else the agent
+already brings, mapped onto the theme's syntax roles. Anything else the agent
 does ends the message; a sub-agent's lines go above it. A plain terminal can't take text back, so
 `LineScreen` shows the Markdown as written. Approvals, `ask_user` and setup questions take the
 prompt's place and ignore keys until typing stops, so typed text can't answer them.

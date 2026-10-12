@@ -13,6 +13,7 @@
     "urchin": "#b294e8"
   },
   "colors": {
+    "text": "#d6e4ea on #0f1c24",
     "accent": "bold foam",
     "tool": "sea",
     "agent": "urchin",
@@ -23,7 +24,9 @@
     "border": "deep",
     "heading": "bold sea",
     "link": "underline foam",
+    "selection": "on #1f3a4a",
     "code": "pearl",
+    "codeblock": "on #152833",
     "comment": "mist italic",
     "string": "kelp",
     "constant": "sun",

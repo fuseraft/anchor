@@ -15,6 +15,7 @@
     "sky": "#7fb2c9"
   },
   "colors": {
+    "text": "#dcd7c9 on #1a1f16",
     "accent": "bold moss",
     "tool": "sky",
     "agent": "plum",
@@ -25,7 +26,9 @@
     "border": "soil",
     "heading": "bold moss",
     "link": "underline sky",
+    "selection": "on #2f3a26",
     "code": "lichen",
+    "codeblock": "on #222a1d",
     "comment": "stone italic",
     "string": "sprout",
     "constant": "pollen",

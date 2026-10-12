@@ -83,14 +83,14 @@ public sealed partial class Markdown(int width = int.MaxValue)
                 return null;
             }
             line = line.Replace("\t", "    ");
-            return "  " + (_code is null ? Paint(T.Code, line) : _code.Line(line, settle));
+            return Shade("  " + (_code is null ? Paint(T.Code, line) : _code.Line(line, settle)), T.CodeBlock);
         }
         if (FenceOpen().Match(line) is { Success: true } f)
         {
             var language = f.Groups[2].Value;
             if (settle)
                 (_fence, _code) = (f.Groups[1].Value, Highlighter.For(language));
-            return language.Length > 0 ? Paint(T.Muted, "  " + language) : null;
+            return language.Length > 0 ? Shade(Paint(T.Muted, "  " + language), T.CodeBlock) : null;
         }
         return Block(line, "");
     }
@@ -222,6 +222,13 @@ public sealed partial class Markdown(int width = int.MaxValue)
 
     static string With(string style, string code) => style.Length == 0 ? code : code.Length == 0 ? style : style + ";" + code;
 
+    /// <summary>
+    /// A line of a code block on the block's background: under every token, each of which ends in a reset, and to the end
+    /// of the row.
+    /// </summary>
+    internal static string Shade(string line, string background) =>
+        background.Length == 0 ? line : $"\e[{background}m" + line.Replace("\e[0m", $"\e[0;{background}m") + "\e[K\e[0m";
+
     static string Paint(string style, string s) => style.Length == 0 || s.Length == 0 ? s : $"\e[{style}m{s}\e[0m";
 
     static int Width(string styled) => Ansi().Replace(styled, "").GetColumns();
@@ -283,7 +290,7 @@ public sealed partial class Markdown(int width = int.MaxValue)
     [GeneratedRegex(@"\s*<br\s*/?>\s*", RegexOptions.IgnoreCase)]
     private static partial Regex Break();
 
-    [GeneratedRegex(@"\e\[[0-9;]*m")]
+    [GeneratedRegex(@"\e\[[0-9;]*[mK]")]
     private static partial Regex Ansi();
 
     [GeneratedRegex("""

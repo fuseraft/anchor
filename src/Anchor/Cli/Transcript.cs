@@ -4,10 +4,11 @@ using Terminal.Gui.Text;
 namespace Anchor.Cli;
 
 /// <summary>
-/// How a run of transcript text looks: an SGR foreground (30-37 or 90-97, 256 + n for 256-color n,
-/// <see cref="Style.Rgb"/> + 0xrrggbb for a 24-bit color, or 0 for the default), bold, dim, italic, underline.
+/// How a run of transcript text looks: a foreground and a background color (30-37 or 90-97 for the terminal's 16, 256 + n
+/// for 256-color n, <see cref="Style.Rgb"/> + 0xrrggbb for a 24-bit color, or 0 for the default), bold, dim, italic,
+/// underline. An empty span with a background at the end of a line fills the rest of each of its rows, as \e[K does.
 /// </summary>
-public readonly record struct Style(int Color, bool Bold, bool Dim, bool Italic = false, bool Underline = false)
+public readonly record struct Style(int Color, bool Bold, bool Dim, bool Italic = false, bool Underline = false, int Background = 0)
 {
     public const int Rgb = 0x1000000;
 }
@@ -43,7 +44,7 @@ public sealed class Transcript : TextWriter
             foreach (var (line, i) in _lines.Select((l, i) => (l, i)))
             {
                 foreach (var span in line)
-                    sb.Append(color && span.Style != default ? $"{Sgr(span.Style)}{span.Text}\e[0m" : span.Text);
+                    sb.Append(color && span.Style != default ? Painted(span) : span.Text);
                 if (i < _lines.Count - 1 || line.Count > 0)
                     sb.Append('\n');
             }
@@ -52,18 +53,21 @@ public sealed class Transcript : TextWriter
 
     /// <summary>One line of spans as ANSI text.</summary>
     public static string Ansi(List<Span> line) =>
-        string.Concat(line.Select(span => span.Style == default ? span.Text : $"{Sgr(span.Style)}{span.Text}\e[0m"));
+        string.Concat(line.Select(span => span.Style == default ? span.Text : Painted(span)));
 
     static string Sgr(Style style) =>
-        "\e[" + string.Join(';', new[] { style.Bold ? "1" : null, style.Dim ? "2" : null, style.Italic ? "3" : null, style.Underline ? "4" : null, ColorCode(style.Color) }.OfType<string>()) + "m";
+        "\e[" + string.Join(';', new[] { style.Bold ? "1" : null, style.Dim ? "2" : null, style.Italic ? "3" : null, style.Underline ? "4" : null, ColorCode(style.Color, 0), ColorCode(style.Background, 10) }.OfType<string>()) + "m";
 
-    static string? ColorCode(int color) => color switch
+    // A foreground color's code, or with 10 added (40-47, 100-107, 48;...), a background's.
+    static string? ColorCode(int color, int background) => color switch
     {
-        >= Style.Rgb => $"38;2;{(color >> 16) & 255};{(color >> 8) & 255};{color & 255}",
-        >= 256 => $"38;5;{color - 256}",
-        > 0 => color.ToString(),
+        >= Style.Rgb => $"{38 + background};2;{(color >> 16) & 255};{(color >> 8) & 255};{color & 255}",
+        >= 256 => $"{38 + background};5;{color - 256}",
+        > 0 => (color + background).ToString(),
         _ => null,
     };
+
+    static string Painted(Span span) => span.Text.Length == 0 ? $"{Sgr(span.Style)}\e[K\e[0m" : $"{Sgr(span.Style)}{span.Text}\e[0m";
 
     /// <summary>
     /// Writes a whole line above what's still being streamed (the open line, or the whole message while
@@ -232,6 +236,9 @@ public sealed class Transcript : TextWriter
                     _inEscape = false;
                     if (c == 'm')
                         Apply(_escape.ToString(1, _escape.Length - 2));
+                    // Erasing to the end of the line fills the rest of it with the background.
+                    else if (c == 'K' && _escape.ToString() is "[K" or "[0K" && _style.Background != 0)
+                        _lines[^1].Add(new Span("", _style));
                 }
                 continue;
             }
@@ -261,7 +268,7 @@ public sealed class Transcript : TextWriter
         if (text.Length == 0)
             return;
         var line = _lines[^1];
-        if (line.Count > 0 && line[^1].Style == _style)
+        if (line.Count > 0 && line[^1].Style == _style && line[^1].Text.Length > 0)
             line[^1] = new Span(line[^1].Text + text, _style);
         else
             line.Add(new Span(text.ToString(), _style));
@@ -269,7 +276,7 @@ public sealed class Transcript : TextWriter
     }
 
     // The subset of SGR the Renderer, Markdown and Picker use: reset, bold, dim, italic, underline, their resets, and the
-    // foreground colors: 16, 256 (38;5;n) and 24-bit (38;2;r;g;b).
+    // foreground and background colors: 16, 256 (38;5;n, 48;5;n) and 24-bit (38;2;r;g;b, 48;2;r;g;b).
     void Apply(string parameters)
     {
         var ps = parameters.Split(';').Select(p => int.TryParse(p, out var n) ? n : 0).ToArray();
@@ -287,16 +294,23 @@ public sealed class Transcript : TextWriter
                 24 => _style with { Underline = false },
                 >= 30 and <= 37 and var color => _style with { Color = color },
                 >= 90 and <= 97 and var bright => _style with { Color = bright },
-                38 when i + 2 < ps.Length && ps[i + 1] == 5 && ps[i + 2] is >= 0 and <= 255 => _style with { Color = 256 + ps[i + 2] },
-                38 when i + 4 < ps.Length && ps[i + 1] == 2 && ps[(i + 2)..(i + 5)].All(c => c is >= 0 and <= 255)
-                    => _style with { Color = Style.Rgb + (ps[i + 2] << 16) + (ps[i + 3] << 8) + ps[i + 4] },
+                38 when Extended(ps, i) is { } color => _style with { Color = color },
                 39 => _style with { Color = 0 },
+                >= 40 and <= 47 or >= 100 and <= 107 => _style with { Background = ps[i] - 10 },
+                48 when Extended(ps, i) is { } color => _style with { Background = color },
+                49 => _style with { Background = 0 },
                 _ => _style,
             };
-            if (ps[i] == 38 && i + 1 < ps.Length)
+            if (ps[i] is 38 or 48 && i + 1 < ps.Length)
                 i += ps[i + 1] == 5 ? 2 : ps[i + 1] == 2 ? 4 : 1;
         }
     }
+
+    // The color after a 38 or 48 at ps[i]: 5;n or 2;r;g;b.
+    static int? Extended(int[] ps, int i) =>
+        i + 2 < ps.Length && ps[i + 1] == 5 && ps[i + 2] is >= 0 and <= 255 ? 256 + ps[i + 2]
+        : i + 4 < ps.Length && ps[i + 1] == 2 && ps[(i + 2)..(i + 5)].All(c => c is >= 0 and <= 255) ? Style.Rgb + (ps[i + 2] << 16) + (ps[i + 3] << 8) + ps[i + 4]
+        : null;
 
     /// <summary>Breaks a line into rows of at most <paramref name="width"/> columns, at spaces where it can.</summary>
     public static List<List<Span>> Wrap(List<Span> line, int width)
@@ -328,6 +342,10 @@ public sealed class Transcript : TextWriter
             if (start >= cells.Count)
                 break;
         }
+        // A line that fills its rows with a background fills every one of them.
+        if (line is [.., { Text.Length: 0 } fill])
+            foreach (var row in rows)
+                row.Add(fill);
         return rows;
     }
 

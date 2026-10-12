@@ -15,6 +15,7 @@
     "copper": "#c8784c"
   },
   "colors": {
+    "text": "#eadfd4 on #1c1512",
     "accent": "bold ember",
     "tool": "flame",
     "agent": "rose",
@@ -25,7 +26,9 @@
     "border": "coal",
     "heading": "bold flame",
     "link": "underline sand",
+    "selection": "on #3a2a22",
     "code": "sand",
+    "codeblock": "on #261c18",
     "comment": "ash italic",
     "string": "sage",
     "constant": "gold",
