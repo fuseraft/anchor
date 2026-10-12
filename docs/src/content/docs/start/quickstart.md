@@ -88,7 +88,7 @@ See [Working until a check passes](/anchor/guides/until/).
 ## Find your way around
 
 - `@src/app.py` in a message attaches the file; Tab completes the path as you type.
-- **Ctrl+O** shows the last tool's whole output, or a diff in full.
+- **Ctrl+O** shows the last tool's whole output, a diff in full, or the model's thinking.
 - **Ctrl+F** finds text in the conversation, and **Ctrl+R** finds an earlier message.
 - `/copy` copies the last reply; `/copy code` copies a code block from it.
 - `/help` lists every command and key. [Using the REPL](/anchor/guides/repl/) has the details.

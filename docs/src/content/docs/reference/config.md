@@ -71,7 +71,9 @@ Any other model defaults to a 128,000-token window.
 - **OpenAI-compatible servers** get `reasoning_effort`. Which levels a model accepts depends on the
   model, and a server that doesn't support the parameter refuses the request.
 
-Without `effort`, nothing is sent and the model's own default applies. `--effort` and
+With an effort set, anchor asks for the thinking summarized and
+[shows it](/anchor/guides/repl/#thinking) as it streams. Without `effort`, nothing is sent and the
+model's own default applies. `--effort` and
 [`/effort`](/anchor/reference/commands/#effort) change it for one run or session. Sub-agents use the
 main agent's effort. The setup wizard keeps `effort` when it replaces the rest of `provider`.
 

@@ -163,5 +163,5 @@ See [MCP servers](/anchor/guides/mcp/).
 | Ctrl+R          | Search message history; Enter puts the chosen one in the prompt. |
 | PgUp / PgDn     | Scroll the conversation; Ctrl+Home goes to the top, Ctrl+End follows it again. |
 | Ctrl+F          | Find text in the conversation; Enter for older matches, Esc to close. |
-| Ctrl+O          | Show the last tool output or diff in full; ←/→ for earlier ones, Esc to close. |
+| Ctrl+O          | Show the last tool output, diff or thinking in full; ←/→ for earlier ones, Esc to close. |
 | Ctrl+D          | Exit.                                                            |

@@ -206,6 +206,8 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
                         foreach (var content in update.Contents)
                             if (content is TextContent { Text.Length: > 0 } text)
                                 emit(new TextDelta(text.Text));
+                            else if (content is TextReasoningContent { Text.Length: > 0 } thought)
+                                emit(new ThinkingDelta(thought.Text));
                     }
                 }
                 catch (Exception e) when (!overflowRetried && streamed.Count == 0 && compactor is not null && Compactor.IsContextOverflow(e) && !ct.IsCancellationRequested)

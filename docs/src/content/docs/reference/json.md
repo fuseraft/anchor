@@ -10,6 +10,7 @@ With `--json`, anchor writes one JSON object per line to stdout. Every object ha
 | `type`           | Fields                                                         | When                                           |
 | ---------------- | -------------------------------------------------------------- | ---------------------------------------------- |
 | `text`           | `text`                                                         | A piece of the model's reply, as it streams.  |
+| `thinking`       | `text`                                                         | A piece of the model's thinking, as it streams; see [reasoning effort](/anchor/reference/config/#reasoning-effort). |
 | `tool_start`     | `id`, `name`, `summary`                                        | A tool call starts.                            |
 | `tool_end`       | `id`, `name`, `ok`, `result`                                   | A tool call finishes.                          |
 | `file_changed`   | `path`, `added`, `removed`                                     | A file was written.                            |

@@ -308,6 +308,7 @@ public sealed class HeadlessTests : IDisposable
         var nested = JsonEvents.Map(new SubAgentEvent("finder", new ToolStarted("c1", "grep", "x")));
         Assert.Equal(("sub_agent", "finder", "tool_start"), ((string)nested["type"]!, (string)nested["agent"]!, (string)nested["event"]!["type"]!));
 
+        Assert.Equal("""{"type":"thinking","text":"hmm"}""", JsonEvents.Map(new ThinkingDelta("hmm")).ToJsonString());
         var trimmed = JsonEvents.Map(new Trimmed(2, 900, 400));
         Assert.Equal(("context_reduced", "trimmed", 2), ((string)trimmed["type"]!, (string)trimmed["kind"]!, (int)trimmed["count"]!));
         Assert.Equal("loop_stopped", (string)JsonEvents.Map(new TurnEnded(TurnEnd.LoopStopped))["reason"]!);

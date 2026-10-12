@@ -5,6 +5,9 @@ public abstract record AgentEvent;
 
 public sealed record TextDelta(string Text) : AgentEvent;
 
+/// <summary>Part of the model's thinking, as the provider shows it (Claude sends a summary); it comes before what it leads to.</summary>
+public sealed record ThinkingDelta(string Text) : AgentEvent;
+
 public sealed record ToolStarted(string CallId, string Name, string Summary) : AgentEvent;
 
 public sealed record ToolFinished(string CallId, string Name, bool Ok, string Result) : AgentEvent;

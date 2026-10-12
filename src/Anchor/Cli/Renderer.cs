@@ -18,6 +18,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     bool _midLine;
     Markdown? _message; // the model's message being streamed into it, while it's being redrawn
     bool _marked; // whether the model's current message has its anchor yet
+    System.Text.StringBuilder? _thought; // the model's thinking so far, until it moves on and the thinking is folded
     Action? _compacting; // takes the TUI's "compacting" line back out once whatever comes next is shown
     readonly bool _keeps = output is Transcript; // the TUI, which has a viewer for whole outputs
     readonly List<ToolOutput> _outputs = [];
@@ -25,6 +26,9 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
 
     /// <summary>How many outputs the TUI keeps for its viewer; older ones are let go.</summary>
     public const int KeptOutputs = 100;
+
+    /// <summary>How many rows of the thinking the TUI shows while it streams: its latest, so it reads as progress.</summary>
+    public const int ThinkingRows = 6;
 
     public static Renderer ForConsole() =>
         new(Console.Out, !Console.IsOutputRedirected && Environment.GetEnvironmentVariable("NO_COLOR") is null);
@@ -73,7 +77,9 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     void Draw(AgentEvent e)
     {
         EndCompacting();
-        // Anything else the agent does ends its message; a sub-agent's lines go above it instead (see Line).
+        // Anything else the agent does ends its thinking and its message; a sub-agent's lines go above them instead (see Line).
+        if (e is not (ThinkingDelta or SubAgentEvent))
+            EndThinking();
         if (e is not (TextDelta or SubAgentEvent))
         {
             EndMessage();
@@ -82,6 +88,15 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
         switch (e)
         {
             case TextDelta when !streamText:
+                break;
+            case ThinkingDelta t:
+                if (_thought is null && _midLine)
+                {
+                    output.WriteLine();
+                    _midLine = false;
+                }
+                (_thought ??= new()).Append(t.Text);
+                _styled?.Stream("", Thinking(_thought.ToString()));
                 break;
             case TextDelta t when _styled is not null:
                 if (_message is null)
@@ -245,6 +260,40 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
         _compacting = null;
     }
 
+    // While it streams, the thinking's latest rows, dimmed under a ∴; there's no message being styled meanwhile.
+    string Thinking(string thought)
+    {
+        var width = Math.Max(Width() - 4, 20);
+        // Only the end is shown, so only the end is wrapped; the cut is at a line break, so its first row wraps as written.
+        var tail = thought.Length > ThinkingRows * width * 2 ? thought[^(ThinkingRows * width * 2)..] : thought;
+        if (tail.Length < thought.Length && tail.IndexOf('\n') is var cut and >= 0)
+            tail = tail[(cut + 1)..];
+        var rows = tail.Trim().Split('\n')
+            .SelectMany(line => Transcript.Wrap([new Span(line.TrimEnd(), default)], width))
+            .Select(row => string.Concat(row.Select(s => s.Text)))
+            .TakeLast(ThinkingRows);
+        return string.Join("\n", rows.Select((row, i) => (i == 0 ? "  ∴ " : "    ") + Muted(row)));
+    }
+
+    // Folds the thinking into one line, and keeps it whole for the TUI's viewer.
+    void EndThinking()
+    {
+        if (_thought is null)
+            return;
+        var thought = _thought.ToString().Trim();
+        _thought = null;
+        if (_styled is not null)
+        {
+            _styled.Stream("", "");
+            _styled.EndStream();
+        }
+        if (thought.Length == 0)
+            return;
+        var words = thought.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+        Line(Muted($"  ∴ thought · {words:N0} word{(words == 1 ? "" : "s")}" + (_keeps ? " · Ctrl+O" : "")));
+        Keep(new ToolOutput("thinking", thought, Diff: false));
+    }
+
     void EndMessage()
     {
         if (_message is null)
@@ -258,7 +307,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
         lock (_lock)
         {
             EndCompacting();
-            if (_styled is not null && _message is not null)
+            if (_styled is not null && (_message ?? (object?)_thought) is not null)
             {
                 _styled.WriteLineAbove(text);
                 return;

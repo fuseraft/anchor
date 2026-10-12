@@ -252,7 +252,7 @@ public sealed partial class Repl
                     Ctrl+C          cancel the running turn
                     Ctrl+F          find text in the conversation
                     Ctrl+R          search earlier messages
-                    Ctrl+O          show the last tool output or diff in full; ←/→ for earlier ones
+                    Ctrl+O          show the last tool output, diff or thinking in full; ←/→ for earlier ones
 
                     While anchor works you can keep typing: Enter sends the message into the
                     running turn, read after its current step. Commands wait for the turn to end.
