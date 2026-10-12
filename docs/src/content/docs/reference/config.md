@@ -113,7 +113,8 @@ replaced with the environment variable's value, or an empty string when it isn't
 
 ## theme and colors
 
-`theme` names a built-in theme, and `colors` changes single roles on top of it. The
+`theme` names a built-in theme or one of [your own](/anchor/guides/themes/), and `colors` changes
+single roles on top of it. The
 [setup wizard](/anchor/start/configuration/#the-setup-wizard) saves `theme` for you. `--theme` and
 `/theme` override it. `NO_COLOR` still turns color off entirely.
 
@@ -123,17 +124,24 @@ replaced with the environment variable's value, or an empty string when it isn't
 | `bright`  | The bright variants and no dim text, for dark terminals whose normal colors are too dark. |
 | `light`   | For light backgrounds: no yellow or bright colors, which wash out on white. Warnings are magenta. |
 | `mono`    | No colors, only bold, dim and underline.                                    |
+| `rust`    | Warm oranges and rust reds around white text, for dark backgrounds.         |
 
 Themes use the terminal's own 16 colors, so they follow its palette and read on light and dark
-backgrounds alike; `light` is for palettes where yellow is hard to read on white. A color in `colors` is one or more of these words, separated by spaces:
+backgrounds alike; `light` is for palettes where yellow is hard to read on white. `rust` is the
+exception: the 16 have no orange, so it uses the 256-color palette, which most terminals support.
+
+A color in `colors` is one or more of these words, separated by spaces:
 `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `gray`, `bright-red`,
 `bright-green`, `bright-yellow`, `bright-blue`, `bright-magenta`, `bright-cyan`, `bright-white`,
-`bold`, `dim`, `italic`, `underline`, or `none` for plain text.
+`bold`, `dim`, `italic`, `underline`, a [256-color](https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit)
+number from `0` to `255` (`208` is orange), a hex color such as `#ff6a1f`, or `none` for plain text.
+Hex colors are drawn as the closest 256-color on terminals that don't show 24-bit color; see
+[Hex colors on other terminals](/anchor/guides/themes/#hex-colors-on-other-terminals).
 
 ```json
 {
   "theme": "bright",
-  "colors": { "accent": "bold magenta", "comment": "gray italic" }
+  "colors": { "accent": "bold magenta", "comment": "gray italic", "border": "238" }
 }
 ```
 
@@ -152,7 +160,8 @@ backgrounds alike; `light` is for palettes where yellow is hard to read on white
 | `code`     | Inline code, and code blocks in a language anchor can't highlight. |
 | `comment`, `string`, `constant`, `keyword`, `function`, `type` | Syntax highlighting in code blocks. |
 
-An unknown theme, role or color word is reported when anchor starts, and the rest still applies.
+An unknown theme, role or color word is reported when anchor starts, and the rest still applies. So
+is anything in a [theme file](/anchor/guides/themes/) that can't be read.
 
 ## bell
 

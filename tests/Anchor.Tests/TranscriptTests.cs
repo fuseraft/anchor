@@ -19,6 +19,16 @@ public class TranscriptTests
     }
 
     [Fact]
+    public void Write_Reads256And24BitColors()
+    {
+        var t = new Transcript();
+        t.Write("\e[1;38;5;208morange\e[0m \e[38;2;1;2;3;4mtrue\e[0m");
+
+        Assert.Equal([new Span("orange", new Style(256 + 208, true, false)), new Span(" ", Plain), new Span("true", new Style(Style.Rgb + 0x010203, false, false, Underline: true))], t.Lines()[0]);
+        Assert.Equal("\e[1;38;5;208morange\e[0m \e[4;38;2;1;2;3mtrue\e[0m", Transcript.Ansi(t.Lines()[0]));
+    }
+
+    [Fact]
     public void Clear_StartsOver_AndTellsTheViewToRebuild()
     {
         var t = new Transcript();

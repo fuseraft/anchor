@@ -351,6 +351,14 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
 
     public string Bold(string s) => Paint("1", s);
 
+    /// <summary>A theme's name in its accent, and a dot in each of its main colors, for choosing between themes.</summary>
+    public string Swatch(Theme theme, int width)
+    {
+        var shown = Theme.TrueColor ? theme : theme.To256();
+        return Paint(shown.Accent, theme.Name) + new string(' ', Math.Max(1, width - theme.Name.Length))
+            + string.Concat(new[] { shown.Accent, shown.Tool, shown.Agent, shown.Success, shown.Warning, shown.Error, shown.String, shown.Keyword }.Select(c => Paint(c, "●")));
+    }
+
     string Paint(string code, string s) => color && code.Length > 0 ? $"\e[{code}m{s}\e[0m" : s;
 
     /// <summary>A path as people write it: ~ for the home directory, and the start cut to "…/" when it's longer than

@@ -27,7 +27,7 @@ public sealed record Options(string? Model, bool Yolo, bool Resume, string? Resu
           --timeout <seconds>  with -p: stop after this long (exit code 124)
           --json               write events as JSON lines; without -p, read requests from stdin
           --plain              a line-by-line REPL instead of the full-screen one
-          --theme <name>       colors: default, bright, light or mono (default: theme in the config)
+          --theme <name>       colors: default, bright, light, mono, rust or your own (default: theme in the config)
           --version, --help
 
         Config: ~/.anchor/config.json (ANCHOR_HOME overrides the directory).

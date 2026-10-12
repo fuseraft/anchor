@@ -14,7 +14,7 @@ public sealed class Config
 
     public Dictionary<string, Anchor.Mcp.McpServerConfig>? McpServers { get; set; }
 
-    /// <summary>A built-in theme's name; see <see cref="Cli.Theme"/>.</summary>
+    /// <summary>A theme's name, built in or a file in ~/.anchor/themes; see <see cref="Cli.Theme"/>.</summary>
     public string? Theme { get; set; }
 
     /// <summary>Colors for single roles, on top of the theme: "accent": "bold magenta".</summary>
