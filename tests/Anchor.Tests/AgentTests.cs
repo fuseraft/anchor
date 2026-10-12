@@ -46,7 +46,7 @@ public class AgentTests
         Assert.Equal([new ThinkingDelta("Let me "), new ThinkingDelta("think."), new TextDelta("done")],
             _events.Where(e => e is ThinkingDelta or TextDelta));
         var reasoning = agent.History[^1].Contents.OfType<TextReasoningContent>().ToList();
-        Assert.Equal("Let me think.", string.Concat(reasoning.Select(r => r.Text)));
+        Assert.Equal("Let me think.", reasoning[0].Text);
         Assert.Contains(reasoning, r => r.ProtectedData == "sig");
     }
 

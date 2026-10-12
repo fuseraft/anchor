@@ -276,4 +276,31 @@ public class RendererTests
         Assert.Equal("  ∴ thought · 3 words" + Environment.NewLine, output.ToString());
         Assert.Empty(renderer.Outputs);
     }
+
+    [Fact]
+    public void Replay_FoldsEachTurnsThinking_AndKeepsIt()
+    {
+        var t = new Transcript();
+        var renderer = new Renderer(t, color: false);
+        List<Microsoft.Extensions.AI.ChatMessage> history =
+        [
+            new(Microsoft.Extensions.AI.ChatRole.User, "fix it"),
+            new(Microsoft.Extensions.AI.ChatRole.Assistant,
+            [
+                new Microsoft.Extensions.AI.TextReasoningContent("Read the test first."),
+                new Microsoft.Extensions.AI.TextReasoningContent("") { ProtectedData = "sig" },
+                new Microsoft.Extensions.AI.FunctionCallContent("c1", "read_file"),
+            ]),
+            new(Microsoft.Extensions.AI.ChatRole.Tool, [new Microsoft.Extensions.AI.FunctionResultContent("c1", "...")]),
+            new(Microsoft.Extensions.AI.ChatRole.Assistant, [new Microsoft.Extensions.AI.TextReasoningContent("Now fix it."), new Microsoft.Extensions.AI.TextContent("Fixed.")]),
+            new(Microsoft.Extensions.AI.ChatRole.User, "thanks"),
+            new(Microsoft.Extensions.AI.ChatRole.Assistant, "Welcome."),
+        ];
+
+        renderer.Replay(history, turns: 5);
+
+        Assert.Equal(["", "› fix it", "  ∴ thought · 7 words · Ctrl+O", "  ↳ 1 tool call", "⚓\uFE0E Fixed.", "", "› thanks", "⚓\uFE0E Welcome.", ""],
+            t.Lines().Select(Text));
+        Assert.Equal(new ToolOutput("thinking", "Read the test first.\n\nNow fix it.", false), Assert.Single(renderer.Outputs));
+    }
 }

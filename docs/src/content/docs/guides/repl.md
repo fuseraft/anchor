@@ -95,11 +95,13 @@ plain Markdown.
 
 ## Thinking
 
-With a [reasoning effort](/anchor/reference/config/#reasoning-effort) set, the model may think
-before it answers or calls a tool. While it thinks, the latest few lines of its thinking show
+Models may think before they answer or call a tool: Claude when a
+[reasoning effort](/anchor/reference/config/#reasoning-effort) is set, grok on its own, more at a
+higher effort and on harder tasks. While it thinks, the latest few lines of its thinking show
 dimmed under a `∴`. When it moves on, they fold into one line, such as `∴ thought · 214 words ·
 Ctrl+O`, and Ctrl+O shows the whole of it. Claude's thinking is shown as the summary the API sends,
-not word for word. `--plain` and `-p` show only the folded line.
+not word for word. `--plain` and `-p` show only the folded line. A resumed session shows each
+turn's thinking folded the same way.
 
 ## Seeing a tool's whole output
 

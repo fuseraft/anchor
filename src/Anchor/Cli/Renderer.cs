@@ -287,6 +287,12 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
             _styled.Stream("", "");
             _styled.EndStream();
         }
+        Thought(thought);
+    }
+
+    // One line for the model's thinking; the TUI keeps the whole of it for its viewer.
+    void Thought(string thought)
+    {
         if (thought.Length == 0)
             return;
         var words = thought.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
@@ -322,7 +328,7 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
         }
     }
 
-    /// <summary>Re-shows the last <paramref name="turns"/> turns after a resume: the request, tool count, and final answer.</summary>
+    /// <summary>Re-shows the last <paramref name="turns"/> turns after a resume: the request, the thinking, tool count, and final answer.</summary>
     public void Replay(IReadOnlyList<Microsoft.Extensions.AI.ChatMessage> history, int turns)
     {
         var starts = Enumerable.Range(0, history.Count).Where(i => Messages.IsUserInput(history[i])).ToList();
@@ -333,9 +339,13 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
             var end = n + 1 < starts.Count ? starts[n + 1] : history.Count;
             var turn = history.Skip(start).Take(end - start).ToList();
             var calls = turn.SelectMany(m => m.Contents).OfType<Microsoft.Extensions.AI.FunctionCallContent>().Count();
+            // Each block of thinking in the turn, a paragraph apiece; blocks with only a signature have no text to show.
+            var thought = string.Join("\n\n", turn.SelectMany(m => m.Contents).OfType<Microsoft.Extensions.AI.TextReasoningContent>()
+                .Select(r => r.Text.Trim()).Where(t => t.Length > 0));
             var answer = turn.LastOrDefault(m => m.Role == Microsoft.Extensions.AI.ChatRole.Assistant && m.Text.Length > 0)?.Text ?? "";
             Line("");
             Line(Prompt + FirstLine(turn[0].Text));
+            Thought(thought);
             if (calls > 0)
                 Line(Muted($"  ↳ {calls} tool call{(calls == 1 ? "" : "s")}"));
             if (answer.Length > 0)
