@@ -11,11 +11,31 @@ internal sealed class AnthropicChatClient(IChatClient inner) : DelegatingChatCli
 {
     public override Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
-        base.GetResponseAsync(WithBreakpoints(messages), options, cancellationToken);
+        base.GetResponseAsync(WithBreakpoints(WithoutUnsignedReasoning(messages)), options, cancellationToken);
 
     public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
-        base.GetStreamingResponseAsync(WithBreakpoints(messages), options, cancellationToken);
+        base.GetStreamingResponseAsync(WithBreakpoints(WithoutUnsignedReasoning(messages)), options, cancellationToken);
+
+    /// <summary>Drops reasoning with no signature, which another provider wrote before a /model switch; the API rejects a
+    /// thinking block it didn't sign. Claude's own thinking carries its signature and goes back as it came.</summary>
+    internal static IEnumerable<ChatMessage> WithoutUnsignedReasoning(IEnumerable<ChatMessage> messages)
+    {
+        static bool Unsigned(AIContent c) => c is TextReasoningContent { ProtectedData: null or "" };
+
+        foreach (var message in messages)
+        {
+            if (!message.Contents.Any(Unsigned))
+            {
+                yield return message;
+                continue;
+            }
+            var clone = message.Clone();
+            clone.Contents = [.. message.Contents.Where(c => !Unsigned(c))];
+            if (clone.Contents.Count > 0)
+                yield return clone;
+        }
+    }
 
     internal static List<ChatMessage> WithBreakpoints(IEnumerable<ChatMessage> messages)
     {

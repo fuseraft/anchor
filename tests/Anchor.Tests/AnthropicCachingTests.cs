@@ -44,4 +44,25 @@ public class AnthropicCachingTests
 
         Assert.Equal(2, sent.SelectMany(m => m.Contents).Count(Cached));
     }
+
+    [Fact]
+    public void UnsignedReasoning_IsDropped_SignedReasoningKept()
+    {
+        List<ChatMessage> history =
+        [
+            new(ChatRole.User, "one"),
+            new(ChatRole.Assistant, [new TextReasoningContent("grok's thoughts"), new TextContent("from grok")]),
+            new(ChatRole.Assistant, [new TextReasoningContent("only thoughts")]),
+            new(ChatRole.User, "two"),
+            new(ChatRole.Assistant, [new TextReasoningContent("claude's thoughts") { ProtectedData = "sig" }, new TextContent("from claude")]),
+        ];
+
+        var sent = AnthropicChatClient.WithoutUnsignedReasoning(history).ToList();
+
+        Assert.Equal(4, sent.Count);
+        Assert.IsType<TextContent>(Assert.Single(sent[1].Contents));
+        Assert.Equal("sig", Assert.IsType<TextReasoningContent>(sent[3].Contents[0]).ProtectedData);
+        Assert.Same(history[4], sent[3]);
+        Assert.Equal(2, history[1].Contents.Count);
+    }
 }

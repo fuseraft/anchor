@@ -142,12 +142,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
         if (model is null)
             return null;
 
-        Save(root =>
-        {
-            var provider = ProviderObject(root);
-            provider.Clear();
-            provider["model"] = model;
-        });
+        Save(root => ReplaceProvider(root, model));
         return model;
     }
 
@@ -217,9 +212,7 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
             else
                 saved["apiKeyEnv"] = env;
 
-            var provider = ProviderObject(root);
-            provider.Clear();
-            provider["model"] = reference;
+            ReplaceProvider(root, reference);
         });
         return reference;
     }
@@ -388,6 +381,15 @@ public sealed class Setup(ISetupIO io, IKeychain keychain, CredentialsFile crede
         edit(root);
         Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
         File.WriteAllText(configPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
+    }
+
+    // A new server's endpoint, key and window don't carry over; the effort is how the user likes to work, so it does.
+    static void ReplaceProvider(JsonObject root, string model)
+    {
+        var provider = ProviderObject(root);
+        foreach (var key in provider.Select(p => p.Key).Where(k => !k.Equals("effort", StringComparison.OrdinalIgnoreCase)).ToList())
+            provider.Remove(key);
+        provider["model"] = model;
     }
 
     static JsonObject ProviderObject(JsonObject root)

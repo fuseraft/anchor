@@ -30,6 +30,7 @@ public static class Startup
         var provider = Providers.Providers.Resolve(options.Model ?? config.Provider.Model, config.Provider.Name, config.Provider.Endpoint, config.Provider.ApiKeyEnv, config.Providers);
         var client = await models.CreateAsync(provider);
         var window = Providers.Providers.ContextWindow(provider, config.Provider.ContextWindow);
+        var effort = Providers.Providers.ParseEffort(options.Effort ?? config.Provider.Effort);
 
         if (output.Interactive)
             Update.Start(config, m => emit(new Notice(m)));
@@ -53,19 +54,19 @@ public static class Startup
         var systemPrompt = SystemPrompt.Build(workspace, DateOnly.FromDateTime(DateTime.Now), skills);
         // A bug that ends a turn is recorded in a crash log; a provider or network failure is just reported.
         Func<Exception, string?> describeFailure = e => CrashLog.IsBug(e) ? CrashLog.Record(e) : null;
-        var agent = new Agent(client, toolbox, systemPrompt, emit, Providers.Providers.Options(provider), compactor: new Compactor(window))
+        var agent = new Agent(client, toolbox, systemPrompt, emit, Providers.Providers.Options(provider, effort), compactor: new Compactor(window))
         {
             MaxRounds = options.MaxRounds,
             DescribeFailure = describeFailure,
         };
 
-        // Sub-agents use the main agent's current model unless their definition names one.
+        // Sub-agents use the main agent's current model unless their definition names one, and its current effort.
         var runner = new SubAgentRunner(toolbox, systemPrompt, emit, async model =>
         {
             if (model is null)
                 return (agent.Client, agent.Options);
             var settings = models.Resolve(model);
-            return (await models.CreateAsync(settings), Providers.Providers.Options(settings));
+            return (await models.CreateAsync(settings), Providers.Providers.Options(settings, agent.Options.Reasoning?.Effort));
         }, () => new Compactor(window), options.MaxRounds)
         {
             Report = agent.Notify,

@@ -24,6 +24,19 @@ With a name, the switch lasts for the session. Either way the conversation carri
 model. The model name follows the same rules as `--model`; see
 [Configuration](/anchor/start/configuration/#choosing-a-model).
 
+### /effort
+
+```
+/effort          show the current effort and the levels
+/effort high     think harder for the rest of the session
+/effort default  leave it to the model again
+```
+
+The levels are `none`, `low`, `medium`, `high` and `xhigh`. The change lasts for the session and
+carries over a `/model` switch; to keep one, set
+[`provider.effort`](/anchor/reference/config/#reasoning-effort) in the config. The status line shows
+the effort next to the model when one is set.
+
 ### /setup
 
 Runs the [setup wizard](/anchor/start/configuration/#the-setup-wizard): choose a provider, save its

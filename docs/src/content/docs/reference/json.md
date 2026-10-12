@@ -61,7 +61,7 @@ programs.
 
 | `type`             | Fields                           | When                                                  |
 | ------------------ | -------------------------------- | ----------------------------------------------------- |
-| `ready`            | `session`, `model`, `tools`      | At startup and after each turn: it can take input.    |
+| `ready`            | `session`, `model`, `effort`, `tools` | At startup and after each turn: it can take input.    |
 | `approval_request` | `id`, `title`, `detail`, `always` | An action needs approval. `detail` is the diff for writes; `always` is the "always" label, or `null` if not offered. |
 | `question`         | `id`, `text`, `options`, `allowOther` | The model asks a multiple-choice question with `ask_user`. The turn waits for a `question_response`. |
 | `error`            | `message`                        | A request was invalid.                                |
@@ -89,7 +89,7 @@ The session ends when stdin closes.
 ### A session
 
 ```json
-→ {"type":"ready","session":"20260928-231002-4f1a","model":"claude-sonnet-5","tools":["read_file","list_dir","glob","grep","write_file","edit_file","shell","agent","agent_status","agent_stop","ask_user"]}
+→ {"type":"ready","session":"20260928-231002-4f1a","model":"claude-sonnet-5","effort":null,"tools":["read_file","list_dir","glob","grep","write_file","edit_file","shell","agent","agent_status","agent_stop","ask_user"]}
 ← {"type":"user_input","text":"create hello.txt"}
 → {"type":"tool_start","id":"toolu_1","name":"write_file","summary":"hello.txt"}
 → {"type":"approval_request","id":"a1","title":"Create hello.txt","detail":"@@ -0,0 +1 @@\n+hello\n","always":"all file writes in the workspace"}
@@ -99,7 +99,7 @@ The session ends when stdin closes.
 → {"type":"text","text":"Created hello.txt."}
 → {"type":"usage","input":4810,"output":61,"cached":0}
 → {"type":"turn_end","reason":"completed","detail":null}
-→ {"type":"ready","session":"20260928-231002-4f1a","model":"claude-sonnet-5","tools":["..."]}
+→ {"type":"ready","session":"20260928-231002-4f1a","model":"claude-sonnet-5","effort":null,"tools":["..."]}
 ```
 
 `→` is anchor's stdout; `←` is what you write to its stdin.

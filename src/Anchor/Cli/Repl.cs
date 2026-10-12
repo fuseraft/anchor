@@ -39,7 +39,7 @@ public sealed partial class Repl
     {
         (this.agent, this.gate, this.session, this.renderer, this.screen, this.options) = (agent, gate, session, renderer, screen, options);
         _provider = options.Provider;
-        status = new StatusLine(agent, renderer, screen, options.ContextWindow, options.SubAgents, () => _provider.Model, () => _until);
+        status = new StatusLine(agent, renderer, screen, options.ContextWindow, options.SubAgents, () => ModelLabel, () => _until);
         screen.Interrupt = Interrupt;
         agent.Attachments = (text, ct) => Mentions.AttachAsync(text, gate,
             (what, ok) => renderer.Line(ok ? renderer.Muted($"  + attached {what}") : renderer.Warning($"  {what}")), ct);
@@ -56,7 +56,7 @@ public sealed partial class Repl
 
     public async Task<int> RunAsync()
     {
-        var model = $"· {_provider.Model} · ";
+        var model = $"· {ModelLabel} · ";
         renderer.Line($"{renderer.Bold(renderer.Accent("anchor"))} {renderer.Muted(model + Renderer.ShortPath(Workspace.Root, Renderer.Width() - 8 - model.Length))}");
         if (options.Yolo)
             renderer.Line(renderer.Warning("--yolo: writes, commands and outside reads run without asking. Secret files and dangerous commands are still denied."));

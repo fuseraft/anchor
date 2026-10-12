@@ -144,23 +144,104 @@ public class ProvidersTests
         Assert.Contains("X-Team: platform", head, StringComparison.OrdinalIgnoreCase);
     }
 
-    static async Task<string> ReadOneRequestAsync(TcpListener listener)
+    [Fact]
+    public void Options_Effort_SetsReasoning_AndRoomToThink()
+    {
+        var claude = Providers.Providers.Resolve("claude-sonnet-5");
+
+        Assert.Null(Providers.Providers.Options(claude).Reasoning);
+        Assert.Equal(16_000, Providers.Providers.Options(claude).MaxOutputTokens);
+        Assert.Equal(16_000, Providers.Providers.Options(claude, ReasoningEffort.None).MaxOutputTokens);
+        var high = Providers.Providers.Options(claude, ReasoningEffort.High);
+        Assert.Equal(ReasoningEffort.High, high.Reasoning?.Effort);
+        Assert.Equal(64_000, high.MaxOutputTokens);
+        Assert.Null(Providers.Providers.Options(Providers.Providers.Resolve("grok-4.5"), ReasoningEffort.High).MaxOutputTokens);
+    }
+
+    [Theory]
+    [InlineData("none", ReasoningEffort.None)]
+    [InlineData("Low", ReasoningEffort.Low)]
+    [InlineData("medium", ReasoningEffort.Medium)]
+    [InlineData("high", ReasoningEffort.High)]
+    [InlineData(" xhigh ", ReasoningEffort.ExtraHigh)]
+    [InlineData("default", null)]
+    [InlineData(null, null)]
+    public void ParseEffort_ReadsEachLevel(string? name, ReasoningEffort? effort)
+    {
+        Assert.Equal(effort, Providers.Providers.ParseEffort(name));
+        if (effort is not null)
+            Assert.Equal(name!.Trim().ToLowerInvariant(), Providers.Providers.EffortName(effort));
+    }
+
+    [Fact]
+    public void ParseEffort_Unknown_NamesTheLevels()
+    {
+        var e = Assert.Throws<AnchorException>(() => Providers.Providers.ParseEffort("max"));
+        Assert.Contains("none, low, medium, high, xhigh, default", e.Message);
+    }
+
+    [Fact]
+    public async Task Effort_Anthropic_SendsAdaptiveThinkingWithTheEffort()
+    {
+        var request = await SendAsync("anthropic", ReasoningEffort.High, AnthropicReply);
+
+        Assert.StartsWith("POST /v1/messages", request);
+        Assert.Contains("\"thinking\":{\"type\":\"adaptive\"", request);
+        Assert.Contains("\"output_config\":{\"effort\":\"high\"", request);
+        Assert.Contains("\"max_tokens\":64000", request);
+    }
+
+    [Fact]
+    public async Task Effort_OpenAI_SendsReasoningEffort()
+    {
+        var request = await SendAsync("openai", ReasoningEffort.Low, OpenAIReply);
+
+        Assert.StartsWith("POST /v1/chat/completions", request);
+        Assert.Contains("\"reasoning_effort\":\"low\"", request);
+    }
+
+    static async Task<string> SendAsync(string type, ReasoningEffort effort, string reply)
+    {
+        Environment.SetEnvironmentVariable("ANCHOR_TEST_EFFORT_KEY", "sk-test");
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var endpoint = type == "anthropic" ? $"http://127.0.0.1:{port}" : $"http://127.0.0.1:{port}/v1";
+        var custom = new Dictionary<string, CustomProvider>
+        {
+            ["test"] = new() { Endpoint = endpoint, ApiKeyEnv = "ANCHOR_TEST_EFFORT_KEY", Type = type },
+        };
+        var settings = Providers.Providers.Resolve("test/m", custom: custom);
+        var client = Providers.Providers.Create(settings);
+
+        var request = ReadOneRequestAsync(listener, reply);
+        var response = await client.GetResponseAsync("hi", Providers.Providers.Options(settings, effort));
+
+        Assert.Equal("ok", response.Text);
+        return await request;
+    }
+
+    const string OpenAIReply = """{"id":"1","object":"chat.completion","created":0,"model":"gpt-4.1","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}""";
+
+    const string AnthropicReply = """{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}""";
+
+    /// <summary>Answers one request with <paramref name="reply"/> and returns the request, head and body.</summary>
+    static async Task<string> ReadOneRequestAsync(TcpListener listener, string reply = OpenAIReply)
     {
         using var socket = await listener.AcceptTcpClientAsync();
         var stream = socket.GetStream();
         var buffer = new byte[65536];
-        var text = "";
-        while (!text.Contains("\r\n\r\n"))
-            text += Encoding.ASCII.GetString(buffer, 0, await stream.ReadAsync(buffer));
-        var head = text[..text.IndexOf("\r\n\r\n")];
+        var bytes = new List<byte>();
+        int end;
+        while ((end = Encoding.ASCII.GetString([.. bytes]).IndexOf("\r\n\r\n")) < 0)
+            bytes.AddRange(buffer.AsSpan(0, await stream.ReadAsync(buffer)));
+        var head = Encoding.ASCII.GetString([.. bytes])[..end];
         var length = int.Parse(head.Split("\r\n").First(l => l.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)).Split(':')[1]);
-        var body = text.Length - head.Length - 4;
-        while (body < length)
-            body += await stream.ReadAsync(buffer);
+        while (bytes.Count - end - 4 < length)
+            bytes.AddRange(buffer.AsSpan(0, await stream.ReadAsync(buffer)));
 
-        var json = """{"id":"1","object":"chat.completion","created":0,"model":"gpt-4.1","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}""";
         await stream.WriteAsync(Encoding.ASCII.GetBytes(
-            $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {json.Length}\r\nConnection: close\r\n\r\n{json}"));
-        return head;
+            $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {reply.Length}\r\nConnection: close\r\n\r\n{reply}"));
+        return Encoding.UTF8.GetString([.. bytes]);
     }
 }
