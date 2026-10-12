@@ -200,6 +200,34 @@ public class ProvidersTests
         Assert.Contains("\"reasoning_effort\":\"low\"", request);
     }
 
+    [Fact]
+    public async Task OpenAI_StreamedReasoningContent_ArrivesAsThinking()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        Environment.SetEnvironmentVariable("ANCHOR_TEST_EFFORT_KEY", "sk-test");
+        var custom = new Dictionary<string, CustomProvider>
+        {
+            ["test"] = new() { Endpoint = $"http://127.0.0.1:{port}/v1", ApiKeyEnv = "ANCHOR_TEST_EFFORT_KEY" },
+        };
+        var settings = Providers.Providers.Resolve("test/grok-4.7", custom: custom);
+        var client = Providers.Providers.Create(settings);
+        // As xAI streams it: the thinking in reasoning_content deltas, then the reply.
+        string Chunk(string delta) => $$"""data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"grok-4.7","choices":[{"index":0,"delta":{{delta}}}]}""" + "\n\n";
+        var sse = Chunk("""{"reasoning_content":"Checking 4819","role":"assistant"}""") + Chunk("""{"reasoning_content":" for factors."}""")
+            + Chunk("""{"content":"ok"}""") + "data: [DONE]\n\n";
+
+        var request = ReadOneRequestAsync(listener, sse, "text/event-stream");
+        List<ChatResponseUpdate> updates = [];
+        await foreach (var update in client.GetStreamingResponseAsync("hi", Providers.Providers.Options(settings, ReasoningEffort.Low)))
+            updates.Add(update);
+        await request;
+
+        Assert.Equal("Checking 4819 for factors.", string.Concat(updates.SelectMany(u => u.Contents).OfType<TextReasoningContent>().Select(r => r.Text)));
+        Assert.Equal("ok", string.Concat(updates.Select(u => u.Text)));
+    }
+
     static async Task<string> SendAsync(string type, ReasoningEffort effort, string reply)
     {
         Environment.SetEnvironmentVariable("ANCHOR_TEST_EFFORT_KEY", "sk-test");
@@ -226,7 +254,7 @@ public class ProvidersTests
     const string AnthropicReply = """{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}""";
 
     /// <summary>Answers one request with <paramref name="reply"/> and returns the request, head and body.</summary>
-    static async Task<string> ReadOneRequestAsync(TcpListener listener, string reply = OpenAIReply)
+    static async Task<string> ReadOneRequestAsync(TcpListener listener, string reply = OpenAIReply, string type = "application/json")
     {
         using var socket = await listener.AcceptTcpClientAsync();
         var stream = socket.GetStream();
@@ -241,7 +269,7 @@ public class ProvidersTests
             bytes.AddRange(buffer.AsSpan(0, await stream.ReadAsync(buffer)));
 
         await stream.WriteAsync(Encoding.ASCII.GetBytes(
-            $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {reply.Length}\r\nConnection: close\r\n\r\n{reply}"));
+            $"HTTP/1.1 200 OK\r\nContent-Type: {type}\r\nContent-Length: {Encoding.UTF8.GetByteCount(reply)}\r\nConnection: close\r\n\r\n{reply}"));
         return Encoding.UTF8.GetString([.. bytes]);
     }
 }
