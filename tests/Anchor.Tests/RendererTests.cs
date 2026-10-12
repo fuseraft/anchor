@@ -219,4 +219,61 @@ public class RendererTests
 
         Assert.Equal("kept" + Environment.NewLine, output.ToString());
     }
+
+    [Fact]
+    public void InTheTui_ThinkingStreamsDimmed_ThenFoldsToALine()
+    {
+        var t = new Transcript();
+        var renderer = new Renderer(t, color: true);
+        renderer.Render(new ThinkingDelta("The clock is advanced\n"));
+        renderer.Render(new ThinkingDelta("before the listener subscribes."));
+
+        Assert.Equal(["  ∴ The clock is advanced", "    before the listener subscribes."], t.Lines().Select(Text));
+        Assert.Equal(new Span("The clock is advanced", Dim), t.Lines()[0][1]);
+
+        renderer.Render(new ToolStarted("1", "read_file", "a.cs"));
+        renderer.Render(new TextDelta("Fixed."));
+        renderer.Render(new TurnEnded(TurnEnd.Completed));
+
+        Assert.Equal(["  ∴ thought · 8 words · Ctrl+O", "  ↳ read_file a.cs", "⚓\uFE0E Fixed.", ""], t.Lines().Select(Text));
+        Assert.Equal(new ToolOutput("thinking", "The clock is advanced\nbefore the listener subscribes.", false), renderer.Outputs[0]);
+    }
+
+    [Fact]
+    public void InTheTui_OnlyTheLatestRowsOfThinkingShow()
+    {
+        var t = new Transcript();
+        var renderer = new Renderer(t, color: true);
+        for (var i = 1; i <= 20; i++)
+            renderer.Render(new ThinkingDelta($"step {i}\n"));
+
+        Assert.Equal(Renderer.ThinkingRows, t.Lines().Count);
+        Assert.Equal("  ∴ step 15", Text(t.Lines()[0]));
+        Assert.Equal("    step 20", Text(t.Lines()[^1]));
+    }
+
+    [Fact]
+    public void InTheTui_ASubAgentsLinesGoAboveTheThinking()
+    {
+        var t = new Transcript();
+        var renderer = new Renderer(t, color: true);
+        renderer.Render(new ThinkingDelta("hmm"));
+        renderer.Render(new SubAgentEvent("explorer", new ToolStarted("1", "grep", "x")));
+        renderer.Render(new ThinkingDelta(" ok"));
+
+        Assert.Equal(["    [explorer] ↳ grep x", "  ∴ hmm ok"], t.Lines().Select(Text));
+    }
+
+    [Fact]
+    public void OnAPlainTerminal_ThinkingShowsAsOneLine()
+    {
+        var output = new StringWriter();
+        var renderer = new Renderer(output, color: false, streamText: false);
+        renderer.Render(new ThinkingDelta("one two"));
+        renderer.Render(new ThinkingDelta(" three"));
+        renderer.Render(new TurnEnded(TurnEnd.Completed));
+
+        Assert.Equal("  ∴ thought · 3 words" + Environment.NewLine, output.ToString());
+        Assert.Empty(renderer.Outputs);
+    }
 }

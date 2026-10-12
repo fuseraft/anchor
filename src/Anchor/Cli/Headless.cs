@@ -197,6 +197,7 @@ public sealed class JsonEvents(TextWriter output)
     public static JsonObject Map(AgentEvent e) => e switch
     {
         TextDelta t => new() { ["type"] = "text", ["text"] = t.Text },
+        ThinkingDelta t => new() { ["type"] = "thinking", ["text"] = t.Text },
         ToolStarted t => new() { ["type"] = "tool_start", ["id"] = t.CallId, ["name"] = t.Name, ["summary"] = t.Summary },
         ToolFinished t => new() { ["type"] = "tool_end", ["id"] = t.CallId, ["name"] = t.Name, ["ok"] = t.Ok, ["result"] = t.Result },
         FileChanged f => new() { ["type"] = "file_changed", ["path"] = f.Path, ["added"] = f.Added, ["removed"] = f.Removed },

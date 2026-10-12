@@ -29,6 +29,28 @@ public class AgentTests
     }
 
     [Fact]
+    public async Task Thinking_IsStreamed_AndKeptSignedInHistory()
+    {
+        ChatResponseUpdate Update(AIContent c) => new(ChatRole.Assistant, [c]) { MessageId = "m" };
+        var client = new FakeChatClient().Enqueue(_ => new[]
+        {
+            Update(new TextReasoningContent("Let me ")),
+            Update(new TextReasoningContent("think.")),
+            Update(new TextReasoningContent("") { ProtectedData = "sig" }),
+            Update(new TextContent("done")),
+        }.ToAsyncEnumerable());
+        var agent = NewAgent(client);
+
+        await agent.RunTurnAsync("hi", CancellationToken.None);
+
+        Assert.Equal([new ThinkingDelta("Let me "), new ThinkingDelta("think."), new TextDelta("done")],
+            _events.Where(e => e is ThinkingDelta or TextDelta));
+        var reasoning = agent.History[^1].Contents.OfType<TextReasoningContent>().ToList();
+        Assert.Equal("Let me think.", string.Concat(reasoning.Select(r => r.Text)));
+        Assert.Contains(reasoning, r => r.ProtectedData == "sig");
+    }
+
+    [Fact]
     public async Task SystemPrompt_IsSentFirstButNotStoredInHistory()
     {
         var client = new FakeChatClient().Text("ok");

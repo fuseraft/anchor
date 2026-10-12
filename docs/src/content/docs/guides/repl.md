@@ -61,7 +61,7 @@ Looking at the failing target first.
 | ←, →, Home, End, Ctrl+Z     | Edit the message as in any editor; Ctrl+U deletes to the line start. |
 | PgUp / PgDn, mouse wheel    | Scroll the conversation. Ctrl+Home jumps to the top, Ctrl+End back to the bottom. |
 | Ctrl+F                      | Find text in the conversation: type to search, Enter or ↑ for an older match, ↓ for a newer one, Esc to close. |
-| Ctrl+O                      | Show the last tool output or diff in full (see below).        |
+| Ctrl+O                      | Show the last tool output, diff or thinking in full (see below). |
 | Ctrl+C                      | Cancel the running turn; otherwise clear the message; twice to exit. |
 | Ctrl+D                      | Exit, when the message is empty.                              |
 
@@ -93,11 +93,19 @@ When you exit, the conversation is printed to the terminal, so it stays in your 
 stdin or stdout isn't a terminal. It can't change text once it's printed, so it shows replies as
 plain Markdown.
 
+## Thinking
+
+With a [reasoning effort](/anchor/reference/config/#reasoning-effort) set, the model may think
+before it answers or calls a tool. While it thinks, the latest few lines of its thinking show
+dimmed under a `∴`. When it moves on, they fold into one line, such as `∴ thought · 214 words ·
+Ctrl+O`, and Ctrl+O shows the whole of it. Claude's thinking is shown as the summary the API sends,
+not word for word. `--plain` and `-p` show only the folded line.
+
 ## Seeing a tool's whole output
 
 The conversation shows one line per tool call, the first line of an error, and at most 80 lines
-of a diff. **Ctrl+O** opens the whole of the latest tool output, or the diff of the latest
-approval, in place of the conversation:
+of a diff. **Ctrl+O** opens the whole of the latest tool output, the diff of the latest approval,
+or the model's latest thinking, in place of the conversation:
 
 | Key                    | Effect                                     |
 | ---------------------- | ------------------------------------------ |

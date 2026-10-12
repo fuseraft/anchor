@@ -186,7 +186,7 @@ public class ProvidersTests
         var request = await SendAsync("anthropic", ReasoningEffort.High, AnthropicReply);
 
         Assert.StartsWith("POST /v1/messages", request);
-        Assert.Contains("\"thinking\":{\"type\":\"adaptive\"", request);
+        Assert.Contains("\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"}", request);
         Assert.Contains("\"output_config\":{\"effort\":\"high\"", request);
         Assert.Contains("\"max_tokens\":64000", request);
     }

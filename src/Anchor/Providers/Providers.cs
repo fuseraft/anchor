@@ -177,12 +177,12 @@ public static class Providers
     /// <summary>Options every request carries; Anthropic requires an explicit output cap.</summary>
     /// <remarks>An effort is sent as the provider takes it: Anthropic gets adaptive thinking with <c>output_config.effort</c>,
     /// OpenAI-compatible servers <c>reasoning_effort</c>. Anthropic counts thinking against the output cap, so thinking raises
-    /// it. With no effort, the model's own default applies.</remarks>
+    /// it, and asks for its thinking summarized so the transcript can show it. With no effort, the model's own default applies.</remarks>
     public static ChatOptions Options(ProviderSettings settings, ReasoningEffort? effort = null) => new()
     {
         ModelId = settings.Model,
         MaxOutputTokens = settings.Provider != "anthropic" ? null : effort is null or ReasoningEffort.None ? 16_000 : 64_000,
-        Reasoning = effort is { } e ? new ReasoningOptions { Effort = e } : null,
+        Reasoning = effort is { } e ? new ReasoningOptions { Effort = e, Output = ReasoningOutput.Summary } : null,
     };
 
     /// <summary>The effort levels, as config, --effort and /effort write them; "default" leaves it to the model.</summary>
