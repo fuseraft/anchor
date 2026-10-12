@@ -128,6 +128,31 @@ server needs no key or authenticates through a header:
 A name that doesn't start with a configured provider is treated as before, so `claude-sonnet-5` still
 goes straight to Anthropic.
 
+### OpenRouter
+
+[OpenRouter](https://openrouter.ai) is an OpenAI-compatible server, so it's a named provider like any
+other. Its model ids name the vendor, and they keep that slash after the provider's name:
+
+```json
+{
+  "providers": {
+    "openrouter": {
+      "endpoint": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY"
+    }
+  },
+  "provider": { "model": "openrouter/anthropic/claude-sonnet-5" }
+}
+```
+
+`/model` without a name lists every model OpenRouter offers, and typing filters the list, so
+`/model openrouter/x-ai/grok-4.7` and `/model openrouter/qwen/qwen3-coder` switch between vendors
+through the one key. The context window follows the model name as usual: `claude-` and `grok-4`
+ids get their families' windows, and others get 128,000 unless you set `contextWindow`.
+
+`anchor setup` can do the same: choose another server, give it `https://openrouter.ai/api/v1` and
+the name `openrouter`, and it saves the key and lists the models to pick from.
+
 ## Context window
 
 anchor keeps the conversation under the model's context window. It assumes 200,000 tokens for
