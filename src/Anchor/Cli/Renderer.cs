@@ -363,7 +363,14 @@ public sealed class Renderer(TextWriter output, bool color, bool streamText = tr
     }
 
     /// <summary>What starts each of the model's messages in the TUI, so they stand apart from everything else.</summary>
-    string Mark => Accent("⚓\uFE0E") + " "; // the text style, which takes the accent color rather than drawing as an emoji
+    string Mark => Accent(Anchor) + " ";
+
+    /// <summary>
+    /// The anchor in its text style, which takes the accent color rather than drawing as an emoji. Not on Windows: there,
+    /// something between anchor and the terminal draws the text style a column narrower than the two it's counted as, so
+    /// an answer's first row comes up short and the next row's first letter lands at its end.
+    /// </summary>
+    internal static readonly string Anchor = OperatingSystem.IsWindows() ? "⚓" : "⚓\uFE0E";
 
     // The text with the anchor before its first line that isn't blank; unchanged while it's all blank.
     string Marked(string text, bool keep = true)
