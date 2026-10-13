@@ -28,7 +28,7 @@ directory through a handful of tools, and a deterministic harness decides what i
 - **Scriptable.** `-p` runs one prompt, `--json` streams events, and `--until` keeps going until a
   check passes.
 
-Status: 0.10.0. Linux, macOS and Windows (shell commands run in Git for Windows' bash).
+Status: 0.10.1. Linux, macOS and Windows (shell commands run in Git for Windows' bash).
 
 ## Install
 
