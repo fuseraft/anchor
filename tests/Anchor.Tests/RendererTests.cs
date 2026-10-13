@@ -35,14 +35,14 @@ public class RendererTests
         var renderer = new Renderer(t, color: true);
         renderer.Render(new TextDelta("Use **bo"));
 
-        Assert.Equal("⚓\uFE0E Use **bo", Text(t.Lines()[^1]));
+        Assert.Equal($"{Renderer.Anchor} Use **bo", Text(t.Lines()[^1]));
 
         renderer.Render(new TextDelta("ld**\n- item"));
         renderer.Render(new ToolStarted("1", "grep", "x"));
         renderer.Render(new TextDelta("Found `it`"));
         renderer.Render(new TurnEnded(TurnEnd.Completed));
 
-        Assert.Equal(["⚓\uFE0E Use bold", "• item", "  ↳ grep x", "⚓\uFE0E Found it", ""], t.Lines().Select(Text));
+        Assert.Equal([$"{Renderer.Anchor} Use bold", "• item", "  ↳ grep x", $"{Renderer.Anchor} Found it", ""], t.Lines().Select(Text));
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public class RendererTests
         renderer.Render(new TextDelta("| bbb |\n\nok"));
         renderer.Render(new TurnEnded(TurnEnd.Completed));
 
-        Assert.Equal(["    [explorer] ↳ grep x", "⚓\uFE0E a", "bbb", "", "ok", ""], t.Lines().Select(Text));
+        Assert.Equal(["    [explorer] ↳ grep x", $"{Renderer.Anchor} a", "bbb", "", "ok", ""], t.Lines().Select(Text));
     }
 
     [Fact]
@@ -67,8 +67,8 @@ public class RendererTests
         renderer.Render(new TextDelta("\nDone"));
         renderer.Render(new TurnEnded(TurnEnd.Completed));
 
-        Assert.Single(t.Lines(), l => Text(l).Contains("⚓\uFE0E"));
-        Assert.Contains("⚓\uFE0E Done", t.Lines().Select(Text));
+        Assert.Single(t.Lines(), l => Text(l).Contains(Renderer.Anchor));
+        Assert.Contains($"{Renderer.Anchor} Done", t.Lines().Select(Text));
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public class RendererTests
         renderer.Render(new TextDelta("Done"));
         renderer.Render(new TurnEnded(TurnEnd.Completed));
 
-        Assert.Equal(["⚓\uFE0E Looking", "  ↳ grep x", "⚓\uFE0E Done", ""], t.Lines().Select(Text));
+        Assert.Equal([$"{Renderer.Anchor} Looking", "  ↳ grep x", $"{Renderer.Anchor} Done", ""], t.Lines().Select(Text));
     }
 
     [Fact]
@@ -235,7 +235,7 @@ public class RendererTests
         renderer.Render(new TextDelta("Fixed."));
         renderer.Render(new TurnEnded(TurnEnd.Completed));
 
-        Assert.Equal(["  ∴ thought · 8 words · Ctrl+O", "  ↳ read_file a.cs", "⚓\uFE0E Fixed.", ""], t.Lines().Select(Text));
+        Assert.Equal(["  ∴ thought · 8 words · Ctrl+O", "  ↳ read_file a.cs", $"{Renderer.Anchor} Fixed.", ""], t.Lines().Select(Text));
         Assert.Equal(new ToolOutput("thinking", "The clock is advanced\nbefore the listener subscribes.", false), renderer.Outputs[0]);
     }
 
@@ -299,7 +299,7 @@ public class RendererTests
 
         renderer.Replay(history, turns: 5);
 
-        Assert.Equal(["", "› fix it", "  ∴ thought · 7 words · Ctrl+O", "  ↳ 1 tool call", "⚓\uFE0E Fixed.", "", "› thanks", "⚓\uFE0E Welcome.", ""],
+        Assert.Equal(["", "› fix it", "  ∴ thought · 7 words · Ctrl+O", "  ↳ 1 tool call", $"{Renderer.Anchor} Fixed.", "", "› thanks", $"{Renderer.Anchor} Welcome.", ""],
             t.Lines().Select(Text));
         Assert.Equal(new ToolOutput("thinking", "Read the test first.\n\nNow fix it.", false), Assert.Single(renderer.Outputs));
     }
