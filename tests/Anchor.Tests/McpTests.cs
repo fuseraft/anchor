@@ -4,30 +4,6 @@ using Microsoft.Extensions.AI;
 
 namespace Anchor.Tests;
 
-sealed class MemoryKeychain : IKeychain
-{
-    public Dictionary<string, string> Items { get; } = [];
-
-    public bool Broken { get; set; }
-
-    public Task<string?> GetAsync(string account) =>
-        Broken ? throw new KeychainException("no keychain") : Task.FromResult(Items.GetValueOrDefault(account));
-
-    public Task SetAsync(string account, string secret)
-    {
-        if (Broken)
-            throw new KeychainException("no keychain");
-        Items[account] = secret;
-        return Task.CompletedTask;
-    }
-
-    public Task DeleteAsync(string account)
-    {
-        Items.Remove(account);
-        return Task.CompletedTask;
-    }
-}
-
 public sealed class McpTests : IAsyncLifetime
 {
     readonly string _root = Directory.CreateTempSubdirectory("anchor-mcp-").FullName;
