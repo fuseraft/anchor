@@ -53,6 +53,7 @@ public static class Startup
         var toolbox = new Toolbox([.. new FileTools(gate).All(), .. new EditTools(gate).All(), .. new PatchTool(gate).All(), .. new ShellTool(gate).All()])
         {
             Changes = gate.TakeChanges,
+            Mask = text => gate.Masker()(text),
         };
         var systemPrompt = SystemPrompt.Build(workspace, DateOnly.FromDateTime(DateTime.Now), skills);
         // A bug that ends a turn is recorded in a crash log; a provider or network failure is just reported.

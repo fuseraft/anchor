@@ -144,7 +144,11 @@ public sealed class FileTools(Gate gate)
                 n++;
                 if (!regex.IsMatch(line))
                     continue;
-                var text = mask(line).Trim();
+                // A match only in a secret's value would tell the model what the value starts with, one search at a time.
+                var shown = mask(line);
+                if (shown != line && !regex.IsMatch(shown))
+                    continue;
+                var text = shown.Trim();
                 hits.Add($"{Relative(file)}:{n}: {(text.Length > 300 ? text[..300] + "..." : text)}");
                 if (hits.Count > MaxEntries)
                     return Listing(hits, "");

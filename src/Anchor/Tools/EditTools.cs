@@ -178,6 +178,9 @@ public sealed partial class EditTools(Gate gate)
 
     static string NotFound(string text, string old)
     {
+        if (old.Contains(Secrets.Placeholder, StringComparison.Ordinal))
+            return $"old_string contains {Secrets.Placeholder}, which stands in for a secret value and never matches the file. " +
+                   "Leave the secret's line out of old_string; to remove that line, read the file and write it again without it.";
         var first = old.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
         var lines = text.Split('\n');
         var similar = first is null ? [] : Enumerable.Range(0, lines.Length).Where(i => lines[i].Trim() == first).Take(5).Select(i => i + 1).ToList();

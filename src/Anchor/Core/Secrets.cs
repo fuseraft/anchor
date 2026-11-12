@@ -46,6 +46,16 @@ public static partial class Secrets
         };
     }
 
+    /// <summary>The secret-named environment variables whose values occur in <paramref name="text"/>.</summary>
+    public static IReadOnlySet<string> EnvNamesIn(string text)
+    {
+        HashSet<string> names = [];
+        foreach (DictionaryEntry e in Environment.GetEnvironmentVariables())
+            if (e.Value is string v && v.Length >= MinValueLength && IsSecretEnvName((string)e.Key) && text.Contains(v, StringComparison.Ordinal))
+                names.Add((string)e.Key);
+        return names;
+    }
+
     static IEnumerable<string> EnvValues()
     {
         foreach (DictionaryEntry e in Environment.GetEnvironmentVariables())

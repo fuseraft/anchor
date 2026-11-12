@@ -40,6 +40,9 @@ public sealed class Toolbox(IEnumerable<AIFunction> tools)
         return name.Contains("gpt") || name.Contains("codex") || (name.Length > 1 && name[0] == 'o' && char.IsAsciiDigit(name[1]));
     }
 
+    /// <summary>Masks secret values in every result, behind the masking the tools do themselves; see <see cref="Gate.Masker"/>.</summary>
+    public Func<string, string>? Mask { get; init; }
+
     /// <summary>Files the calling agent has read that changed on disk since it last heard; see <see cref="Gate.TakeChanges"/>.</summary>
     public Func<IReadOnlyList<string>>? Changes { get; init; }
 
@@ -76,7 +79,7 @@ public sealed class Toolbox(IEnumerable<AIFunction> tools)
         if (wanted.Any(n => PatchTools.Contains(n) || ReplaceTools.Contains(n)))
             wanted = [.. wanted, .. PatchTools, .. ReplaceTools];
         lock (_lock)
-            return new Toolbox(wanted.Select(n => _tools.GetValueOrDefault(n)).OfType<AIFunction>().Distinct()) { Changes = Changes };
+            return new Toolbox(wanted.Select(n => _tools.GetValueOrDefault(n)).OfType<AIFunction>().Distinct()) { Changes = Changes, Mask = Mask };
     }
 
     /// <summary>Runs a call. Files the agent has read that changed, before it or while it ran, are noted after its result.</summary>
@@ -99,7 +102,8 @@ public sealed class Toolbox(IEnumerable<AIFunction> tools)
         try
         {
             var result = await tool.InvokeAsync(new AIFunctionArguments(call.Arguments), ct);
-            return (Cap(Stringify(result)), true);
+            // Masked before it's cut, so a cut never leaves part of a secret showing.
+            return (Cap(Masked(Stringify(result))), true);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -107,7 +111,7 @@ public sealed class Toolbox(IEnumerable<AIFunction> tools)
         }
         catch (Exception e)
         {
-            return ($"Error: {e.Message}", false);
+            return (Masked($"Error: {e.Message}"), false);
         }
     }
 
@@ -126,6 +130,8 @@ public sealed class Toolbox(IEnumerable<AIFunction> tools)
         text = text.ReplaceLineEndings(" ");
         return text.Length > 80 ? text[..77] + "..." : text;
     }
+
+    string Masked(string text) => Mask?.Invoke(text) ?? text;
 
     static string Stringify(object? result) => result switch
     {

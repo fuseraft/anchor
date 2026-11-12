@@ -68,6 +68,44 @@ public sealed class FileChangeTests : IDisposable
     }
 
     [Fact]
+    public async Task AChangeThatAddsASecretNamesTheVariable_NotTheValue()
+    {
+        const string value = "ghp_FAKE_change_notice_31c9";
+        Environment.SetEnvironmentVariable("ANCHOR_CHANGES_TEST_TOKEN", value);
+        try
+        {
+            await Invoke("read_file", new() { ["path"] = "a.txt" });
+
+            var (text, _) = await Invoke("shell", new() { ["command"] = "echo \"$ANCHOR_CHANGES_TEST_TOKEN\" >> a.txt" });
+
+            Assert.Contains("a.txt (it now holds the value of $ANCHOR_CHANGES_TEST_TOKEN", text);
+            Assert.DoesNotContain(value, text);
+
+            // Already there, so another change doesn't name it again.
+            File.AppendAllText(At("a.txt"), "more\n");
+            Assert.Equal(["a.txt"], _gate.TakeChanges());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ANCHOR_CHANGES_TEST_TOKEN", null);
+        }
+    }
+
+    [Fact]
+    public void TakeChanges_ChecksOnlyTheFilesReadMostRecently()
+    {
+        for (var i = 0; i <= 500; i++)
+        {
+            File.WriteAllText(At($"f{i}.txt"), "x");
+            _gate.MarkRead(At($"f{i}.txt"));
+        }
+        File.WriteAllText(At("f0.txt"), "changed");
+        File.WriteAllText(At("f1.txt"), "changed");
+
+        Assert.Equal(["f1.txt"], _gate.TakeChanges());
+    }
+
+    [Fact]
     public async Task AShellCommandsChangeIsNotedOnItsResult()
     {
         await Invoke("read_file", new() { ["path"] = "a.txt" });

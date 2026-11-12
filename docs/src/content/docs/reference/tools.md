@@ -70,7 +70,8 @@ at the same time. Any other call runs alone, in order.
 
 When a file the model has read changes on disk without anchor's file tools, by a shell command, your
 editor or another program, the next tool result says so, naming the file once per change. A change
-made while the model waits for your message is noted with that message.
+made while the model waits for your message is noted with that message. Only the 500 files read
+most recently are checked.
 
 ### write_file
 

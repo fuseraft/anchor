@@ -15,6 +15,7 @@ public sealed class SecretAttackTests : IDisposable
     readonly string _root = Directory.CreateTempSubdirectory("anchor-attack-").FullName;
     readonly FakeApprover _approver = new(Answer.Always);
     readonly Toolbox _toolbox;
+    readonly Gate _gate;
 
     public SecretAttackTests()
     {
@@ -31,8 +32,8 @@ public sealed class SecretAttackTests : IDisposable
         File.AppendAllText(Path.Combine(_root, ".env"), $"EXTRA={EnvSecret}2\n");
 
         var workspace = new Workspace(_root);
-        var gate = new Gate(workspace, new Policy(workspace), _approver, _ => { });
-        _toolbox = new Toolbox([.. new FileTools(gate).All(), .. new EditTools(gate).All(), .. new ShellTool(gate).All()]);
+        _gate = new Gate(workspace, new Policy(workspace), _approver, _ => { });
+        _toolbox = new Toolbox([.. new FileTools(_gate).All(), .. new EditTools(_gate).All(), .. new ShellTool(_gate).All()]);
     }
 
     public void Dispose()
@@ -112,6 +113,37 @@ public sealed class SecretAttackTests : IDisposable
     }
 
     [Fact]
+    public async Task GrepCantTellWhatASecretStartsWith()
+    {
+        var (probe, _) = await Invoke("grep", new() { ["pattern"] = "sk_live_F" });
+        var (line, _) = await Invoke("grep", new() { ["pattern"] = "STRIPE_KEY = " });
+
+        Assert.Equal("(no matches)", probe);
+        Assert.Equal($"src/settings.py:1: STRIPE_KEY = '{Secrets.Placeholder}'", line);
+    }
+
+    [Fact]
+    public async Task EveryToolResultIsMasked_EvenWhenItIsCut()
+    {
+        // A secret right where a long result is cut in two, from a tool that doesn't mask for itself (skill, say).
+        var half = Toolbox.MaxResultChars / 2;
+        var tools = new Toolbox([
+            AIFunctionFactory.Create(() => new string('x', half - 5) + EnvSecret + new string('y', half), "skill"),
+            AIFunctionFactory.Create(string () => throw new ToolException($"bad key {EnvSecret}"), "fail"),
+        ])
+        {
+            Mask = text => _gate.Masker()(text),
+        };
+
+        foreach (var toolbox in new[] { tools, tools.Subset(["skill", "fail"]) })
+            foreach (var name in new[] { "skill", "fail" })
+            {
+                var (text, _) = await toolbox.InvokeAsync(new FunctionCallContent("c", name), default);
+                Assert.DoesNotContain(EnvSecret[..5], text);
+            }
+    }
+
+    [Fact]
     public async Task ThePlaceholderIsNeverWrittenOverASecret()
     {
         // The model copies back what it read, placeholder included.
@@ -126,6 +158,19 @@ public sealed class SecretAttackTests : IDisposable
         Assert.Contains("holds a secret value", written);
         Assert.Contains("holds a secret value", edited);
         Assert.Contains(EnvSecret, File.ReadAllText(Path.Combine(_root, "src/settings.py")));
+    }
+
+    [Fact]
+    public async Task ASecretsLineCanBeRemovedByRewritingTheFile()
+    {
+        var (read, _) = await Invoke("read_file", new() { ["path"] = "src/settings.py" });
+        var (missed, edited) = await Invoke("edit_file", new() { ["path"] = "src/settings.py", ["old_string"] = $"STRIPE_KEY = '{Secrets.Placeholder}'\n", ["new_string"] = "" });
+        var (_, rewrote) = await Invoke("write_file", new() { ["path"] = "src/settings.py", ["content"] = "DEBUG = True\n" });
+
+        Assert.False(edited);
+        Assert.Contains("write it again without it", missed);
+        Assert.True(rewrote);
+        Assert.Equal("DEBUG = True\n", File.ReadAllText(Path.Combine(_root, "src/settings.py")));
     }
 
     [Fact]

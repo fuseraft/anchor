@@ -85,12 +85,19 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     static readonly AsyncLocal<Dictionary<string, Seen>?> OwnReads = new();
     Dictionary<string, Seen> _read => OwnReads.Value ?? _mainReads;
 
-    // The content's fingerprint, the file's size and time then, and the size and time last reported as a change.
-    sealed class Seen(string hash, string stamp)
+    // Only the files read most recently are checked for changes, so a session that has read thousands stays quick.
+    const int MaxTracked = 500;
+    long _reads;
+
+    // The content's fingerprint, the file's size and time then, and the size and time last reported as a change; the
+    // secret environment variables whose values it holds; and when it was read, for MaxTracked.
+    sealed class Seen(string hash, string stamp, IReadOnlySet<string> secrets, long order)
     {
         public string Hash { get; } = hash;
         public string Stamp { get; set; } = stamp;
         public string? Reported { get; set; }
+        public IReadOnlySet<string> Secrets { get; set; } = secrets;
+        public long Order { get; } = order;
     }
 
     // A file's content before the turn first changed it (null if the turn created it), and after its latest change.
@@ -168,24 +175,30 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     /// <summary>
     /// Files the calling agent has read that have changed on disk since, through a shell command, another program or the
     /// user, relative to the workspace. Each change is reported once; anchor's own writes for this agent aren't changes.
+    /// A change that put a secret environment variable's value into the file names the variable, never the value.
     /// </summary>
     public IReadOnlyList<string> TakeChanges()
     {
         List<string> changed = [];
         lock (_lock)
-            foreach (var (full, seen) in _read)
+            foreach (var (full, seen) in _read.Count <= MaxTracked ? _read : _read.OrderByDescending(r => r.Value.Order).Take(MaxTracked))
             {
                 var stamp = Stamp(full);
                 if (stamp == seen.Stamp || stamp == seen.Reported)
                     continue;
+                var text = stamp.Length > 0 ? TextFile.Load(full)?.Text : null;
                 // Only the time may have changed, as after a touch or a save without edits.
-                if (stamp.Length > 0 && TextFile.Load(full)?.Text is { } text && TextFile.Hash(text) == seen.Hash)
+                if (text is not null && TextFile.Hash(text) == seen.Hash)
                 {
                     seen.Stamp = stamp;
                     continue;
                 }
                 seen.Reported = stamp;
-                changed.Add(Display(full) + (stamp.Length == 0 ? " (deleted)" : ""));
+                IReadOnlySet<string> secrets = text is null ? new HashSet<string>() : Secrets.EnvNamesIn(text);
+                var added = secrets.Except(seen.Secrets).Order(StringComparer.Ordinal).Select(n => "$" + n).ToList();
+                seen.Secrets = secrets;
+                changed.Add(Display(full) + (stamp.Length == 0 ? " (deleted)"
+                    : added.Count > 0 ? $" (it now holds the value of {string.Join(", ", added)}; take it out and tell the user)" : ""));
             }
         changed.Sort(StringComparer.Ordinal);
         return changed;
@@ -335,7 +348,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     void Remember(string full, string? text, bool knows)
     {
         if (text is not null && knows)
-            _read[full] = new Seen(TextFile.Hash(text), Stamp(full));
+            _read[full] = new Seen(TextFile.Hash(text), Stamp(full), Secrets.EnvNamesIn(text), ++_reads);
         else
             _read.Remove(full);
     }

@@ -53,9 +53,10 @@ tests/Anchor.Tests/
 4. **Hard denials that `--yolo` doesn't lift:**
    - `.env*` and credential files are denied.
    - Catastrophic shell commands are denied, including `sudo` and piping curl to a shell.
-   - Secret values are masked in file contents the tools show (`read_file`, `grep`, `@` mentions) and in
-     process and MCP output: secret-named environment variables and values from secret files, including
-     gitignored `.env` files and `~/.aws/credentials`.
+   - Secret values are masked in every tool result, and before a long result or line is cut: file
+     contents (`read_file`, `grep`, `@` mentions), skills, process and MCP output. `grep` matches the
+     masked text, so a search can't probe a value. The values are those of secret-named environment
+     variables and those in secret files, including gitignored `.env` files and `~/.aws/credentials`.
    - The mask, `<secret-hidden>`, is never written back over a secret: a file change that would put it
      into a file holding a secret is refused, and so is a shell command that contains it.
    - Known limitation: masking matches exact values, so a deliberately re-encoded value
@@ -105,7 +106,8 @@ tests/Anchor.Tests/
   agent replace a file. Before and after every tool call, the files the agent has read are checked by
   size and time, then by content. A file that changed without the agent's file tools (a shell command,
   the user's editor) is named after that call's result, once per change, and in a note with the
-  user's next message when it changed between turns.
+  user's next message when it changed between turns. A change that put a secret environment
+  variable's value into the file names the variable. Only the 500 files read most recently are checked.
 - Each file is written to a temporary file beside it, which is then renamed over it, so a failed
   write never leaves half a file. A file keeps its encoding, byte-order mark and permissions. New
   files are UTF-8 without a byte-order mark.
