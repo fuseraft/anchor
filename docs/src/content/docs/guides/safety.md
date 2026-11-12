@@ -61,12 +61,19 @@ These are refused even with `--yolo`:
 
 ## Secret masking
 
-Command output, MCP results and check output are masked before the model sees them. anchor replaces
-the values of:
+File contents shown by `read_file`, `grep` and `@` mentions, command output, MCP results and check
+output are masked before the model sees them. anchor replaces the values of:
 
 - environment variables whose names look secret (`*_API_KEY`, `*_TOKEN`, `*_SECRET`, `PASSWORD`,
   and so on),
 - entries in secret files, including gitignored `.env` files and `~/.aws/credentials`.
+
+A masked value reaches the model as `<secret-hidden>`, so the model must not write that text back.
+anchor refuses a file change that would put `<secret-hidden>` into a file holding a secret, which
+would replace the real value, and tells the model to change only the lines around it. It also
+refuses a shell command that contains `<secret-hidden>`, and points the model to the environment
+variable instead. A file without a secret, such as documentation about masking, can still contain
+the text.
 
 :::note[A known limit]
 Masking matches exact values, so a deliberately re-encoded secret, such as the output of

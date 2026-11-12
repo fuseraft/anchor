@@ -7,7 +7,7 @@ using Microsoft.Extensions.FileSystemGlobbing;
 
 namespace Anchor.Tools;
 
-/// <summary>Read-only workspace tools: read_file, list_dir, glob, grep.</summary>
+/// <summary>Read-only workspace tools: read_file, list_dir, glob, grep. What they show of file contents is masked for secrets.</summary>
 public sealed class FileTools(Gate gate)
 {
     const int MaxLineChars = 2_000;
@@ -39,6 +39,8 @@ public sealed class FileTools(Gate gate)
 
         offset = Math.Max(1, offset);
         limit = Math.Max(1, limit);
+        // Masked before a long line is cut, so a cut never leaves part of a secret showing.
+        var mask = gate.Masker();
         var sb = new StringBuilder();
         var n = 0;
         foreach (var line in File.ReadLines(full))
@@ -52,8 +54,9 @@ public sealed class FileTools(Gate gate)
                 sb.Append($"[{total - n + 1} more lines; continue with offset={n}]\n");
                 break;
             }
+            var shown = mask(line);
             sb.Append(n.ToString().PadLeft(6)).Append('\t')
-              .Append(line.Length > MaxLineChars ? line[..MaxLineChars] + " [line truncated]" : line).Append('\n');
+              .Append(shown.Length > MaxLineChars ? shown[..MaxLineChars] + " [line truncated]" : shown).Append('\n');
         }
 
         gate.MarkRead(full);
@@ -129,6 +132,7 @@ public sealed class FileTools(Gate gate)
             files = files.Where(f => matcher.Match(full, f).HasMatches);
         }
 
+        var mask = gate.Masker();
         var hits = new List<string>();
         foreach (var file in files.Order(StringComparer.Ordinal))
         {
@@ -140,7 +144,7 @@ public sealed class FileTools(Gate gate)
                 n++;
                 if (!regex.IsMatch(line))
                     continue;
-                var text = line.Trim();
+                var text = mask(line).Trim();
                 hits.Add($"{Relative(file)}:{n}: {(text.Length > 300 ? text[..300] + "..." : text)}");
                 if (hits.Count > MaxEntries)
                     return Listing(hits, "");

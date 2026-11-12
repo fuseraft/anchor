@@ -233,6 +233,31 @@ public sealed class GateTests : IDisposable
             NewGate(new FakeApprover(Answer.Yes)).RunAsync("sleep 30", TimeSpan.FromSeconds(60), cts.Token));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Run_AStoppedCommandIsGoneWhenTheCallReturns(bool cancel)
+    {
+        using var cts = new CancellationTokenSource();
+        var gate = NewGate(new FakeApprover(Answer.Yes));
+        var run = gate.RunAsync("echo $$ > pid; exec sleep 30", TimeSpan.FromSeconds(cancel ? 60 : 1), cts.Token);
+        while (!File.Exists(At("pid")) || File.ReadAllText(At("pid")).Trim().Length == 0)
+            await Task.Delay(10);
+        if (cancel)
+            await cts.CancelAsync();
+
+        try
+        {
+            await run;
+        }
+        catch (OperationCanceledException) when (cancel)
+        {
+        }
+
+        var pid = int.Parse(File.ReadAllText(At("pid")));
+        Assert.Throws<ArgumentException>(() => System.Diagnostics.Process.GetProcessById(pid));
+    }
+
     [Fact]
     public async Task Run_MasksSecretEnvironmentValues()
     {

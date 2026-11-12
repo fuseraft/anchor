@@ -22,6 +22,8 @@ public sealed class SecretAttackTests : IDisposable
         Write("backend/.env.production", $"DB_URL=postgres://app:{NestedSecret}@db/app\n");
         Write("keys/id_ed25519", $"-----BEGIN OPENSSH PRIVATE KEY-----\n{KeySecret}\n-----END OPENSSH PRIVATE KEY-----\n");
         Write("src/app.py", "import os\nprint('hello')\n");
+        // A copy of a secret value in an ordinary file, as when someone pasted a key into a config.
+        Write("src/settings.py", $"STRIPE_KEY = '{EnvSecret}'\n");
         File.CreateSymbolicLink(Path.Combine(_root, "notes.txt"), Path.Combine(_root, ".env"));
         Git("init", "-q");
         Git("add", "-f", ".env", "src/app.py");
@@ -49,6 +51,8 @@ public sealed class SecretAttackTests : IDisposable
         { "read_file", "path", "keys/id_ed25519" },
         { "read_file", "path", "notes.txt" },
         { "grep", "pattern", "sk_live|FAKE" },
+        { "read_file", "path", "src/settings.py" },
+        { "grep", "pattern", "STRIPE_KEY" },
         { "glob", "pattern", "**/*" },
         { "list_dir", "path", "." },
         { "shell", "command", "cat .env" },
@@ -106,6 +110,47 @@ public sealed class SecretAttackTests : IDisposable
         Assert.Contains(EnvSecret, File.ReadAllText(Path.Combine(_root, ".env")));
         Assert.DoesNotContain(EnvSecret, text);
     }
+
+    [Fact]
+    public async Task ThePlaceholderIsNeverWrittenOverASecret()
+    {
+        // The model copies back what it read, placeholder included.
+        var (read, _) = await Invoke("read_file", new() { ["path"] = "src/settings.py" });
+        Assert.Contains(Secrets.Placeholder, read);
+
+        var (written, wrote) = await Invoke("write_file", new() { ["path"] = "src/settings.py", ["content"] = $"STRIPE_KEY = '{Secrets.Placeholder}'\nDEBUG = True\n" });
+        var (edited, edit) = await Invoke("edit_file", new() { ["path"] = "src/settings.py", ["old_string"] = "STRIPE_KEY", ["new_string"] = $"OLD_KEY = '{Secrets.Placeholder}'\nSTRIPE_KEY" });
+
+        Assert.False(wrote);
+        Assert.False(edit);
+        Assert.Contains("holds a secret value", written);
+        Assert.Contains("holds a secret value", edited);
+        Assert.Contains(EnvSecret, File.ReadAllText(Path.Combine(_root, "src/settings.py")));
+    }
+
+    [Fact]
+    public async Task ThePlaceholderCanBeWrittenWhereNoSecretIs()
+    {
+        await Invoke("read_file", new() { ["path"] = "src/app.py" });
+
+        var (_, ok) = await Invoke("edit_file", new() { ["path"] = "src/app.py", ["old_string"] = "print('hello')", ["new_string"] = $"print('{Secrets.Placeholder}')" });
+
+        Assert.True(ok);
+        Assert.Contains(Secrets.Placeholder, File.ReadAllText(Path.Combine(_root, "src/app.py")));
+    }
+
+    [Fact]
+    public async Task ACommandWithThePlaceholderIsRefused()
+    {
+        var (text, ok) = await Invoke("shell", new() { ["command"] = $"echo '{Secrets.Placeholder}' > src/key.txt" });
+
+        Assert.False(ok);
+        Assert.Contains("$NAME", text);
+        Assert.False(File.Exists(Path.Combine(_root, "src/key.txt")));
+    }
+
+    Task<(string Text, bool Ok)> Invoke(string tool, Dictionary<string, object?> args) =>
+        _toolbox.InvokeAsync(new FunctionCallContent("c", tool, args), default);
 
     void Write(string rel, string content)
     {

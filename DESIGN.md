@@ -41,7 +41,9 @@ tests/Anchor.Tests/
 1. **Own the loop.** anchor drives `IChatClient` directly instead of using
    `UseFunctionInvocation()`. The turn ends on the model's final text. There is no default round
    cap: anchor stops when the model repeats the same call 5 times or fails 3 calls in a row. A `-p`
-   caller can set its own with `--max-rounds`.
+   caller can set its own with `--max-rounds`. Read-only calls next to each other in one response
+   (`read_file`, `list_dir`, `glob`, `grep`, `skill`) run at the same time; any other call runs
+   alone, in order. Results keep the calls' order.
 2. **One gate.** Tools reach the disk, processes and MCP servers only through `Gate`:
    `ReadPathAsync`, `WriteAsync` (the user sees a diff first), `RunAsync` and `CallExternalAsync`. Each one runs the same sequence:
    policy, then approval, then the effect. A test fails if a tool touches files or processes
@@ -51,8 +53,11 @@ tests/Anchor.Tests/
 4. **Hard denials that `--yolo` doesn't lift:**
    - `.env*` and credential files are denied.
    - Catastrophic shell commands are denied, including `sudo` and piping curl to a shell.
-   - Secret values are masked in process output: secret-named environment variables and values
-     from secret files, including gitignored `.env` files and `~/.aws/credentials`.
+   - Secret values are masked in file contents the tools show (`read_file`, `grep`, `@` mentions) and in
+     process and MCP output: secret-named environment variables and values from secret files, including
+     gitignored `.env` files and `~/.aws/credentials`.
+   - The mask, `<secret-hidden>`, is never written back over a secret: a file change that would put it
+     into a file holding a secret is refused, and so is a shell command that contains it.
    - Known limitation: masking matches exact values, so a deliberately re-encoded value
      (`base64 .env`) is not caught. The approval prompt is the guard for that case.
 5. **The core never prints.** It emits events, and a renderer draws them. `--json` is just a
@@ -96,6 +101,11 @@ tests/Anchor.Tests/
 - A file that changes while the user is looking at the diff is never overwritten. `edit_file` makes
   the same replacements in the new content if each `old_string` still occurs as many times as
   before. Every other change fails, and the model is told to read the file again.
+- Each agent keeps its own record of the files it has read, so a sub-agent's read doesn't let the main
+  agent replace a file. Before and after every tool call, the files the agent has read are checked by
+  size and time, then by content. A file that changed without the agent's file tools (a shell command,
+  the user's editor) is named after that call's result, once per change, and in a note with the
+  user's next message when it changed between turns.
 - Each file is written to a temporary file beside it, which is then renamed over it, so a failed
   write never leaves half a file. A file keeps its encoding, byte-order mark and permissions. New
   files are UTF-8 without a byte-order mark.

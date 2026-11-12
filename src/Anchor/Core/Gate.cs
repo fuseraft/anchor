@@ -80,13 +80,26 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     // "Always" answers for programs and for MCP tools, starting from the ones saved for this workspace.
     readonly (HashSet<string> Programs, HashSet<string> External) _always = Load(saved);
     readonly LinkedList<Dictionary<string, Change>> _turns = [];
-    // A fingerprint of each file as the model last saw it, by full path.
-    readonly Dictionary<string, string> _read = [];
+    // Each file as the model last saw it, by full path. A sub-agent keeps its own record (ReadSeparately).
+    readonly Dictionary<string, Seen> _mainReads = [];
+    static readonly AsyncLocal<Dictionary<string, Seen>?> OwnReads = new();
+    Dictionary<string, Seen> _read => OwnReads.Value ?? _mainReads;
+
+    // The content's fingerprint, the file's size and time then, and the size and time last reported as a change.
+    sealed class Seen(string hash, string stamp)
+    {
+        public string Hash { get; } = hash;
+        public string Stamp { get; set; } = stamp;
+        public string? Reported { get; set; }
+    }
 
     // A file's content before the turn first changed it (null if the turn created it), and after its latest change.
     sealed record Change(TextFile? Before, string? After);
 
     public Workspace Workspace => workspace;
+
+    /// <summary>Masks secret values in file contents bound for the model; see <see cref="Secrets.Masker"/>.</summary>
+    public Func<string, string> Masker() => Secrets.Masker(workspace);
 
     static (HashSet<string>, HashSet<string>) Load(ApprovalStore? saved) =>
         saved?.Load() is { } loaded ? ([.. loaded.Programs], [.. loaded.Tools]) : ([], []);
@@ -148,6 +161,42 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
             Remember(full, text, knows: true);
     }
 
+    /// <summary>Gives the calling flow, a sub-agent, its own record of what it has read: reading a file for one agent
+    /// doesn't let another replace it, and each hears about changes to the files it read.</summary>
+    public static void ReadSeparately() => OwnReads.Value = [];
+
+    /// <summary>
+    /// Files the calling agent has read that have changed on disk since, through a shell command, another program or the
+    /// user, relative to the workspace. Each change is reported once; anchor's own writes for this agent aren't changes.
+    /// </summary>
+    public IReadOnlyList<string> TakeChanges()
+    {
+        List<string> changed = [];
+        lock (_lock)
+            foreach (var (full, seen) in _read)
+            {
+                var stamp = Stamp(full);
+                if (stamp == seen.Stamp || stamp == seen.Reported)
+                    continue;
+                // Only the time may have changed, as after a touch or a save without edits.
+                if (stamp.Length > 0 && TextFile.Load(full)?.Text is { } text && TextFile.Hash(text) == seen.Hash)
+                {
+                    seen.Stamp = stamp;
+                    continue;
+                }
+                seen.Reported = stamp;
+                changed.Add(Display(full) + (stamp.Length == 0 ? " (deleted)" : ""));
+            }
+        changed.Sort(StringComparer.Ordinal);
+        return changed;
+    }
+
+    static string Stamp(string full)
+    {
+        var info = new FileInfo(full);
+        return info.Exists ? $"{info.Length}|{info.LastWriteTimeUtc.Ticks}" : "";
+    }
+
     /// <summary>Forgets which files the model has read, for when its history is cleared.</summary>
     public void ForgetReads()
     {
@@ -167,8 +216,12 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     {
         if (edits.Count == 0 || edits.DistinctBy(e => e.Path).Count() != edits.Count)
             throw new ArgumentException("Expected at least one edit, each to a different file.", nameof(edits));
+        var mask = Masker();
         foreach (var edit in edits)
+        {
             RequireRead(edit);
+            KeepSecret(edit, mask);
+        }
 
         // One prompt covers every file, so it asks as the strictest of them would: denied, outside, then inside.
         var verdict = edits.Select(e => policy.Write(e.Path, e.Path)).MaxBy(v => v.Decision switch
@@ -222,8 +275,16 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
                 : $"{Display(edit.Path)} already exists and you haven't read it. Read it first, so replacing it doesn't lose content you haven't seen.");
     }
 
+    // The model saw a secret in this file as the placeholder; writing the placeholder back would destroy the real value.
+    void KeepSecret(FileEdit edit, Func<string, string> mask)
+    {
+        if (edit is { Before: { } before, After: { } after } && after.Contains(Secrets.Placeholder, StringComparison.Ordinal) && mask(before) != before)
+            throw new ToolException($"{Display(edit.Path)} holds a secret value, shown to you as {Secrets.Placeholder}. Writing that text " +
+                "would replace the real value, so nothing was written. Change only the lines around it, so the secret stays as it is.");
+    }
+
     // Under _lock: whether the model last read the file as text.
-    bool HasSeen(string full, string? text) => text is not null && _read.GetValueOrDefault(full) == TextFile.Hash(text);
+    bool HasSeen(string full, string? text) => text is not null && _read.TryGetValue(full, out var seen) && seen.Hash == TextFile.Hash(text);
 
     // What to write to the file now: the edit as approved if the file still holds what the tool read, else the edit reapplied.
     (FileEdit Edit, TextFile? Current, string? After, bool Reapplied) Prepare(FileEdit edit)
@@ -274,7 +335,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     void Remember(string full, string? text, bool knows)
     {
         if (text is not null && knows)
-            _read[full] = TextFile.Hash(text);
+            _read[full] = new Seen(TextFile.Hash(text), Stamp(full));
         else
             _read.Remove(full);
     }
@@ -318,6 +379,9 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     /// <summary>Runs a shell command in the workspace root and returns its masked output.</summary>
     public async Task<string> RunAsync(string command, TimeSpan timeout, CancellationToken ct)
     {
+        if (command.Contains(Secrets.Placeholder, StringComparison.Ordinal))
+            throw new ToolException($"The command contains {Secrets.Placeholder}, which stands in for a secret value anchor hid from you; " +
+                "it would run with that text, not the secret. Refer to the value through its environment variable ($NAME) instead.");
         // "Always" is keyed on programs from the bash parse, which is only trustworthy when bash runs the command.
         var programs = policy.ParsesShell ? ShellCommand.Programs(command) : new HashSet<string>();
         // An interpreter can run anything, so "always" for one lasts only this session.
@@ -378,7 +442,24 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
         }
         catch (OperationCanceledException)
         {
-            process.Kill(entireProcessTree: true);
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+                // It exited on its own just now.
+            }
+            // Waits for it to be gone and its output read, so nothing it printed is lost and nothing outlives the call. A
+            // grandchild that left the process tree can hold the output open, so the wait is bounded.
+            using var drain = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await process.WaitForExitAsync(drain.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
             token.ThrowIfCancellationRequested();
             status = $"[timed out after {limit.TotalSeconds:0}s; process killed]";
         }

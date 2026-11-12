@@ -13,7 +13,7 @@ public sealed record SubAgentStats(string Id, int ToolCalls, long Tokens);
 public sealed class SubAgentRunner(Toolbox toolbox, string systemPrompt, Action<AgentEvent> emit,
     Func<string?, Task<(IChatClient Client, ChatOptions Options)>> clientFor, Func<Compactor>? compactor = null, int? maxRounds = null) : IBackground
 {
-    public static readonly string[] ReadOnlyTools = ["read_file", "list_dir", "glob", "grep", "skill"];
+    public static readonly string[] ReadOnlyTools = Toolbox.ReadOnly;
 
     /// <summary>Tools a sub-agent never gets: it can't start sub-agents of its own or ask the user questions.</summary>
     public static readonly string[] MainAgentOnly = ["agent", "agent_status", "agent_stop", "ask_user"];
@@ -150,6 +150,7 @@ public sealed class SubAgentRunner(Toolbox toolbox, string systemPrompt, Action<
         Action<AgentEvent>? observe = null, Action<Agent>? started = null)
     {
         var name = label ?? definition?.Name ?? "agent";
+        Gate.ReadSeparately();
         var tools = toolbox.Subset((definition?.Tools ?? ReadOnlyTools).Where(t => !MainAgentOnly.Contains(t)));
         var (client, options) = await clientFor(definition?.Model);
         var prompt = systemPrompt + Instructions + (definition is null ? "" : $"\n\n{definition.Prompt}");

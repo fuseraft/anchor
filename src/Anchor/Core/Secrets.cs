@@ -32,11 +32,18 @@ public static partial class Secrets
     public static partial Regex MentionedFile();
 
     /// <summary>Replaces known secret values (secret-named env vars, contents of secret files) with <see cref="Placeholder"/>.</summary>
-    public static string Mask(string text, Workspace workspace)
+    public static string Mask(string text, Workspace workspace) => Masker(workspace)(text);
+
+    /// <summary>A <see cref="Mask"/> that looks up the secret values once, for masking many pieces of text.</summary>
+    public static Func<string, string> Masker(Workspace workspace)
     {
-        foreach (var value in EnvValues().Concat(FileValues(workspace)).Distinct().OrderByDescending(v => v.Length))
-            text = text.Replace(value, Placeholder, StringComparison.Ordinal);
-        return text;
+        string[] values = [.. EnvValues().Concat(FileValues(workspace)).Distinct().OrderByDescending(v => v.Length)];
+        return text =>
+        {
+            foreach (var value in values)
+                text = text.Replace(value, Placeholder, StringComparison.Ordinal);
+            return text;
+        };
     }
 
     static IEnumerable<string> EnvValues()
