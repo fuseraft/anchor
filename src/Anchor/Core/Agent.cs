@@ -246,38 +246,60 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
 
                 results = [];
                 string? stop = null;
-                foreach (var call in calls)
+                // Read-only calls next to each other run at once, as when the model reads several files; any other call
+                // runs alone, in order. Results keep the order of the calls.
+                for (var i = 0; i < calls.Count;)
                 {
-                    if (stop is not null)
+                    var batch = calls.Skip(i).TakeWhile(c => Toolbox.ReadOnly.Contains(c.Name)).DefaultIfEmpty(calls[i]).ToList();
+                    i += batch.Count;
+                    var before = new GuardVerdict[batch.Count];
+                    var running = new Task<(string Text, bool Ok)>?[batch.Count];
+                    var skipped = new string?[batch.Count];
+                    for (var j = 0; j < batch.Count; j++)
                     {
-                        results.Add(new FunctionResultContent(call.CallId, "[anchor] Not run: the turn was stopped."));
-                        continue;
-                    }
-
-                    var before = guard.BeforeCall(call);
-                    if (before.Action == GuardAction.Stop)
-                    {
-                        stop = before.Message;
-                        results.Add(new FunctionResultContent(call.CallId, $"[anchor] Not run: {before.Message}"));
-                        continue;
-                    }
-
-                    emit(new ToolStarted(call.CallId, call.Name, Toolbox.Summarize(call)));
-                    var (text, ok) = await toolbox.InvokeAsync(call, ct);
-                    emit(new ToolFinished(call.CallId, call.Name, ok, text));
-
-                    var after = guard.AfterCall(ok);
-                    foreach (var verdict in new[] { before, after })
-                    {
-                        if (verdict.Action == GuardAction.None)
+                        var call = batch[j];
+                        if (stop is not null)
+                        {
+                            skipped[j] = "[anchor] Not run: the turn was stopped.";
                             continue;
-                        emit(new LoopWarning(verdict.Message));
-                        if (verdict.Action == GuardAction.Warn)
-                            text += $"\n\n[anchor] {verdict.Message}";
-                        else
-                            stop = verdict.Message;
+                        }
+                        before[j] = guard.BeforeCall(call);
+                        if (before[j].Action == GuardAction.Stop)
+                        {
+                            stop = before[j].Message;
+                            skipped[j] = $"[anchor] Not run: {before[j].Message}";
+                            continue;
+                        }
+                        emit(new ToolStarted(call.CallId, call.Name, Toolbox.Summarize(call)));
+                        running[j] = batch.Count == 1 ? toolbox.InvokeAsync(call, ct) : Task.Run(() => toolbox.InvokeAsync(call, ct), ct);
                     }
-                    results.Add(new FunctionResultContent(call.CallId, text));
+                    // Every call has finished before any result is used, so a cancelled turn leaves nothing running.
+                    await Task.WhenAll(running.OfType<Task<(string, bool)>>());
+
+                    for (var j = 0; j < batch.Count; j++)
+                    {
+                        var call = batch[j];
+                        if (running[j] is not { } task)
+                        {
+                            results.Add(new FunctionResultContent(call.CallId, skipped[j]));
+                            continue;
+                        }
+                        var (text, ok) = await task;
+                        emit(new ToolFinished(call.CallId, call.Name, ok, text));
+
+                        var after = guard.AfterCall(ok);
+                        foreach (var verdict in new[] { before[j], after })
+                        {
+                            if (verdict.Action == GuardAction.None)
+                                continue;
+                            emit(new LoopWarning(verdict.Message));
+                            if (verdict.Action == GuardAction.Warn)
+                                text += $"\n\n[anchor] {verdict.Message}";
+                            else
+                                stop = verdict.Message;
+                        }
+                        results.Add(new FunctionResultContent(call.CallId, text));
+                    }
                 }
 
                 _history.Add(new ChatMessage(ChatRole.Tool, results));
@@ -344,10 +366,14 @@ public sealed class Agent(IChatClient client, Toolbox toolbox, string systemProm
         }
     }
 
+    // One note, so a message the model never answers takes all of it along (Recover).
     async Task AttachAsync(string typed, CancellationToken ct)
     {
-        if (Attachments is { } attach && await attach(typed, ct) is { } note)
-            _history.Add(Messages.Create(MessageKind.Note, note));
+        var attached = Attachments is { } attach ? await attach(typed, ct) : null;
+        // After the attachments: a file attached again is up to date.
+        string[] notes = [.. new[] { toolbox.ChangeNotice(), attached }.OfType<string>()];
+        if (notes.Length > 0)
+            _history.Add(Messages.Create(MessageKind.Note, string.Join("\n\n", notes)));
     }
 
     // Summarizes older turns first; if that isn't enough (or there are none, as in one long turn), trims old tool

@@ -33,7 +33,9 @@ optional. Keys are case-insensitive, and comments and trailing commas are allowe
   // Where the full screen puts the prompt: "bottom" or "top".
   "dock": "bottom",
   // Download new releases and install them the next time anchor starts.
-  "autoUpdate": true
+  "autoUpdate": true,
+  // How many recently read files to check for changes around each tool call.
+  "trackedFiles": 50
 }
 ```
 
@@ -208,3 +210,13 @@ install script or from a release archive, it downloads the release into `~/.anch
 checks it against the release's `SHA256SUMS`, and installs it the next time anchor starts. If
 Homebrew, Scoop or winget installed it, or anchor can't write to the folder it's in, anchor only
 tells you the release is out. `-p` and `--json` never check. `"autoUpdate": false` turns it off.
+
+## trackedFiles
+
+Before and after each tool call, anchor checks whether files the model has read changed on disk,
+so it can tell the model its copy is out of date. It checks the 50 files read most recently, with
+one size-and-time lookup each. On a slow network share those lookups add up, so lower the number
+there; raise it for long sessions on a local disk. `"trackedFiles": 0` turns the checks off.
+
+Whatever the number, anchor never overwrites a file that changed after the model read it: a write
+compares the file with what the model read and is refused if they differ.

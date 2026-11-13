@@ -46,6 +46,18 @@ public sealed class SubAgentTests : IDisposable
     }
 
     [Fact]
+    public async Task ASubAgentsReadsDontCountForTheMainAgent()
+    {
+        var client = new FakeChatClient().Call("read_file", new { path = "a.txt" }).Text("a.txt says alpha");
+        await Runner(client).RunAsync("what does a.txt say?", null, default);
+
+        var (text, ok) = await _toolbox.InvokeAsync(new FunctionCallContent("c", "write_file", new Dictionary<string, object?> { ["path"] = "a.txt", ["content"] = "x" }), default);
+
+        Assert.False(ok);
+        Assert.Contains("haven't read it", text);
+    }
+
+    [Fact]
     public async Task DefaultAgentCannotWrite()
     {
         var client = new FakeChatClient().Call("write_file", new { path = "b.txt", content = "x" }).Text("could not write");

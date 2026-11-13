@@ -47,10 +47,16 @@ public static class Startup
         // Background sub-agents can need the user at the same time as the main agent; they take turns.
         var approver = new SerialApprover(output.Approver);
         var gate = new Gate(workspace, new Policy(workspace, options.Yolo, skills.Select(s => s.Directory)), approver, emit,
-            new ApprovalStore(Path.Combine(Config.Home, "approvals.json"), workspace.Root));
+            new ApprovalStore(Path.Combine(Config.Home, "approvals.json"), workspace.Root))
+        {
+            TrackedFiles = config.TrackedFiles ?? Gate.DefaultTrackedFiles,
+        };
         foreach (var rule in options.Allow ?? [])
             gate.Allow(rule);
-        var toolbox = new Toolbox([.. new FileTools(gate).All(), .. new EditTools(gate).All(), .. new PatchTool(gate).All(), .. new ShellTool(gate).All()]);
+        var toolbox = new Toolbox([.. new FileTools(gate).All(), .. new EditTools(gate).All(), .. new PatchTool(gate).All(), .. new ShellTool(gate).All()])
+        {
+            Changes = gate.TakeChanges,
+        };
         var systemPrompt = SystemPrompt.Build(workspace, DateOnly.FromDateTime(DateTime.Now), skills);
         // A bug that ends a turn is recorded in a crash log; a provider or network failure is just reported.
         Func<Exception, string?> describeFailure = e => CrashLog.IsBug(e) ? CrashLog.Record(e) : null;
