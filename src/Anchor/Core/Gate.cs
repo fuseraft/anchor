@@ -98,8 +98,10 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     sealed class Seen(string hash, string stamp, long order)
     {
         public string Hash { get; } = hash;
+        // The content last known to be on disk (what was read, then each change reported; null once it's deleted), and
+        // a settled size and time for it, or "" to compare by content.
+        public string? Known { get; set; } = hash;
         public string Stamp { get; set; } = stamp;
-        public string? Reported { get; set; }
         public long Order { get; } = order;
     }
 
@@ -183,26 +185,28 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
             foreach (var (full, seen) in _read.Count <= TrackedFiles ? _read : _read.OrderByDescending(r => r.Value.Order).Take(TrackedFiles))
             {
                 var stamp = Stamp(full);
-                if (stamp == seen.Stamp || stamp == seen.Reported)
+                if (stamp.Length > 0 && stamp == seen.Stamp)
                     continue;
-                var text = stamp.Length > 0 ? TextFile.Load(full)?.Text : null;
-                // Only the time may have changed, as after a touch or a save without edits.
-                if (text is not null && TextFile.Hash(text) == seen.Hash)
-                {
-                    seen.Stamp = stamp;
+                var hash = stamp.Length > 0 && TextFile.Load(full)?.Text is { } text ? TextFile.Hash(text) : null;
+                seen.Stamp = Stamp(full, settled: true);
+                // Unchanged, as after a touch or a save without edits, or a change already reported.
+                if (hash == seen.Known)
                     continue;
-                }
-                seen.Reported = stamp;
+                seen.Known = hash;
                 changed.Add(Display(full) + (stamp.Length == 0 ? " (deleted)" : ""));
             }
         changed.Sort(StringComparer.Ordinal);
         return changed;
     }
 
-    static string Stamp(string full)
+    // Size and time, or "" when the file is gone. A settled stamp is also "" while the time is recent: a write in the same
+    // clock tick (about 15 ms on Windows) wouldn't move it, so until then the file is compared by content.
+    static string Stamp(string full, bool settled = false)
     {
         var info = new FileInfo(full);
-        return info.Exists ? $"{info.Length}|{info.LastWriteTimeUtc.Ticks}" : "";
+        if (!info.Exists || (settled && DateTime.UtcNow - info.LastWriteTimeUtc < TimeSpan.FromSeconds(2)))
+            return "";
+        return $"{info.Length}|{info.LastWriteTimeUtc.Ticks}";
     }
 
     /// <summary>Forgets which files the model has read, for when its history is cleared.</summary>
@@ -331,7 +335,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     void Remember(string full, string? text, bool knows)
     {
         if (text is not null && knows)
-            _read[full] = new Seen(TextFile.Hash(text), Stamp(full), ++_reads);
+            _read[full] = new Seen(TextFile.Hash(text), Stamp(full, settled: true), ++_reads);
         else
             _read.Remove(full);
     }

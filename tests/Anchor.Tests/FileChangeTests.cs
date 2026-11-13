@@ -46,6 +46,19 @@ public sealed class FileChangeTests : IDisposable
     }
 
     [Fact]
+    public void TakeChanges_ASameSizeEditInTheSameClockTickIsStillReported()
+    {
+        _gate.MarkRead(At("a.txt"));
+        var time = File.GetLastWriteTimeUtc(At("a.txt"));
+        File.WriteAllText(At("a.txt"), "one\nTWO\n");
+        // A coarse clock (about 15 ms on Windows) gives a write right after the read the same time.
+        File.SetLastWriteTimeUtc(At("a.txt"), time);
+
+        Assert.Equal(["a.txt"], _gate.TakeChanges());
+        Assert.Empty(_gate.TakeChanges());
+    }
+
+    [Fact]
     public async Task TakeChanges_IgnoresUnreadFilesTouchesAndAnchorsOwnWrites()
     {
         _gate.MarkRead(At("a.txt"));
