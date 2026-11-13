@@ -29,6 +29,9 @@ public sealed class Config
     /// <summary>Whether anchor downloads new releases and installs them the next time it starts; on unless false.</summary>
     public bool? AutoUpdate { get; set; }
 
+    /// <summary>How many recently read files are checked for changes around each tool call; see <see cref="Gate.TrackedFiles"/>.</summary>
+    public int? TrackedFiles { get; set; }
+
     public static string Home => Anchor.Core.AnchorHome.Dir;
 
     public static Config Load()

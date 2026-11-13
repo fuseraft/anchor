@@ -523,6 +523,37 @@ public class AgentTests
     }
 
     [Fact]
+    public async Task ReadOnlyCalls_RunAtTheSameTime_OthersAloneInOrder()
+    {
+        var log = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var together = new CountdownEvent(2);
+        // Each read blocks until the other has started, as the file tools do their reading synchronously; run one after
+        // the other, they'd time out.
+        AIFunction Read(string name) => AIFunctionFactory.Create((string path) =>
+        {
+            log.Enqueue($"start {path}");
+            together.Signal();
+            var met = together.Wait(TimeSpan.FromSeconds(5));
+            log.Enqueue($"end {path}");
+            return met ? $"{path}: together" : $"{path}: alone";
+        }, name);
+        var write = AIFunctionFactory.Create((string path) => { log.Enqueue($"write {path}"); return "written"; }, "write_file");
+        var client = new FakeChatClient()
+            .Calls(new("1", "read_file", new Dictionary<string, object?> { ["path"] = "a" }),
+                   new("2", "grep", new Dictionary<string, object?> { ["path"] = "b" }),
+                   new("3", "write_file", new Dictionary<string, object?> { ["path"] = "c" }),
+                   new("4", "echo", new Dictionary<string, object?> { ["text"] = "d" }))
+            .Text("done");
+
+        await NewAgent(client, null, Read("read_file"), Read("grep"), write).RunTurnAsync("go", default);
+
+        var results = client.Requests[1][^1].Contents.OfType<FunctionResultContent>().ToList();
+        Assert.Equal(["1", "2", "3", "4"], results.Select(r => r.CallId));
+        Assert.Equal(["a: together", "b: together", "written", "echo:d"], results.Select(r => r.Result?.ToString()));
+        Assert.Equal("write c", log.ToArray()[^1]);
+    }
+
+    [Fact]
     public async Task Attachments_FollowTheMessageAsANote()
     {
         var client = new FakeChatClient().Text("ok");

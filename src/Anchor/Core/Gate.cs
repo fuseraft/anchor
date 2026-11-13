@@ -80,8 +80,28 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     // "Always" answers for programs and for MCP tools, starting from the ones saved for this workspace.
     readonly (HashSet<string> Programs, HashSet<string> External) _always = Load(saved);
     readonly LinkedList<Dictionary<string, Change>> _turns = [];
-    // A fingerprint of each file as the model last saw it, by full path.
-    readonly Dictionary<string, string> _read = [];
+    // Each file as the model last saw it, by full path. A sub-agent keeps its own record (ReadSeparately).
+    readonly Dictionary<string, Seen> _mainReads = [];
+    static readonly AsyncLocal<Dictionary<string, Seen>?> OwnReads = new();
+    Dictionary<string, Seen> _read => OwnReads.Value ?? _mainReads;
+
+    long _reads;
+
+    public const int DefaultTrackedFiles = 50;
+
+    /// <summary>How many of the files read most recently are checked for changes around each tool call: each check is a
+    /// lookup per file, which adds up on a network share. 0 turns the checks off.</summary>
+    public int TrackedFiles { get; init; } = DefaultTrackedFiles;
+
+    // The content's fingerprint, the file's size and time then, the size and time last reported as a change, and when it
+    // was read, for TrackedFiles.
+    sealed class Seen(string hash, string stamp, long order)
+    {
+        public string Hash { get; } = hash;
+        public string Stamp { get; set; } = stamp;
+        public string? Reported { get; set; }
+        public long Order { get; } = order;
+    }
 
     // A file's content before the turn first changed it (null if the turn created it), and after its latest change.
     sealed record Change(TextFile? Before, string? After);
@@ -146,6 +166,43 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
         var text = TextFile.Load(full)?.Text;
         lock (_lock)
             Remember(full, text, knows: true);
+    }
+
+    /// <summary>Gives the calling flow, a sub-agent, its own record of what it has read: reading a file for one agent
+    /// doesn't let another replace it, and each hears about changes to the files it read.</summary>
+    public static void ReadSeparately() => OwnReads.Value = [];
+
+    /// <summary>
+    /// Files the calling agent has read that have changed on disk since, through a shell command, another program or the
+    /// user, relative to the workspace. Each change is reported once; anchor's own writes for this agent aren't changes.
+    /// </summary>
+    public IReadOnlyList<string> TakeChanges()
+    {
+        List<string> changed = [];
+        lock (_lock)
+            foreach (var (full, seen) in _read.Count <= TrackedFiles ? _read : _read.OrderByDescending(r => r.Value.Order).Take(TrackedFiles))
+            {
+                var stamp = Stamp(full);
+                if (stamp == seen.Stamp || stamp == seen.Reported)
+                    continue;
+                var text = stamp.Length > 0 ? TextFile.Load(full)?.Text : null;
+                // Only the time may have changed, as after a touch or a save without edits.
+                if (text is not null && TextFile.Hash(text) == seen.Hash)
+                {
+                    seen.Stamp = stamp;
+                    continue;
+                }
+                seen.Reported = stamp;
+                changed.Add(Display(full) + (stamp.Length == 0 ? " (deleted)" : ""));
+            }
+        changed.Sort(StringComparer.Ordinal);
+        return changed;
+    }
+
+    static string Stamp(string full)
+    {
+        var info = new FileInfo(full);
+        return info.Exists ? $"{info.Length}|{info.LastWriteTimeUtc.Ticks}" : "";
     }
 
     /// <summary>Forgets which files the model has read, for when its history is cleared.</summary>
@@ -223,7 +280,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     }
 
     // Under _lock: whether the model last read the file as text.
-    bool HasSeen(string full, string? text) => text is not null && _read.GetValueOrDefault(full) == TextFile.Hash(text);
+    bool HasSeen(string full, string? text) => text is not null && _read.TryGetValue(full, out var seen) && seen.Hash == TextFile.Hash(text);
 
     // What to write to the file now: the edit as approved if the file still holds what the tool read, else the edit reapplied.
     (FileEdit Edit, TextFile? Current, string? After, bool Reapplied) Prepare(FileEdit edit)
@@ -274,7 +331,7 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
     void Remember(string full, string? text, bool knows)
     {
         if (text is not null && knows)
-            _read[full] = TextFile.Hash(text);
+            _read[full] = new Seen(TextFile.Hash(text), Stamp(full), ++_reads);
         else
             _read.Remove(full);
     }
@@ -378,7 +435,24 @@ public sealed class Gate(Workspace workspace, Policy policy, IApprover approver,
         }
         catch (OperationCanceledException)
         {
-            process.Kill(entireProcessTree: true);
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+                // It exited on its own just now.
+            }
+            // Waits for it to be gone and its output read, so nothing it printed is lost and nothing outlives the call. A
+            // grandchild that left the process tree can hold the output open, so the wait is bounded.
+            using var drain = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await process.WaitForExitAsync(drain.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
             token.ThrowIfCancellationRequested();
             status = $"[timed out after {limit.TotalSeconds:0}s; process killed]";
         }

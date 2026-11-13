@@ -8,6 +8,9 @@ public sealed class Toolbox(IEnumerable<AIFunction> tools)
 {
     public const int MaxResultChars = 30_000;
 
+    /// <summary>Tools that only read, which can run at the same time as each other.</summary>
+    public static readonly string[] ReadOnly = ["read_file", "list_dir", "glob", "grep", "skill"];
+
     readonly Dictionary<string, AIFunction> _tools = tools.ToDictionary(t => t.Name);
     readonly Lock _lock = new();
 
@@ -37,6 +40,15 @@ public sealed class Toolbox(IEnumerable<AIFunction> tools)
         return name.Contains("gpt") || name.Contains("codex") || (name.Length > 1 && name[0] == 'o' && char.IsAsciiDigit(name[1]));
     }
 
+    /// <summary>Files the calling agent has read that changed on disk since it last heard; see <see cref="Gate.TakeChanges"/>.</summary>
+    public Func<IReadOnlyList<string>>? Changes { get; init; }
+
+    /// <summary>Tells the model about files it has read that changed outside its tool calls; null when none did.</summary>
+    public string? ChangeNotice() => Notice(Changes?.Invoke() ?? [], "have changed since you read them");
+
+    static string? Notice(IReadOnlyList<string> files, string what) => files.Count == 0 ? null
+        : $"[anchor] Files you read {what}: {string.Join(", ", files)}. Your copy is out of date: read them again before relying on or editing them.";
+
     public IReadOnlyList<string> Names
     {
         get { lock (_lock) return [.. _tools.Keys.Order(StringComparer.Ordinal)]; }
@@ -64,10 +76,19 @@ public sealed class Toolbox(IEnumerable<AIFunction> tools)
         if (wanted.Any(n => PatchTools.Contains(n) || ReplaceTools.Contains(n)))
             wanted = [.. wanted, .. PatchTools, .. ReplaceTools];
         lock (_lock)
-            return new Toolbox(wanted.Select(n => _tools.GetValueOrDefault(n)).OfType<AIFunction>().Distinct());
+            return new Toolbox(wanted.Select(n => _tools.GetValueOrDefault(n)).OfType<AIFunction>().Distinct()) { Changes = Changes };
     }
 
+    /// <summary>Runs a call. Files the agent has read that changed, before it or while it ran, are noted after its result.</summary>
     public async Task<(string Text, bool Ok)> InvokeAsync(FunctionCallContent call, CancellationToken ct)
+    {
+        var before = ChangeNotice();
+        var (text, ok) = await RunAsync(call, ct);
+        var during = Notice(Changes?.Invoke() ?? [], $"changed while {call.Name} ran");
+        return (string.Join("\n\n", new[] { text, before, during }.OfType<string>()), ok);
+    }
+
+    async Task<(string Text, bool Ok)> RunAsync(FunctionCallContent call, CancellationToken ct)
     {
         AIFunction? tool;
         lock (_lock)

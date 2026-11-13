@@ -64,6 +64,14 @@ middle is cut).
 
 Results are `path:line: text`.
 
+Read-only calls the model makes together (`read_file`, `list_dir`, `glob`, `grep` and `skill`) run
+at the same time. Any other call runs alone, in order.
+
+When a file the model has read changes on disk without anchor's file tools, by a shell command, your
+editor or another program, the next tool result says so, naming the file once per change. A change
+made while the model waits for your message is noted with that message. Only the 50 files read
+most recently are checked; [`trackedFiles`](/anchor/reference/config/#trackedfiles) changes that.
+
 ### write_file
 
 | Parameter | Description                  |
